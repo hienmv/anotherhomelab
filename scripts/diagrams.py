@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Generate monosketch-style ASCII system diagrams and inject them into README.md.
+
+Diagrams live between markers in README.md:
+    <!-- diagram:NAME:start --> ... <!-- diagram:NAME:end -->
+
+Usage:
+    python3 scripts/diagrams.py          # rewrite README.md in place
+    python3 scripts/diagrams.py --print  # print diagrams only
+
+Edit the draw_* functions when the infrastructure changes, then re-run.
+Legend used in diagrams: solid box = running, dashed box = planned.
+"""
+import pathlib
+import re
+import sys
+
+README = pathlib.Path(__file__).resolve().parent.parent / "README.md"
+
+
+class Canvas:
+    def __init__(self, w, h):
+        self.w, self.h = w, h
+        self.g = [[" "] * w for _ in range(h)]
+
+    def put(self, x, y, s):
+        for i, c in enumerate(s):
+            self.g[y][x + i] = c
+
+    def box(self, x, y, w, h, title=None, lines=(), dashed=False, center=False):
+        hz, vt = ("┄", "┆") if dashed else ("─", "│")
+        self.put(x, y, "┌" + hz * (w - 2) + "┐")
+        for r in range(1, h - 1):
+            self.put(x, y + r, vt)
+            self.put(x + w - 1, y + r, vt)
+        self.put(x, y + h - 1, "└" + hz * (w - 2) + "┘")
+        if title:
+            self.put(x + 1, y, "─ " + title + " ")
+        for i, line in enumerate(lines):
+            inner = w - 4
+            assert len(line) <= inner, f"text too long for box: {line!r}"
+            text = line.center(inner) if center else line
+            self.put(x + 2, y + 1 + i, text)
+
+    def vline(self, x, y1, y2):
+        for y in range(y1, y2 + 1):
+            c = self.g[y][x]
+            self.g[y][x] = "┼" if c in "─┄" else ("│" if c == " " else c)
+
+    def hline(self, y, x1, x2):
+        for x in range(x1, x2 + 1):
+            c = self.g[y][x]
+            self.g[y][x] = "┼" if c in "│┆" else ("─" if c == " " else c)
+
+    def render(self):
+        return "\n".join("".join(r).rstrip() for r in self.g)
+
+
+def draw_flow():
+    """Request + data flow (logical view)."""
+    c = Canvas(96, 44)
+    cx = 38
+
+    c.box(31, 0, 15, 3, lines=["Client"], center=True)
+    c.put(cx, 2, "┬")
+    c.vline(cx, 3, 3)
+    c.put(cx + 2, 3, "HTTPS  hien0ethan.com, *.hien0ethan.com")
+    c.put(cx, 4, "▼")
+
+    c.box(23, 5, 31, 4, lines=["Cloudflare Edge", "TLS, DNS: @ and * -> tunnel"], center=True)
+    c.put(cx, 8, "┬")
+    c.vline(cx, 9, 9)
+    c.put(cx + 2, 9, "Cloudflare Tunnel (outbound only, no open ports)")
+
+    # LAN frame
+    c.box(0, 10, 96, 34, title="Home LAN 192.168.40.0/24")
+    c.vline(cx, 10, 10)
+    c.put(cx, 11, "▼")
+    c.box(23, 12, 31, 3, lines=["cloudflared  (pi3, systemd)"], center=True)
+    c.put(cx, 14, "┬")
+    c.vline(cx, 15, 15)
+    c.put(cx + 2, 15, "http://192.168.40.250:80")
+
+    # k3s frame
+    c.box(2, 16, 92, 27, title="k3s v1.37.2  (pi4-8gb server + pi4-4gb agent)")
+    c.vline(cx, 16, 16)
+    c.put(cx, 17, "▼")
+    c.box(23, 18, 31, 3, lines=["Traefik ingress"], center=True)
+    c.put(cx, 20, "┬")
+    c.vline(cx, 21, 21)
+    c.put(cx + 2, 21, "Host rules")
+    c.hline(22, 14, 62)
+    c.put(14, 22, "┌")
+    c.put(cx, 22, "┴")
+    c.put(62, 22, "┐")
+    c.put(14, 23, "▼")
+    c.put(62, 23, "▼")
+
+    c.box(5, 24, 19, 4, lines=["whoami (demo)", "2 pods, ns apps"], center=True)
+    c.box(48, 24, 29, 4, lines=["web app  (planned)", "ns apps, env: app-env"], center=True, dashed=True)
+
+    # web -> postgres / redis
+    c.put(50, 27, "┬")
+    c.vline(50, 28, 29)
+    c.put(51, 29, " SQL")
+    c.put(50, 30, "▼")
+    c.put(70, 27, "┬")
+    c.vline(70, 28, 29)
+    c.put(72, 29, "enqueue")
+    c.put(70, 30, "▼")
+
+    c.box(26, 31, 28, 5, lines=["PostgreSQL 17 (CNPG)", "pg-rw.data.svc:5432", "PVC 10Gi, pi4-8gb"], center=True)
+    c.box(58, 31, 28, 5, lines=["Redis 8.2 (queue/cache)", "redis.data.svc:6379", "PVC 2Gi, AOF, pi4-8gb"], center=True)
+
+    # cron -> postgres
+    c.box(4, 38, 27, 4, lines=["batch CronJob (planned)", "nightly / one-off Jobs"], center=True, dashed=True)
+    c.put(28, 38, "┴")
+    c.vline(28, 37, 37)
+    c.put(28, 36, "▲")
+
+    # workers -> redis (consume), workers -> postgres (write)
+    c.box(58, 38, 28, 4, lines=["workers  (planned)", "KEDA: scale on queue len"], center=True, dashed=True)
+    c.put(72, 38, "┴")
+    c.vline(72, 37, 37)
+    c.put(72, 36, "▲")
+    c.put(74, 37, "consume")
+    c.put(58, 40, "┤")
+    c.hline(40, 41, 57)
+    c.put(40, 40, "└")
+    c.vline(40, 37, 39)
+    c.put(40, 36, "▲")
+    c.put(43, 39, "write")
+    return c.render()
+
+
+def draw_nodes():
+    """Physical placement per node."""
+    c = Canvas(96, 12)
+    c.box(0, 0, 34, 12, title="pi4-8gb  .250", lines=[
+        "Pi 4B, 8 GB RAM, SD 32 GB",
+        "k3s server (control plane)",
+        "label role=data",
+        "",
+        "* traefik, coredns",
+        "* metrics-server, local-path",
+        "* postgres pg-1",
+        "* redis-0",
+        "* whoami x1",
+        "- SSD for PG/Redis (todo)",
+    ])
+    c.box(36, 0, 30, 12, title="pi4-4gb  .251", lines=[
+        "Pi 4B, 4 GB RAM, SD 64 GB",
+        "k3s agent",
+        "label role=apps",
+        "",
+        "* cnpg operator",
+        "* whoami x1",
+        "- web app (planned)",
+        "- workers + KEDA (planned)",
+        "- batch CronJobs (planned)",
+    ])
+    c.box(68, 0, 28, 12, title="pi3  .252", lines=[
+        "Pi 3B+, 1 GB, SD 32 GB",
+        "NOT in k3s yet",
+        "! under-voltage on load",
+        "",
+        "* cloudflared (systemd)",
+        "* ufw firewall",
+        "- k3s agent, taint light",
+        "- cloudflared -> k3s",
+    ])
+    return c.render() + "\n\n  * running    - planned / todo"
+
+
+DIAGRAMS = {"flow": draw_flow, "nodes": draw_nodes}
+
+
+def main():
+    rendered = {name: fn() for name, fn in DIAGRAMS.items()}
+    if "--print" in sys.argv:
+        for name, text in rendered.items():
+            print(f"### {name}\n{text}\n")
+        return
+    readme = README.read_text()
+    for name, text in rendered.items():
+        pat = re.compile(
+            rf"(<!-- diagram:{name}:start -->).*?(<!-- diagram:{name}:end -->)", re.S
+        )
+        if not pat.search(readme):
+            sys.exit(f"marker for diagram '{name}' not found in README.md")
+        block = "\n```text\n" + text + "\n```\n"
+        readme = pat.sub(lambda m: m.group(1) + block + m.group(2), readme)
+    README.write_text(readme)
+    print(f"updated {README.name}: {', '.join(rendered)}")
+
+
+if __name__ == "__main__":
+    main()
