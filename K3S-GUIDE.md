@@ -436,17 +436,18 @@ Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo
 - [x] Static IPs (.250/.251/.252)
 - [ ] Fix power supplies (pi3 urgent)
 - [x] cmdline `cgroup_enable=memory`, upgrade, reboot (3.2): pi4-8gb + pi4-4gb done 2026-11-07 (kernel 6.18)
-- [ ] same for pi3 (after power fix)
+- [x] same for pi3 (2026-11-08)
 - [ ] Buy/mount SSD on pi4-8gb (3.4)
 - [x] Back up and remove host nginx/php-fpm (3.3): backups at `~/web-backup-2026-11-07.tgz` on pi3 + pi4-8gb; tunnel hostnames → `192.168.40.250:80`
 - [x] pi3 ufw: allow 192.168.40.0/24, 10.42.0.0/16, 10.43.0.0/16
 - [x] Old `hien.qzz.io` is gone; new domain `hien0ethan.com` (Cloudflare Registrar). DNS: CNAME `@` and `*` → `<tunnel-id>.cfargotunnel.com` (proxied). Host cloudflared on pi3 routes both to `192.168.40.250:80` (Traefik). Verified 2026-11-07.
 - [x] k3s v1.37.2 server (pi4-8gb) + agent (pi4-4gb), kubeconfig `~/.kube/homelab.yaml`, demo `k8s/apps/whoami.yaml` (2026-11-07)
-- [ ] pi3 agent (after power fix)
+- [x] pi3 agent joined 2026-11-08 (label/taint `role=light`); host cloudflared removed from pi3
+- [x] cloudflared in k3s: `k8s/infra/cloudflared.yaml`, 1 replica on pi4-8gb
 - [x] CNPG 1.30.1 + Postgres 17 (`k8s/data/postgres.yaml`), Redis 8.2 (`k8s/data/redis.yaml`), secret `apps/app-env` (2026-11-07). On SD card for now.
 - [ ] Move PG/Redis volumes to SSD
 - [ ] App image on GHCR, web/worker/cron (7)
-- [ ] cloudflared in cluster, retire host cloudflared (8)
+- [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9)
 - [ ] Monitoring (10), Flux (11)
 

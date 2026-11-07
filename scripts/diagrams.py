@@ -36,6 +36,7 @@ class Canvas:
         self.put(x, y + h - 1, "└" + hz * (w - 2) + "┘")
         if title:
             self.put(x + 1, y, "─ " + title + " ")
+        assert len(lines) <= h - 2, f"too many lines for box height {h}: {lines[0]!r}..."
         for i, line in enumerate(lines):
             inner = w - 4
             assert len(line) <= inner, f"text too long for box: {line!r}"
@@ -72,18 +73,15 @@ def draw_flow():
     c.vline(cx, 9, 9)
     c.put(cx + 2, 9, "Cloudflare Tunnel (outbound only, no open ports)")
 
-    # LAN frame
+    # LAN frame + k3s frame
     c.box(0, 10, 96, 34, title="Home LAN 192.168.40.0/24")
-    c.vline(cx, 10, 10)
-    c.put(cx, 11, "▼")
-    c.box(23, 12, 31, 3, lines=["cloudflared  (pi3, systemd)"], center=True)
-    c.put(cx, 14, "┬")
-    c.vline(cx, 15, 15)
-    c.put(cx + 2, 15, "http://192.168.40.250:80")
-
-    # k3s frame
-    c.box(2, 16, 92, 27, title="k3s v1.37.2  (pi4-8gb server + pi4-4gb agent)")
+    c.box(2, 11, 92, 32, title="k3s v1.37.2  (3 nodes)")
+    c.vline(cx, 10, 11)
+    c.put(cx, 12, "▼")
+    c.box(23, 13, 31, 3, lines=["cloudflared  (pod, pi4-8gb)"], center=True)
+    c.put(cx, 15, "┬")
     c.vline(cx, 16, 16)
+    c.put(cx + 2, 16, "traefik.kube-system.svc:80")
     c.put(cx, 17, "▼")
     c.box(23, 18, 31, 3, lines=["Traefik ingress"], center=True)
     c.put(cx, 20, "┬")
@@ -135,8 +133,8 @@ def draw_flow():
 
 def draw_nodes():
     """Physical placement per node."""
-    c = Canvas(96, 12)
-    c.box(0, 0, 34, 12, title="pi4-8gb  .250", lines=[
+    c = Canvas(96, 13)
+    c.box(0, 0, 34, 13, title="pi4-8gb  .250", lines=[
         "Pi 4B, 8 GB RAM, SD 32 GB",
         "k3s server (control plane)",
         "label role=data",
@@ -146,9 +144,10 @@ def draw_nodes():
         "* postgres pg-1",
         "* redis-0",
         "* whoami x1",
+        "* cloudflared (tunnel)",
         "- SSD for PG/Redis (todo)",
     ])
-    c.box(36, 0, 30, 12, title="pi4-4gb  .251", lines=[
+    c.box(36, 0, 30, 13, title="pi4-4gb  .251", lines=[
         "Pi 4B, 4 GB RAM, SD 64 GB",
         "k3s agent",
         "label role=apps",
@@ -159,15 +158,15 @@ def draw_nodes():
         "- workers + KEDA (planned)",
         "- batch CronJobs (planned)",
     ])
-    c.box(68, 0, 28, 12, title="pi3  .252", lines=[
+    c.box(68, 0, 28, 13, title="pi3  .252", lines=[
         "Pi 3B+, 1 GB, SD 32 GB",
-        "NOT in k3s yet",
-        "! under-voltage on load",
+        "k3s agent",
+        "label role=light",
+        "taint role=light:NoSched",
         "",
-        "* cloudflared (systemd)",
         "* ufw firewall",
-        "- k3s agent, taint light",
-        "- cloudflared -> k3s",
+        "- light pods only",
+        "! under-voltage on load",
     ])
     return c.render() + "\n\n  * running    - planned / todo"
 

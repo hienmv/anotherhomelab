@@ -20,12 +20,12 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
                        └──────────────┬──────────────┘
                                       │ Cloudflare Tunnel (outbound only, no open ports)
 ┌─ Home LAN 192.168.40.0/24 ──────────┼────────────────────────────────────────────────────────┐
-│                                     ▼                                                        │
-│                      ┌─────────────────────────────┐                                         │
-│                      │ cloudflared  (pi3, systemd) │                                         │
-│                      └──────────────┬──────────────┘                                         │
-│                                     │ http://192.168.40.250:80                               │
-│ ┌─ k3s v1.37.2  (pi4-8gb server + pi4-4gb agent) ──────────────────────────────────────────┐ │
+│ ┌─ k3s v1.37.2  (3 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
+│ │                                   ▼                                                      │ │
+│ │                    ┌─────────────────────────────┐                                       │ │
+│ │                    │ cloudflared  (pod, pi4-8gb) │                                       │ │
+│ │                    └──────────────┬──────────────┘                                       │ │
+│ │                                   │ traefik.kube-system.svc:80                           │ │
 │ │                                   ▼                                                      │ │
 │ │                    ┌─────────────────────────────┐                                       │ │
 │ │                    │       Traefik ingress       │                                       │ │
@@ -62,14 +62,15 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 ```text
 ┌─ pi4-8gb  .250 ────────────────┐  ┌─ pi4-4gb  .251 ────────────┐  ┌─ pi3  .252 ──────────────┐
 │ Pi 4B, 8 GB RAM, SD 32 GB      │  │ Pi 4B, 4 GB RAM, SD 64 GB  │  │ Pi 3B+, 1 GB, SD 32 GB   │
-│ k3s server (control plane)     │  │ k3s agent                  │  │ NOT in k3s yet           │
-│ label role=data                │  │ label role=apps            │  │ ! under-voltage on load  │
-│                                │  │                            │  │                          │
-│ * traefik, coredns             │  │ * cnpg operator            │  │ * cloudflared (systemd)  │
+│ k3s server (control plane)     │  │ k3s agent                  │  │ k3s agent                │
+│ label role=data                │  │ label role=apps            │  │ label role=light         │
+│                                │  │                            │  │ taint role=light:NoSched │
+│ * traefik, coredns             │  │ * cnpg operator            │  │                          │
 │ * metrics-server, local-path   │  │ * whoami x1                │  │ * ufw firewall           │
-│ * postgres pg-1                │  │ - web app (planned)        │  │ - k3s agent, taint light │
-│ * redis-0                      │  │ - workers + KEDA (planned) │  │ - cloudflared -> k3s     │
+│ * postgres pg-1                │  │ - web app (planned)        │  │ - light pods only        │
+│ * redis-0                      │  │ - workers + KEDA (planned) │  │ ! under-voltage on load  │
 │ * whoami x1                    │  │ - batch CronJobs (planned) │  │                          │
+│ * cloudflared (tunnel)         │  │                            │  │                          │
 │ - SSD for PG/Redis (todo)      │  │                            │  │                          │
 └────────────────────────────────┘  └────────────────────────────┘  └──────────────────────────┘
 
@@ -82,9 +83,9 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Component | Namespace | Runs on | Address (in-cluster) | Status |
 |---|---|---|---|---|
 | k3s v1.37.2 server | - | pi4-8gb | `https://192.168.40.250:6443` | running |
-| k3s agent | - | pi4-4gb | - | running |
+| k3s agent | - | pi4-4gb, pi3 (tainted `role=light`) | - | running |
 | Traefik ingress | kube-system | pi4-8gb | `:80` on node IPs (ServiceLB) | running |
-| cloudflared tunnel | host (systemd) | pi3 | -> `192.168.40.250:80` | running, move to k3s |
+| cloudflared tunnel 2026.10.7 | infra | pi4-8gb (`role=data`), 1 replica | -> `traefik.kube-system.svc:80` | running |
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
 | PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
@@ -102,13 +103,13 @@ App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_P
 |---|---|---|---|
 | pi4-8gb | 192.168.40.250 | Pi 4B, 8 GB, SD 32 GB | k3s server, data |
 | pi4-4gb | 192.168.40.251 | Pi 4B, 4 GB, SD 64 GB | k3s agent, apps |
-| pi3 | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | not joined (power issue) |
+| pi3 | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | k3s agent, light pods only (taint); weak PSU |
 
 ## Usage
 
 ```bash
 export KUBECONFIG=~/.kube/homelab.yaml
-kubectl apply -f k8s/data/ -f k8s/apps/
+kubectl apply -f k8s/infra/ -f k8s/data/ -f k8s/apps/
 ```
 
 - Full setup guide and checklist: [K3S-GUIDE.md](K3S-GUIDE.md)

@@ -1,0 +1,73 @@
+# Cloudflare Tunnel connector in k3s, pinned to pi4-8gb (role=data).
+# Single replica: pi4-8gb also runs Traefik/Postgres/Redis, so a second replica
+# elsewhere would not keep the site up if that node fails.
+# Tunnel: test-cloudflared-tunnel (ab958f58-ce09-42de-a826-bd8a8779bdbd)
+# DNS (Cloudflare dashboard): CNAME @ and * -> <tunnel-id>.cfargotunnel.com, proxied.
+#
+# Credentials secret is created out-of-band (never commit it):
+#   kubectl -n infra create secret generic tunnel-creds --from-file=credentials.json=<tunnel-id>.json
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: infra
+data:
+  config.yaml: |
+    tunnel: ab958f58-ce09-42de-a826-bd8a8779bdbd
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    ingress:
+      - hostname: hien0ethan.com
+        service: http://traefik.kube-system.svc.cluster.local:80
+      - hostname: "*.hien0ethan.com"
+        service: http://traefik.kube-system.svc.cluster.local:80
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: cloudflared }
+  template:
+    metadata:
+      labels: { app: cloudflared }
+      annotations:
+        config-rev: "1"   # bump to restart pod after editing the ConfigMap
+    spec:
+      nodeSelector:
+        role: data          # pi4-8gb
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:2026.10.7
+          args: ["tunnel", "--config", "/etc/cloudflared/config/config.yaml", "run"]
+          ports:
+            - { name: metrics, containerPort: 2000 }
+          livenessProbe:
+            httpGet: { path: /ready, port: 2000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/cloudflared/config, readOnly: true }
+            - { name: creds, mountPath: /etc/cloudflared/creds, readOnly: true }
+      volumes:
+        - name: config
+          configMap: { name: cloudflared }
+        - name: creds
+          secret: { secretName: tunnel-creds }
