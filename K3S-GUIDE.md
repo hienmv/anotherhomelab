@@ -274,7 +274,7 @@ kind: Ingress
 metadata: { name: web, namespace: apps }
 spec:
   rules:
-    - host: hien.qzz.io
+    - host: app.hien0ethan.com
       http:
         paths: [{ path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }]
 ```
@@ -383,9 +383,9 @@ data:
     metrics: 0.0.0.0:2000
     no-autoupdate: true
     ingress:
-      - hostname: "*.hien.qzz.io"
+      - hostname: "*.hien0ethan.com"
         service: http://traefik.kube-system.svc:80
-      - hostname: hien.qzz.io
+      - hostname: hien0ethan.com
         service: http://traefik.kube-system.svc:80
       - service: http_status:404
 ---
@@ -412,7 +412,7 @@ spec:
         - { name: config, configMap: { name: cloudflared } }
         - { name: creds,  secret: { secretName: tunnel-creds } }
 ```
-Then stop the host one: `ssh pi3 'sudo systemctl disable --now cloudflared'`. Each new hostname = an Ingress rule plus a DNS route in Cloudflare (`cloudflared tunnel route dns <tunnel> app.hien.qzz.io`).
+Then stop the host one: `ssh pi3 'sudo systemctl disable --now cloudflared'`. DNS already has a proxied wildcard `*` CNAME to the tunnel, so a new subdomain only needs an Ingress rule with that host.
 
 ## 9. Backups (do not skip)
 
@@ -452,10 +452,9 @@ Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo
 - [ ] Buy/mount SSD on pi4-8gb (3.4)
 - [x] Back up and remove host nginx/php-fpm (3.3): backups at `~/web-backup-2026-11-07.tgz` on pi3 + pi4-8gb; tunnel hostnames → `192.168.40.250:80`
 - [x] pi3 ufw: allow 192.168.40.0/24, 10.42.0.0/16, 10.43.0.0/16
-- [ ] Fix `hien.qzz.io` DNS delegation (no NS records publicly, 2026-11-07)
+- [x] Old `hien.qzz.io` is gone; new domain `hien0ethan.com` (Cloudflare Registrar). DNS: CNAME `@` and `*` → `<tunnel-id>.cfargotunnel.com` (proxied). Host cloudflared on pi3 routes both to `192.168.40.250:80` (Traefik). Verified 2026-11-07.
 - [x] k3s v1.37.2 server (pi4-8gb) + agent (pi4-4gb), kubeconfig `~/.kube/homelab.yaml`, demo `k8s/apps/whoami.yaml` (2026-11-07)
 - [ ] pi3 agent (after power fix)
-- [ ] New domain (old hien.qzz.io is gone) → repoint tunnel
 - [x] CNPG 1.30.1 + Postgres 17 (`k8s/data/postgres.yaml`), Redis 8.2 (`k8s/data/redis.yaml`), secret `apps/app-env` (2026-11-07). On SD card for now.
 - [ ] Move PG/Redis volumes to SSD
 - [ ] App image on GHCR, web/worker/cron (7)
