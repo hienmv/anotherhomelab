@@ -1,0 +1,471 @@
+# Homelab k3s Guide
+
+On-prem distributed stack on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web app, queue workers, batch jobs.
+
+## 1. Resource audit (2026-11-07)
+
+| | pi4-8gb (`hien-pi-4b`) | pi4-4gb (`hien-pi-4b-4gb`) | pi3 (`hien-pi-3b`) |
+|---|---|---|---|
+| IP (static) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
+| Board | Pi 4B rev 1.5 | Pi 4B rev 1.1 | Pi 3B+ |
+| CPU | 4 cores A72 | 4 cores A72 | 4 cores A53 |
+| RAM | 7.6 GiB | 3.7 GiB | 905 MiB |
+| Disk | 32 GB SD | 64 GB SD | 32 GB SD |
+| OS | Debian 13 trixie, arm64, kernel 6.12 | same | same |
+| Power (`get_throttled`) | `0x0` OK | `0x50000` under-voltage happened before | `0x50005` **under-voltage now** |
+| Running now | nginx :80, php8.4-fpm | nothing | nginx :80, **cloudflared** |
+
+### Blockers to fix before installing
+
+1. **Memory cgroup disabled** on all nodes (`cgroup_disable=memory` in cmdline, `memory` missing from `/sys/fs/cgroup/cgroup.controllers`). k3s will not start without it.
+2. **pi3 is under-voltage right now**, and pi4-4gb was under-voltage earlier. Use the official PSUs (Pi 4: 5V/3A USB-C, Pi 3B+: 5V/2.5A micro-USB) and short, thick cables. Under-voltage corrupts SD cards and the k3s datastore.
+3. ~~IPs come from DHCP.~~ **Done 2026-11-07:** static IPs .250/.251/.252 set via NetworkManager (HUMAX router has no reservation, pool .2–.254 is fixed).
+4. **Port 80 is taken** by host nginx on pi3 and pi4-8gb. k3s ServiceLB/Traefik needs 80/443 on the nodes.
+5. **Everything is on SD cards.** That is fine for k3s itself (with the SQLite datastore), but it is bad for PostgreSQL (wear, slow fsync). **Strongly recommended: a USB 3 SSD on pi4-8gb** (any 120 GB+ SATA SSD plus a UASP adapter, or a USB NVMe enclosure).
+6. ~~Stale Cloudflare tunnel target~~ **Done:** `pi4.hien.qzz.io` → `192.168.40.250`.
+
+## 2. Architecture
+
+```
+                 Internet
+                    │  (Cloudflare Tunnel, no port-forward)
+                    ▼
+     ┌──────────── k3s cluster ─────────────────────────────┐
+     │ cloudflared (Deployment) ──► Traefik (Ingress)       │
+     │                                │                     │
+     │                        web app (Deployment, 2x)      │
+     │                          │            │              │
+     │                   PostgreSQL       Redis ◄── workers │
+     │                   (CloudNativePG)  (cache + queue)   │
+     │                          ▲            ▲              │
+     │                          └── batch (CronJob / Job) ──┘│
+     └──────────────────────────────────────────────────────┘
+```
+
+### Node roles
+
+| Node | k3s role | Runs | Budget |
+|---|---|---|---|
+| **pi4-8gb** | server (control plane, SQLite datastore) | k3s server, PostgreSQL, Redis, Traefik | ~1 GB k3s, 2 GB PG, 512 MB Redis, rest headroom |
+| **pi4-4gb** | agent | web app, queue workers, batch Jobs | ~3 GB for apps |
+| **pi3** | agent, tainted `light` | cloudflared, small exporters/cron | ~500 MB usable. Nothing heavy. |
+
+Design decisions:
+- **Single server, no HA.** HA needs 3 servers running etcd, and etcd on SD cards plus 1 GB on pi3 is a bad fit. Mitigate with datastore + DB backups. You can rebuild the control plane in about 15 minutes.
+- **Data is pinned to pi4-8gb** (local-path volumes on the SSD). Stateless apps can float.
+- **Redis is both cache and queue.** It is simple and fast enough for a homelab. Use Redis Streams, BullMQ (Node), Celery/RQ/Arq (Python), or Asynq (Go).
+- **Batch** = k8s `CronJob` for schedules and `Job` for one-offs. **KEDA** scales workers on queue length.
+- **Exposure** via Cloudflare Tunnel running inside the cluster. No open router ports, free TLS.
+- **Images** are built on the Mac (Apple Silicon = arm64 native) and pushed to GHCR.
+
+## 3. Prepare nodes (all 3)
+
+### 3.1 Fix power + DHCP reservations
+Do this physically / in the router first. Check afterwards: `vcgencmd get_throttled` should print `0x0` after a reboot under load.
+
+### 3.2 Enable memory cgroup, update, reboot
+```bash
+for h in pi3 pi4-8gb pi4-4gb; do
+  ssh $h 'sudo sed -i "1 s/\$/ cgroup_enable=memory/" /boot/firmware/cmdline.txt &&
+          sudo apt-get update && sudo apt-get -y full-upgrade &&
+          sudo apt-get -y install curl nfs-common open-iscsi jq &&
+          sudo reboot'
+done
+# after reboot, should list "memory":
+for h in pi3 pi4-8gb pi4-4gb; do ssh $h 'echo $(hostname): $(cat /sys/fs/cgroup/cgroup.controllers)'; done
+```
+
+### 3.3 Free port 80
+Back up anything you need from host nginx first (`/var/www`, `/etc/nginx/sites-available`), then:
+```bash
+ssh pi4-8gb 'sudo systemctl disable --now nginx php8.4-fpm'
+ssh pi3     'sudo systemctl disable --now nginx'
+```
+The site served at `hien.qzz.io` goes down until it is migrated into k3s (step 8). Keep host `cloudflared` running until then.
+
+### 3.4 (Recommended) Mount SSD on pi4-8gb
+```bash
+ssh pi4-8gb
+lsblk                       # find the SSD, e.g. /dev/sda
+sudo mkfs.ext4 -L ssd /dev/sda      # DESTROYS data on /dev/sda
+sudo mkdir -p /mnt/ssd
+echo 'LABEL=ssd /mnt/ssd ext4 defaults,noatime 0 2' | sudo tee -a /etc/fstab
+sudo mount -a && sudo mkdir -p /mnt/ssd/k3s-storage
+```
+
+## 4. Install k3s
+
+### 4.1 Server on pi4-8gb
+```bash
+ssh pi4-8gb 'curl -sfL https://get.k3s.io | sh -s - server \
+  --write-kubeconfig-mode 600 \
+  --tls-san pi4-8gb --tls-san 192.168.40.250 \
+  --node-label role=data \
+  --kubelet-arg=system-reserved=cpu=250m,memory=512Mi \
+  --default-local-storage-path /mnt/ssd/k3s-storage'
+# no SSD yet? drop the last flag (default /var/lib/rancher/k3s/storage on SD)
+```
+
+### 4.2 Agents
+```bash
+TOKEN=$(ssh pi4-8gb 'sudo cat /var/lib/rancher/k3s/server/node-token')
+
+ssh pi4-4gb "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
+  --node-label role=apps --kubelet-arg=system-reserved=memory=256Mi"
+
+ssh pi3 "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
+  --node-label role=light --node-taint role=light:NoSchedule \
+  --kubelet-arg=system-reserved=memory=128Mi"
+```
+
+### 4.3 kubectl from the Mac
+```bash
+mkdir -p ~/.kube
+ssh pi4-8gb 'sudo cat /etc/rancher/k3s/k3s.yaml' \
+  | sed 's/127.0.0.1/192.168.40.250/; s/: default/: homelab/' > ~/.kube/homelab.yaml
+chmod 600 ~/.kube/homelab.yaml
+export KUBECONFIG=~/.kube/homelab.yaml     # add to ~/.zshrc
+kubectl get nodes -o wide                   # expect 3 Ready
+brew install helm k9s
+```
+
+### 4.4 Namespaces
+```bash
+kubectl create ns data; kubectl create ns apps; kubectl create ns infra
+```
+
+## 5. PostgreSQL (CloudNativePG)
+
+CNPG gives you failover-ready Postgres, scheduled backups, and a `-rw` service. It supports arm64.
+
+```bash
+helm repo add cnpg https://cloudnative-pg.github.io/charts
+helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace
+```
+
+`k8s/data/postgres.yaml`:
+```yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: { name: pg, namespace: data }
+spec:
+  instances: 1                      # single node with data; raise when you add SSD to pi4-4gb
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage: { size: 40Gi, storageClass: local-path }
+  affinity:
+    nodeSelector: { role: data }
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { memory: 2Gi }
+  postgresql:
+    parameters:
+      shared_buffers: 512MB
+      effective_cache_size: 1536MB
+      max_connections: "100"
+      wal_compression: "on"
+  bootstrap:
+    initdb: { database: app, owner: app }   # creates secret pg-app (user/password/uri)
+```
+```bash
+kubectl apply -f k8s/data/postgres.yaml
+kubectl -n data get cluster pg
+kubectl -n data get secret pg-app -o jsonpath='{.data.uri}' | base64 -d   # connection string
+```
+In-cluster DSN host: `pg-rw.data.svc:5432`.
+
+## 6. Redis (cache + queue)
+
+Use a plain manifest with the official image. Avoid Bitnami charts (their free images were discontinued in 2025).
+
+`k8s/data/redis.yaml`:
+```yaml
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: data }
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis, namespace: data }
+spec:
+  serviceName: redis
+  replicas: 1
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      nodeSelector: { role: data }
+      containers:
+        - name: redis
+          image: redis:8-alpine
+          args: ["--appendonly", "yes", "--maxmemory", "400mb",
+                 "--maxmemory-policy", "noeviction",          # queue: never drop jobs
+                 "--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: redis, key: password } }
+          ports: [{ containerPort: 6379 }]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { memory: 512Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources: { requests: { storage: 5Gi } }
+```
+```bash
+kubectl -n data create secret generic redis --from-literal=password="$(openssl rand -hex 24)"
+kubectl apply -f k8s/data/redis.yaml
+```
+Note: `noeviction` is right for a queue. If you also want an LRU cache, run a second small Redis with `allkeys-lru` instead of mixing the two.
+
+## 7. Apps: web, workers, batch
+
+### 7.1 Build arm64 images on the Mac
+```bash
+docker buildx build --platform linux/arm64 -t ghcr.io/<gh-user>/web:0.1.0 --push .
+# private repo -> pull secret:
+kubectl -n apps create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username=<gh-user> --docker-password=<PAT read:packages>
+```
+
+### 7.2 Shared config
+```bash
+kubectl -n apps create secret generic app-env \
+  --from-literal=DATABASE_URL="$(kubectl -n data get secret pg-app -o jsonpath='{.data.uri}' | base64 -d | sed 's/pg-rw/pg-rw.data.svc/')" \
+  --from-literal=REDIS_URL="redis://:$(kubectl -n data get secret redis -o jsonpath='{.data.password}' | base64 -d)@redis.data.svc:6379/0"
+```
+
+### 7.3 Web app + Ingress
+`k8s/apps/web.yaml`:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, namespace: apps }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      imagePullSecrets: [{ name: ghcr }]
+      containers:
+        - name: web
+          image: ghcr.io/<gh-user>/web:0.1.0
+          envFrom: [{ secretRef: { name: app-env } }]
+          ports: [{ containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { memory: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: apps }
+spec: { selector: { app: web }, ports: [{ port: 80, targetPort: 8080 }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: web, namespace: apps }
+spec:
+  rules:
+    - host: hien.qzz.io
+      http:
+        paths: [{ path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }]
+```
+
+### 7.4 Queue workers + autoscale with KEDA
+```bash
+helm repo add kedacore https://kedacore.github.io/charts
+helm upgrade --install keda kedacore/keda -n keda --create-namespace
+```
+`k8s/apps/worker.yaml`:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: worker, namespace: apps }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: worker } }
+  template:
+    metadata: { labels: { app: worker } }
+    spec:
+      imagePullSecrets: [{ name: ghcr }]
+      terminationGracePeriodSeconds: 60      # let jobs finish on SIGTERM
+      containers:
+        - name: worker
+          image: ghcr.io/<gh-user>/web:0.1.0
+          command: ["./worker"]               # same image, different entrypoint
+          envFrom: [{ secretRef: { name: app-env } }]
+          resources:
+            requests: { cpu: 200m, memory: 128Mi }
+            limits:   { memory: 512Mi }
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: { name: worker, namespace: apps }
+spec:
+  scaleTargetRef: { name: worker }
+  minReplicaCount: 1
+  maxReplicaCount: 6
+  triggers:
+    - type: redis
+      metadata:
+        address: redis.data.svc:6379
+        listName: jobs                 # your queue key (list-based queue)
+        listLength: "20"               # 1 replica per 20 pending jobs
+      authenticationRef: { name: redis-auth }
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata: { name: redis-auth, namespace: apps }
+spec:
+  secretTargetRef: [{ parameter: password, name: redis-pass, key: password }]
+```
+```bash
+kubectl -n apps create secret generic redis-pass \
+  --from-literal=password="$(kubectl -n data get secret redis -o jsonpath='{.data.password}' | base64 -d)"
+```
+If you use Redis Streams instead of lists, use the `redis-streams` trigger (`stream`, `consumerGroup`, `pendingEntriesCount`).
+
+### 7.5 Batch: CronJob
+`k8s/apps/nightly.yaml`:
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nightly-report, namespace: apps }
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Asia/Tokyo
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          imagePullSecrets: [{ name: ghcr }]
+          nodeSelector: { role: apps }
+          containers:
+            - name: job
+              image: ghcr.io/<gh-user>/web:0.1.0
+              command: ["./batch", "nightly-report"]
+              envFrom: [{ secretRef: { name: app-env } }]
+              resources: { requests: { cpu: 500m, memory: 256Mi }, limits: { memory: 1Gi } }
+```
+For big one-off fan-out, use a `Job` with `completions: N`, `parallelism: 3`, `completionMode: Indexed` (each pod reads `JOB_COMPLETION_INDEX`).
+
+## 8. Expose via Cloudflare Tunnel (in cluster, on pi3)
+
+Reuse the existing tunnel credentials from pi3:
+```bash
+ssh pi3 'sudo cat /etc/cloudflared/ab958f58-ce09-42de-a826-bd8a8779bdbd.json' > /tmp/tunnel.json
+kubectl -n infra create secret generic tunnel-creds --from-file=credentials.json=/tmp/tunnel.json
+rm /tmp/tunnel.json
+```
+`k8s/infra/cloudflared.yaml`:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: cloudflared, namespace: infra }
+data:
+  config.yaml: |
+    tunnel: ab958f58-ce09-42de-a826-bd8a8779bdbd
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    ingress:
+      - hostname: "*.hien.qzz.io"
+        service: http://traefik.kube-system.svc:80
+      - hostname: hien.qzz.io
+        service: http://traefik.kube-system.svc:80
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: cloudflared, namespace: infra }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: cloudflared } }
+  template:
+    metadata: { labels: { app: cloudflared } }
+    spec:
+      tolerations: [{ key: role, value: light, effect: NoSchedule }]
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:2025.10.0
+          args: ["tunnel", "--config", "/etc/cloudflared/config/config.yaml", "run"]
+          livenessProbe: { httpGet: { path: /ready, port: 2000 } }
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 128Mi } }
+          volumeMounts:
+            - { name: config, mountPath: /etc/cloudflared/config }
+            - { name: creds,  mountPath: /etc/cloudflared/creds }
+      volumes:
+        - { name: config, configMap: { name: cloudflared } }
+        - { name: creds,  secret: { secretName: tunnel-creds } }
+```
+Then stop the host one: `ssh pi3 'sudo systemctl disable --now cloudflared'`. Each new hostname = an Ingress rule plus a DNS route in Cloudflare (`cloudflared tunnel route dns <tunnel> app.hien.qzz.io`).
+
+## 9. Backups (do not skip)
+
+| What | How | Where |
+|---|---|---|
+| k3s datastore | `sudo k3s etcd-snapshot` does not apply to SQLite. Cron: `sqlite3 /var/lib/rancher/k3s/server/db/state.db ".backup /mnt/ssd/backup/k3s-$(date +%F).db"` plus a copy of `/var/lib/rancher/k3s/server/token` | SSD, then offsite |
+| PostgreSQL | CNPG `ScheduledBackup` to S3-compatible storage (Cloudflare R2 / Backblaze B2 / MinIO), **or** a CronJob running `pg_dump -Fc` | offsite |
+| Manifests | this repo (git), push to GitHub | GitHub |
+
+Test a restore once. A backup you have never restored is unverified.
+
+## 10. Observability (light)
+
+- Built-in: `kubectl top nodes/pods` (k3s ships metrics-server), `k9s`.
+- Next step: **VictoriaMetrics single + Grafana** (or `victoria-metrics-k8s-stack`) on pi4-8gb. It is about 3x lighter than kube-prometheus-stack.
+- Logs: `kubectl logs`, or Loki single-binary later. Don't run heavy log stacks on SD cards.
+
+## 11. Repo layout suggestion
+
+```
+homelab/
+├── K3S-GUIDE.md
+├── k8s/
+│   ├── data/      postgres.yaml redis.yaml
+│   ├── apps/      web.yaml worker.yaml nightly.yaml
+│   └── infra/     cloudflared.yaml
+└── scripts/       backup-k3s.sh
+```
+Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo and applies it.
+
+## 12. Order of work (checklist)
+
+- [x] Static IPs (.250/.251/.252)
+- [ ] Fix power supplies (pi3 urgent)
+- [x] cmdline `cgroup_enable=memory`, upgrade, reboot (3.2): pi4-8gb + pi4-4gb done 2026-11-07 (kernel 6.18)
+- [ ] same for pi3 (after power fix)
+- [ ] Buy/mount SSD on pi4-8gb (3.4)
+- [x] Back up and remove host nginx/php-fpm (3.3): backups at `~/web-backup-2026-11-07.tgz` on pi3 + pi4-8gb; tunnel hostnames → `192.168.40.250:80`
+- [x] pi3 ufw: allow 192.168.40.0/24, 10.42.0.0/16, 10.43.0.0/16
+- [ ] Fix `hien.qzz.io` DNS delegation (no NS records publicly, 2026-11-07)
+- [x] k3s v1.37.2 server (pi4-8gb) + agent (pi4-4gb), kubeconfig `~/.kube/homelab.yaml`, demo `k8s/apps/whoami.yaml` (2026-11-07)
+- [ ] pi3 agent (after power fix)
+- [ ] New domain (old hien.qzz.io is gone) → repoint tunnel
+- [x] CNPG 1.30.1 + Postgres 17 (`k8s/data/postgres.yaml`), Redis 8.2 (`k8s/data/redis.yaml`), secret `apps/app-env` (2026-11-07). On SD card for now.
+- [ ] Move PG/Redis volumes to SSD
+- [ ] App image on GHCR, web/worker/cron (7)
+- [ ] cloudflared in cluster, retire host cloudflared (8)
+- [ ] Backups + restore test (9)
+- [ ] Monitoring (10), Flux (11)
+
+## Uninstall / reset
+```bash
+ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh
+ssh pi3     /usr/local/bin/k3s-agent-uninstall.sh
+ssh pi4-8gb /usr/local/bin/k3s-uninstall.sh      # wipes the cluster state
+```

@@ -1,0 +1,28 @@
+# Credentials: never commit
+*.kubeconfig
+kubeconfig*
+k3s.yaml
+homelab.yaml
+*.pem
+*.key
+id_*
+credentials.json
+*-creds.json
+tunnel*.json
+.env
+.env.*
+*.secret.yaml
+secrets/
+
+# Backups / archives
+*.tgz
+*.tar.gz
+*.dump
+*.sql
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
