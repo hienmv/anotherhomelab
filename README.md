@@ -170,7 +170,7 @@ or Cloudflare Access for SSH (not set up).
 
 ```bash
 export KUBECONFIG=~/.kube/homelab.yaml
-alias flux='docker run --rm -i -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/homelab.yaml ghcr.io/fluxcd/flux-cli:v2.10.0'
+alias flux='docker run --rm -i --network host -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/homelab.yaml ghcr.io/fluxcd/flux-cli:v2.10.0'
 flux get kustomizations          # sync status
 flux get helmreleases -A
 flux reconcile source git flux-system   # pull now instead of waiting

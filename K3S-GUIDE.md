@@ -520,6 +520,7 @@ Each `k8s/<folder>/kustomization.yaml` lists its files; a new manifest must be a
 Flux CLI on the Mac runs from its container image (alias in README → Usage):
 - `brew install fluxcd/tap/flux` failed: GitHub release downloads returned HTTP 504.
 - `brew install flux` (Homebrew core) is a **different, unrelated tool** named flux (v0.201). Don't use it.
+- The container needs `--network host` (Colima): without it, `connection refused` to `192.168.40.250:6443`.
 
 ### 11.3 Secrets kept out of git (create once per cluster)
 
