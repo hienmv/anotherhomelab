@@ -1,0 +1,55 @@
+# Local run of the full system: http://localhost:8080
+#   docker compose up --build
+# Sample accounts: alice/alice123, bob/bob123, carol/carol123
+name: ticketlite
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://app:app@postgres:5432/app
+  REDIS_URL: redis://redis:6379/0
+  SESSION_SECRET: 6c6f63616c2d6465762d6f6e6c792d6e6f742d612d7265616c2d736563726574
+  COOKIE_SECURE: "false"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:8.2-alpine
+    command: ["--appendonly", "yes"]
+
+  api:
+    build: ./backend
+    image: ticketlite-backend:dev
+    environment:
+      <<: *backend-env
+      ROLE: api
+    ports: ["8081:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  worker:
+    image: ticketlite-backend:dev
+    environment:
+      <<: *backend-env
+      ROLE: worker
+    deploy:
+      replicas: 2
+    depends_on:
+      api: { condition: service_started }
+
+  web:
+    build: ./web
+    image: ticketlite-web:dev
+    environment:
+      API_UPSTREAM: http://api:8080
+    ports: ["8080:8080"]
+    depends_on: [api]

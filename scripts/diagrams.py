@@ -105,7 +105,7 @@ def draw_flow():
     c.put(62, 23, "▼")
 
     c.box(5, 24, 19, 4, lines=["whoami (demo)", "2 pods, ns apps"], center=True)
-    c.box(48, 24, 29, 4, lines=["web app  (planned)", "ns apps, env: app-env"], center=True, dashed=True)
+    c.box(48, 24, 29, 4, lines=["TicketLite web + api x2", "tickets.hien0ethan.com"], center=True)
 
     # web -> postgres / redis
     c.put(50, 27, "┬")
@@ -114,7 +114,7 @@ def draw_flow():
     c.put(50, 30, "▼")
     c.put(70, 27, "┬")
     c.vline(70, 28, 29)
-    c.put(72, 29, "enqueue")
+    c.put(72, 29, "gate + XADD")
     c.put(70, 30, "▼")
 
     c.box(26, 31, 28, 5, lines=["PostgreSQL 17 (CNPG)", "pg-rw.data.svc:5432", "PVC 10Gi, pi4-8gb"], center=True)
@@ -127,7 +127,7 @@ def draw_flow():
     c.put(28, 36, "▲")
 
     # workers -> redis (consume), workers -> postgres (write)
-    c.box(58, 38, 28, 4, lines=["workers  (planned)", "KEDA: scale on queue len"], center=True, dashed=True)
+    c.box(58, 38, 28, 4, lines=["TicketLite worker x2", "stream 'orders' consumer"], center=True)
     c.put(72, 38, "┴")
     c.vline(72, 37, 37)
     c.put(72, 36, "▲")
@@ -137,7 +137,7 @@ def draw_flow():
     c.put(40, 40, "└")
     c.vline(40, 37, 39)
     c.put(40, 36, "▲")
-    c.put(43, 39, "write")
+    c.put(43, 39, "confirm tx")
     return c.render()
 
 
@@ -156,7 +156,7 @@ def draw_nodes():
         "* cloudflared (tunnel)",
         "* vmsingle, vmagent, ksm",
         "* node-exporter",
-        "* whoami x1",
+        "* whoami x1, ticketlite pods",
         "- SSD for PG/Redis (todo)",
     ])
     c.box(36, 0, 30, 15, title="pi4-4gb  .251", lines=[
@@ -168,8 +168,8 @@ def draw_nodes():
         "* grafana, vm-operator",
         "* node-exporter",
         "* whoami x1",
-        "- web app (planned)",
-        "- workers + KEDA (planned)",
+        "* ticketlite pods",
+        "- KEDA autoscale (planned)",
         "- batch CronJobs (planned)",
     ])
     c.box(68, 0, 28, 15, title="pi3  .252", lines=[
@@ -198,9 +198,10 @@ def draw_ops():
         "ssh key id_homelab -> Pis",
         "browser -> https://grafana.lan",
     ])
-    c.box(56, 0, 36, 4, title="GitHub", lines=[
-        "hienmv/anotherhomelab",
-        "private, branch main",
+    c.box(56, 0, 36, 5, title="GitHub", lines=[
+        "hienmv/anotherhomelab (private)",
+        "Actions: images -> GHCR (arm64)",
+        "  then bump tag in k8s/ (commit)",
     ])
     # git push
     c.put(37, 2, "├")
@@ -208,8 +209,8 @@ def draw_ops():
     c.put(55, 2, "►")
     c.put(42, 1, "git push")
     # flux pulls
-    c.put(74, 3, "┬")
-    c.vline(74, 4, 9)
+    c.put(74, 4, "┬")
+    c.vline(74, 5, 9)
     c.put(53, 5, "pull every 1m (SSH)")
     c.put(52, 6, "read-only deploy key")
     c.put(74, 10, "▼")

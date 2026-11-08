@@ -569,6 +569,8 @@ Flux CLI on the Mac runs from its container image (alias in README → Usage):
 | `app-env` | apps | section 7.2 |
 | `grafana-admin` | monitoring | header of `k8s/releases/vm-stack-values.yaml` |
 | `grafana-lan-tls` | monitoring | header of `k8s/monitoring/grafana-https.yaml` |
+| `ticketlite` (`SESSION_SECRET`) | apps | `apps/ticketlite/README.md` → Kubernetes |
+| `ghcr-pull` (only if GHCR packages private) | apps | `apps/ticketlite/README.md` |
 
 Later: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual steps.
 
@@ -587,7 +589,8 @@ Later: encrypt them into git with SOPS + age so a rebuilt cluster needs no manua
 - [x] cloudflared in k3s: `k8s/infra/cloudflared.yaml`, 1 replica on pi4-8gb
 - [x] CNPG 1.30.1 + Postgres 17 (`k8s/data/postgres.yaml`), Redis 8.2 (`k8s/data/redis.yaml`), secret `apps/app-env` (2026-11-07). On SD card for now.
 - [ ] Move PG/Redis volumes to SSD
-- [ ] App image on GHCR, web/worker/cron (7)
+- [x] First app: TicketLite (web/api/worker), CI → GHCR → Flux (2026-11-08); cron still todo
+- [x] Traefik trusts X-Forwarded-* from pods (`k8s/infra/traefik-config.yaml`) for Secure cookies via tunnel
 - [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9): deferred 2026-11-08, revisit before real data
 - [x] Monitoring (10): victoria-metrics-k8s-stack 0.97.1, Grafana at grafana.lan (2026-11-08)

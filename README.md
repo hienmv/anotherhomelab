@@ -33,12 +33,12 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │                                   │ Host rules                                           │ │
 │ │           ┌───────────────────────┴───────────────────────┐                              │ │
 │ │           ▼                                               ▼                              │ │
-│ │  ┌─────────────────┐                        ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐                │ │
-│ │  │  whoami (demo)  │                        ┆     web app  (planned)    ┆                │ │
-│ │  │ 2 pods, ns apps │                        ┆   ns apps, env: app-env   ┆                │ │
-│ │  └─────────────────┘                        └┄┬┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┬┄┄┄┄┄┘                │ │
+│ │  ┌─────────────────┐                        ┌───────────────────────────┐                │ │
+│ │  │  whoami (demo)  │                        │  TicketLite web + api x2  │                │ │
+│ │  │ 2 pods, ns apps │                        │   tickets.hien0ethan.com  │                │ │
+│ │  └─────────────────┘                        └─┬───────────────────┬─────┘                │ │
 │ │                                               │                   │                      │ │
-│ │                                               │ SQL               │ enqueue              │ │
+│ │                                               │ SQL               │ gate + XADD          │ │
 │ │                                               ▼                   ▼                      │ │
 │ │                       ┌──────────────────────────┐    ┌──────────────────────────┐       │ │
 │ │                       │   PostgreSQL 17 (CNPG)   │    │ Redis 8.2 (queue/cache)  │       │ │
@@ -47,10 +47,10 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │                       └──────────────────────────┘    └──────────────────────────┘       │ │
 │ │                         ▲           ▲                               ▲                    │ │
 │ │                         │           │                               │ consume            │ │
-│ │ ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┴┄┐         │                 ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┴┄┄┄┄┄┄┄┄┄┄┄┄┐       │ │
-│ │ ┆ batch CronJob (planned) ┆         │  write          ┆    workers  (planned)    ┆       │ │
-│ │ ┆  nightly / one-off Jobs ┆         └─────────────────┤ KEDA: scale on queue len ┆       │ │
-│ │ └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘                           └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘       │ │
+│ │ ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┴┄┐         │                 ┌─────────────┴────────────┐       │ │
+│ │ ┆ batch CronJob (planned) ┆         │  confirm tx     │   TicketLite worker x2   │       │ │
+│ │ ┆  nightly / one-off Jobs ┆         └─────────────────┤ stream 'orders' consumer │       │ │
+│ │ └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘                           └──────────────────────────┘       │ │
 │ └──────────────────────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,10 +69,10 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ * metrics-server, local-path   │  │ * grafana, vm-operator     │  │ * node-exporter          │
 │ * postgres pg-1                │  │ * node-exporter            │  │ * ufw firewall           │
 │ * redis-0                      │  │ * whoami x1                │  │ - light pods only        │
-│ * cloudflared (tunnel)         │  │ - web app (planned)        │  │ ! under-voltage on load  │
-│ * vmsingle, vmagent, ksm       │  │ - workers + KEDA (planned) │  │                          │
+│ * cloudflared (tunnel)         │  │ * ticketlite pods          │  │ ! under-voltage on load  │
+│ * vmsingle, vmagent, ksm       │  │ - KEDA autoscale (planned) │  │                          │
 │ * node-exporter                │  │ - batch CronJobs (planned) │  │                          │
-│ * whoami x1                    │  │                            │  │                          │
+│ * whoami x1, ticketlite pods   │  │                            │  │                          │
 │ - SSD for PG/Redis (todo)      │  │                            │  │                          │
 └────────────────────────────────┘  └────────────────────────────┘  └──────────────────────────┘
 
@@ -92,8 +92,9 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
 | whoami demo | apps | both | catch-all Ingress | running |
-| Web app | apps | pi4-4gb (`role=apps`) | `*.hien0ethan.com` | planned |
-| Queue workers + KEDA | apps | pi4-4gb | Redis list `jobs` | planned |
+| TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://tickets.hien0ethan.com` | running |
+| TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
+| KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
 | Grafana (39 dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
@@ -102,6 +103,9 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
+
+CI/CD: `.github/workflows/ticketlite.yml` builds arm64 images to GHCR on push to `main`, then
+commits the new image tag to `k8s/apps/ticketlite/`; Flux deploys it. Details: [apps/ticketlite/README.md](apps/ticketlite/README.md).
 
 Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open https://grafana.lan, user `admin`,
 password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
@@ -122,10 +126,10 @@ How changes reach the cluster.
 <!-- diagram:ops:start -->
 ```text
 ┌─ Mac (admin workstation) ──────────┐                  ┌─ GitHub ─────────────────────────┐
-│ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab            │
-│ kubectl, helm, k9s, flux (docker)  ├─────────────────►│ private, branch main             │
-│ kubeconfig ~/.kube/homelab.yaml    │                  └─────────────────┬────────────────┘
-│ mkcert CA: signs grafana.lan       │                                    │
+│ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab (private)  │
+│ kubectl, helm, k9s, flux (docker)  ├─────────────────►│ Actions: images -> GHCR (arm64)  │
+│ kubeconfig ~/.kube/homelab.yaml    │                  │   then bump tag in k8s/ (commit) │
+│ mkcert CA: signs grafana.lan       │                  └─────────────────┬────────────────┘
 │ /etc/hosts: Pis + grafana.lan      │               pull every 1m (SSH)  │
 │ ssh key id_homelab -> Pis          │              read-only deploy key  │
 │ browser -> https://grafana.lan     │                                    │

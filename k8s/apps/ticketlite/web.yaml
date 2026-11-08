@@ -1,0 +1,63 @@
+# TicketLite frontend (React static files on nginx) + public Ingress.
+# https://tickets.hien0ethan.com : /api -> api Service, everything else -> web.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketlite-web
+  namespace: apps
+  labels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
+    spec:
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: ghcr.io/hienmv/ticketlite-web
+          env:
+            - { name: API_UPSTREAM, value: "http://ticketlite-api.apps.svc.cluster.local" }
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketlite-web
+  namespace: apps
+spec:
+  selector: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketlite
+  namespace: apps
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: tickets.hien0ethan.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: ticketlite-api, port: { name: http } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ticketlite-web, port: { name: http } } }

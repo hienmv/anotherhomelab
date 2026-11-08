@@ -1,0 +1,19 @@
+# Customises the Traefik bundled with k3s (k3s re-renders its Helm chart with these values).
+# Trust X-Forwarded-* headers from pods (cloudflared runs in the pod network 10.42.0.0/16), so apps
+# see X-Forwarded-Proto: https for visitors coming through the Cloudflare tunnel. Needed for
+# Secure cookies (TicketLite login).
+# Caveat (tested 2026-11-08): LAN clients hitting a node IP directly are also trusted, because
+# k3s ServiceLB forwards their traffic from a 10.42.x address. A LAN client can therefore fake
+# X-Forwarded-Proto/For for its OWN requests only. Internet traffic always arrives via cloudflared.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        forwardedHeaders:
+          trustedIPs:
+            - 10.42.0.0/16

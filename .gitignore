@@ -26,3 +26,14 @@ secrets/
 .idea/
 .vscode/
 *.swp
+
+# Build output (Gradle, Kotlin, IDE, Node)
+build/
+bin/
+.gradle/
+.kotlin/
+node_modules/
+dist/
+
+# Exception: database migrations are source code, not dumps
+!**/db/migration/*.sql
