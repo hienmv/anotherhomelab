@@ -52,8 +52,9 @@ grafana:
     storageClassName: local-path
     size: 1Gi
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits: { memory: 384Mi }
+    # 384Mi was OOMKilled (2026-11-08): ~415Mi steady, spikes on dashboard reload
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 768Mi }
   ingress:
     enabled: true
     ingressClassName: traefik
