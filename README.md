@@ -161,6 +161,15 @@ With Flux, routine changes need only `git push` from any machine. The Mac is the
 bastion host reached over VPN/SSO with audit logs; the homelab equivalent would be Tailscale
 or Cloudflare Access for SSH (not set up).
 
+**Decision (2026-11-08): no dedicated admin server.** Admin tasks (git, kubectl, ssh) need almost
+no resources; the only heavy job is building arm64 app images, which an Apple Silicon Mac does
+natively. A separate always-on admin box would add patching work and concentrate every key in one
+target, while Flux already lets any machine deploy via `git push`. Scheduled ops (backups, cert
+renewal) run in-cluster as CronJobs. Revisit if: several admins need audited access (bastion), or
+remote admin is needed while the Mac is off (first try Tailscale). If added: small spec is fine,
+keep it outside the cluster, not pi3. Hardware priority instead: SSD for pi4-8gb, pi3 PSU,
+then a backup target (NAS/mini PC).
+
 ## Usage (GitOps)
 
 1. Edit manifests under `k8s/` (or Helm values in `k8s/releases/`).
