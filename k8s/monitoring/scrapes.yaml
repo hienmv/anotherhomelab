@@ -1,0 +1,31 @@
+# Extra scrape targets for VictoriaMetrics (operator CRDs).
+---
+# PostgreSQL (CloudNativePG built-in exporter on :9187)
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: cnpg-pg
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [data]
+  selector:
+    matchLabels:
+      cnpg.io/cluster: pg
+  podMetricsEndpoints:
+    - port: metrics
+---
+# cloudflared tunnel metrics (:2000)
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: cloudflared
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [infra]
+  selector:
+    matchLabels:
+      app: cloudflared
+  podMetricsEndpoints:
+    - port: metrics

@@ -81,12 +81,22 @@ def draw_flow():
     c.box(23, 13, 31, 3, lines=["cloudflared  (pod, pi4-8gb)"], center=True)
     c.put(cx, 15, "┬")
     c.vline(cx, 16, 16)
-    c.put(cx + 2, 16, "traefik.kube-system.svc:80")
+    c.put(cx + 2, 16, "svc traefik:80")
     c.put(cx, 17, "▼")
     c.box(23, 18, 31, 3, lines=["Traefik ingress"], center=True)
     c.put(cx, 20, "┬")
     c.vline(cx, 21, 21)
     c.put(cx + 2, 21, "Host rules")
+
+    # monitoring (LAN only: Host grafana.lan, never routed by the tunnel)
+    c.box(58, 12, 34, 7, title="ns monitoring", lines=[
+        "vmagent --scrape--> all pods",
+        "  & node-exporter (3 nodes)",
+        "VMSingle: 30d, PVC 10Gi",
+        "Grafana: http://grafana.lan",
+        "(LAN only, not public)",
+    ])
+
     c.hline(22, 14, 62)
     c.put(14, 22, "┌")
     c.put(cx, 22, "┴")
@@ -133,8 +143,8 @@ def draw_flow():
 
 def draw_nodes():
     """Physical placement per node."""
-    c = Canvas(96, 13)
-    c.box(0, 0, 34, 13, title="pi4-8gb  .250", lines=[
+    c = Canvas(96, 15)
+    c.box(0, 0, 34, 15, title="pi4-8gb  .250", lines=[
         "Pi 4B, 8 GB RAM, SD 32 GB",
         "k3s server (control plane)",
         "label role=data",
@@ -143,27 +153,32 @@ def draw_nodes():
         "* metrics-server, local-path",
         "* postgres pg-1",
         "* redis-0",
-        "* whoami x1",
         "* cloudflared (tunnel)",
+        "* vmsingle, vmagent, ksm",
+        "* node-exporter",
+        "* whoami x1",
         "- SSD for PG/Redis (todo)",
     ])
-    c.box(36, 0, 30, 13, title="pi4-4gb  .251", lines=[
+    c.box(36, 0, 30, 15, title="pi4-4gb  .251", lines=[
         "Pi 4B, 4 GB RAM, SD 64 GB",
         "k3s agent",
         "label role=apps",
         "",
         "* cnpg operator",
+        "* grafana, vm-operator",
+        "* node-exporter",
         "* whoami x1",
         "- web app (planned)",
         "- workers + KEDA (planned)",
         "- batch CronJobs (planned)",
     ])
-    c.box(68, 0, 28, 13, title="pi3  .252", lines=[
+    c.box(68, 0, 28, 15, title="pi3  .252", lines=[
         "Pi 3B+, 1 GB, SD 32 GB",
         "k3s agent",
         "label role=light",
         "taint role=light:NoSched",
         "",
+        "* node-exporter",
         "* ufw firewall",
         "- light pods only",
         "! under-voltage on load",

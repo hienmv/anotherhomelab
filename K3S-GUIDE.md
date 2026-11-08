@@ -449,7 +449,9 @@ Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo
 - [ ] App image on GHCR, web/worker/cron (7)
 - [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9)
-- [ ] Monitoring (10), Flux (11)
+- [x] Monitoring (10): victoria-metrics-k8s-stack 0.97.1, Grafana at grafana.lan (2026-11-08)
+- [ ] Alerting (vmalert + Alertmanager + notification channel)
+- [ ] Flux (11)
 
 ## Uninstall / reset
 ```bash

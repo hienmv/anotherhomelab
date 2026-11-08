@@ -21,13 +21,13 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
                                       │ Cloudflare Tunnel (outbound only, no open ports)
 ┌─ Home LAN 192.168.40.0/24 ──────────┼────────────────────────────────────────────────────────┐
 │ ┌─ k3s v1.37.2  (3 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
-│ │                                   ▼                                                      │ │
-│ │                    ┌─────────────────────────────┐                                       │ │
-│ │                    │ cloudflared  (pod, pi4-8gb) │                                       │ │
-│ │                    └──────────────┬──────────────┘                                       │ │
-│ │                                   │ traefik.kube-system.svc:80                           │ │
-│ │                                   ▼                                                      │ │
-│ │                    ┌─────────────────────────────┐                                       │ │
+│ │                                   ▼                   ┌─ ns monitoring ────────────────┐ │ │
+│ │                    ┌─────────────────────────────┐    │ vmagent --scrape--> all pods   │ │ │
+│ │                    │ cloudflared  (pod, pi4-8gb) │    │   & node-exporter (3 nodes)    │ │ │
+│ │                    └──────────────┬──────────────┘    │ VMSingle: 30d, PVC 10Gi        │ │ │
+│ │                                   │ svc traefik:80    │ Grafana: http://grafana.lan    │ │ │
+│ │                                   ▼                   │ (LAN only, not public)         │ │ │
+│ │                    ┌─────────────────────────────┐    └────────────────────────────────┘ │ │
 │ │                    │       Traefik ingress       │                                       │ │
 │ │                    └──────────────┬──────────────┘                                       │ │
 │ │                                   │ Host rules                                           │ │
@@ -66,11 +66,13 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ label role=data                │  │ label role=apps            │  │ label role=light         │
 │                                │  │                            │  │ taint role=light:NoSched │
 │ * traefik, coredns             │  │ * cnpg operator            │  │                          │
-│ * metrics-server, local-path   │  │ * whoami x1                │  │ * ufw firewall           │
-│ * postgres pg-1                │  │ - web app (planned)        │  │ - light pods only        │
-│ * redis-0                      │  │ - workers + KEDA (planned) │  │ ! under-voltage on load  │
-│ * whoami x1                    │  │ - batch CronJobs (planned) │  │                          │
-│ * cloudflared (tunnel)         │  │                            │  │                          │
+│ * metrics-server, local-path   │  │ * grafana, vm-operator     │  │ * node-exporter          │
+│ * postgres pg-1                │  │ * node-exporter            │  │ * ufw firewall           │
+│ * redis-0                      │  │ * whoami x1                │  │ - light pods only        │
+│ * cloudflared (tunnel)         │  │ - web app (planned)        │  │ ! under-voltage on load  │
+│ * vmsingle, vmagent, ksm       │  │ - workers + KEDA (planned) │  │                          │
+│ * node-exporter                │  │ - batch CronJobs (planned) │  │                          │
+│ * whoami x1                    │  │                            │  │                          │
 │ - SSD for PG/Redis (todo)      │  │                            │  │                          │
 └────────────────────────────────┘  └────────────────────────────┘  └──────────────────────────┘
 
@@ -93,9 +95,15 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Web app | apps | pi4-4gb (`role=apps`) | `*.hien0ethan.com` | planned |
 | Queue workers + KEDA | apps | pi4-4gb | Redis list `jobs` | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
+| VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
+| Grafana (39 dashboards) | monitoring | pi4-4gb | `http://grafana.lan` (LAN only) | running |
+| node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
+
+Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open http://grafana.lan, user `admin`,
+password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
 
 ## Nodes
 
@@ -110,6 +118,8 @@ App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_P
 ```bash
 export KUBECONFIG=~/.kube/homelab.yaml
 kubectl apply -f k8s/infra/ -f k8s/data/ -f k8s/apps/
+# monitoring: see header of k8s/monitoring/vm-stack-values.yaml (helm), then
+kubectl apply -f k8s/monitoring/scrapes.yaml
 ```
 
 - Full setup guide and checklist: [K3S-GUIDE.md](K3S-GUIDE.md)
