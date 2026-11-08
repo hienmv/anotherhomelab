@@ -427,7 +427,7 @@ header of `k8s/monitoring/vm-stack-values.yaml`; extra scrapes (CNPG Postgres, c
 |---|---|---|
 | VMSingle | pi4-8gb | 30d retention, PVC 10Gi |
 | vmagent | pi4-8gb | scrape every 30s |
-| Grafana | pi4-4gb | admin password in secret `monitoring/grafana-admin` |
+| Grafana | pi4-4gb | admin password in secret `monitoring/grafana-admin`; mem limit 768Mi (384Mi OOMKilled) |
 | node-exporter | all 3 | tolerates pi3 taint |
 
 Not scraped: kube-scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
@@ -516,6 +516,13 @@ Each `k8s/<folder>/kustomization.yaml` lists its files; a new manifest must be a
 4. Pushed the repo, then `kubectl apply -k clusters/homelab/flux-system` to start syncing.
 5. Existing Helm releases `cnpg` and `vm` were adopted: HelmReleases use the same `releaseName`,
    `targetNamespace` and chart version.
+
+Result (2026-11-08): all 7 Kustomizations Ready on first sync; Helm releases adopted as upgrades
+(`cnpg` rev 2, `vm` rev 3); no workload pod was recreated. First GitOps change: Grafana memory limit
+384Mi → 768Mi (it was OOMKilled during the adoption upgrade), applied by push + Flux.
+
+Force a sync instead of waiting:
+`flux reconcile source git flux-system && flux reconcile kustomization <name>`.
 
 Flux CLI on the Mac runs from its container image (alias in README → Usage):
 - `brew install fluxcd/tap/flux` failed: GitHub release downloads returned HTTP 504.
