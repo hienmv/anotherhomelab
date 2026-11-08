@@ -402,15 +402,41 @@ spec:
 ```
 Then stop the host one: `ssh pi3 'sudo systemctl disable --now cloudflared'`. DNS already has a proxied wildcard `*` CNAME to the tunnel, so a new subdomain only needs an Ingress rule with that host.
 
-## 9. Backups (do not skip)
+## 9. Backups (plan, 2026-11-08; not implemented yet)
 
-| What | How | Where |
+A backup = a copy stored elsewhere **plus a tested restore**. It covers hardware death (SD card),
+mistakes (bad migration, accidental delete) and disaster (only an off-site copy survives).
+
+Why urgent: pi4-8gb's SD card (generic 32 GB, 2022) takes ~537 writes/min, ~12 GiB/day
+(measured 2026-11-08), and holds the OS, k3s control plane, Postgres, Redis and metrics.
+
+### 9.1 What to back up
+
+Git + Flux already restore all manifests and Helm values. Backups cover what exists only in the cluster:
+
+| Part | Recreatable without backup? | Method (planned) |
 |---|---|---|
-| k3s datastore | `sudo k3s etcd-snapshot` does not apply to SQLite. Cron: `sqlite3 /var/lib/rancher/k3s/server/db/state.db ".backup /mnt/ssd/backup/k3s-$(date +%F).db"` plus a copy of `/var/lib/rancher/k3s/server/token` | SSD, then offsite |
-| PostgreSQL | CNPG `ScheduledBackup` to S3-compatible storage (Cloudflare R2 / Backblaze B2 / MinIO), **or** a CronJob running `pg_dump -Fc` | offsite |
-| Manifests | this repo (git), push to GitHub | GitHub |
+| Postgres data | **no**, irreplaceable | CNPG native backup to Cloudflare R2: nightly base backup + continuous WAL (point-in-time restore), 14d retention |
+| Secrets (7, see 11.3) | mostly by hand; **tunnel creds: no** (new tunnel + DNS) | SOPS + age, encrypted in git |
+| k3s `state.db` + server token | mostly, via Flux | nightly copy to R2 |
+| Redis | yes, if jobs can be re-queued | AOF already on disk; copy nightly only if jobs matter |
+| Mac: `~/.ssh/id_homelab`, kubeconfig | SSH key lost = locked out of Pis | password manager (user) |
 
-Test a restore once. A backup you have never restored is unverified.
+Not backed up: manifests (git), container images, OS (reinstall + this guide), provisioned
+Grafana dashboards, metrics history (30d, disposable).
+
+### 9.2 Where: 3-2-1 rule
+
+3 copies, 2 devices, 1 off-site. Off-site = **Cloudflare R2** (S3-compatible, 10 GB free tier,
+free egress so restores cost nothing). Optional faster local copy on pi4-4gb (same house, also SD).
+
+### 9.3 Steps
+
+- [ ] Postgres → R2 (CNPG `backup.barmanObjectStore` + `ScheduledBackup`)
+- [ ] Restore test: bootstrap a temporary second cluster from the backup, compare row counts
+- [ ] Secrets → SOPS-encrypted in git (also removes manual secret recreation on rebuild)
+- [ ] k3s `state.db` → R2 nightly
+- [ ] User: SSH key + kubeconfig into password manager
 
 ## 10. Observability (light)
 
