@@ -1,0 +1,18 @@
+# Helm chart repositories used by HelmReleases in this folder.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+spec:
+  url: https://cloudnative-pg.github.io/charts
+  interval: 12h
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: vm
+  namespace: flux-system
+spec:
+  url: https://victoriametrics.github.io/helm-charts/
+  interval: 12h

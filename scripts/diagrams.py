@@ -186,7 +186,54 @@ def draw_nodes():
     return c.render() + "\n\n  * running    - planned / todo"
 
 
-DIAGRAMS = {"flow": draw_flow, "nodes": draw_nodes}
+def draw_ops():
+    """How changes reach the cluster: admin Mac -> GitHub -> Flux."""
+    c = Canvas(96, 17)
+    c.box(0, 0, 38, 9, title="Mac (admin workstation)", lines=[
+        "repo ~/workspace/source/homelab",
+        "kubectl, helm, k9s, flux (docker)",
+        "kubeconfig ~/.kube/homelab.yaml",
+        "mkcert CA: signs grafana.lan",
+        "/etc/hosts: Pis + grafana.lan",
+        "ssh key id_homelab -> Pis",
+        "browser -> https://grafana.lan",
+    ])
+    c.box(56, 0, 36, 4, title="GitHub", lines=[
+        "hienmv/anotherhomelab",
+        "private, branch main",
+    ])
+    # git push
+    c.put(37, 2, "├")
+    c.hline(2, 38, 54)
+    c.put(55, 2, "►")
+    c.put(42, 1, "git push")
+    # flux pulls
+    c.put(74, 3, "┬")
+    c.vline(74, 4, 9)
+    c.put(53, 5, "pull every 1m (SSH)")
+    c.put(52, 6, "read-only deploy key")
+    c.put(74, 10, "▼")
+    c.box(56, 11, 36, 6, title="k3s: ns flux-system", lines=[
+        "source, kustomize, helm ctrls",
+        "apply clusters/homelab ->",
+        "k8s/* in dependency order",
+        "(secrets stay out of git)",
+    ])
+    # mac -> cluster / pis
+    for x, label in ((8, "kubectl :6443"), (26, "ssh (setup)")):
+        c.put(x, 8, "┬")
+        c.vline(x, 9, 10)
+        c.put(x, 11, "▼")
+    c.put(10, 9, "admin")
+    c.put(28, 9, "OS, k3s")
+    c.put(2, 12, "k3s API")
+    c.put(2, 13, "pi4-8gb .250")
+    c.put(21, 12, "Pis .250-.252")
+    c.put(21, 13, "(hien@, sudo)")
+    return c.render()
+
+
+DIAGRAMS = {"flow": draw_flow, "nodes": draw_nodes, "ops": draw_ops}
 
 
 def main():

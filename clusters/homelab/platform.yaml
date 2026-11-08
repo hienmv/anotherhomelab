@@ -1,0 +1,85 @@
+# What Flux deploys from this repo, and in which order.
+#
+#   namespaces ─┬─> releases (Helm: cnpg, vm stack) ─┬─> data (Postgres, Redis) ─> apps
+#               │                                    └─> monitoring (scrapes, grafana https)
+#               └─> infra (cloudflared)
+#
+# prune: false on namespaces and data: deleting a file from git must never delete a
+# namespace or the Postgres database. Remove those by hand if really intended.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: namespaces
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./k8s/namespaces
+  prune: false
+  sourceRef: { kind: GitRepository, name: flux-system }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: releases
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: namespaces }]
+  interval: 10m
+  retryInterval: 2m
+  path: ./k8s/releases
+  prune: true
+  wait: true
+  timeout: 15m
+  sourceRef: { kind: GitRepository, name: flux-system }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: namespaces }]
+  interval: 10m
+  retryInterval: 2m
+  path: ./k8s/infra
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: data
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: releases }]
+  interval: 10m
+  retryInterval: 2m
+  path: ./k8s/data
+  prune: false
+  sourceRef: { kind: GitRepository, name: flux-system }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: data }]
+  interval: 10m
+  retryInterval: 2m
+  path: ./k8s/apps
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: releases }]
+  interval: 10m
+  retryInterval: 2m
+  path: ./k8s/monitoring
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system }

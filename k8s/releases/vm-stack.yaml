@@ -1,0 +1,30 @@
+# victoria-metrics-k8s-stack (VMSingle, vmagent, Grafana, exporters).
+# releaseName matches the original `helm install vm` so Flux adopts it.
+# Values: vm-stack-values.yaml (rendered into ConfigMap vm-stack-values by kustomize).
+# Out-of-band secrets it needs: monitoring/grafana-admin, monitoring/grafana-lan-tls.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vm
+  namespace: flux-system
+spec:
+  interval: 1h
+  timeout: 10m
+  releaseName: vm
+  targetNamespace: monitoring
+  storageNamespace: monitoring
+  chart:
+    spec:
+      chart: victoria-metrics-k8s-stack
+      version: 0.97.1
+      sourceRef: { kind: HelmRepository, name: vm, namespace: flux-system }
+  valuesFrom:
+    - kind: ConfigMap
+      name: vm-stack-values
+      valuesKey: values.yaml
+  install:
+    crds: CreateReplace
+    remediation: { retries: 3 }
+  upgrade:
+    crds: CreateReplace
+    remediation: { retries: 3 }

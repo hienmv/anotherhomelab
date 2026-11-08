@@ -98,6 +98,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
 | Grafana (39 dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
+| Flux v2.10 (GitOps) | flux-system | Pi 4s | pulls this repo every 1m (read-only deploy key) | running |
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
@@ -114,19 +115,71 @@ Browser fails while `curl` works? See [K3S-GUIDE.md §10.2](K3S-GUIDE.md#102-gra
 | pi4-4gb | 192.168.40.251 | Pi 4B, 4 GB, SD 64 GB | k3s agent, apps |
 | pi3 | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | k3s agent, light pods only (taint); weak PSU |
 
-## Usage
+## Operations
+
+How changes reach the cluster.
+
+<!-- diagram:ops:start -->
+```text
+┌─ Mac (admin workstation) ──────────┐                  ┌─ GitHub ─────────────────────────┐
+│ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab            │
+│ kubectl, helm, k9s, flux (docker)  ├─────────────────►│ private, branch main             │
+│ kubeconfig ~/.kube/homelab.yaml    │                  └─────────────────┬────────────────┘
+│ mkcert CA: signs grafana.lan       │                                    │
+│ /etc/hosts: Pis + grafana.lan      │               pull every 1m (SSH)  │
+│ ssh key id_homelab -> Pis          │              read-only deploy key  │
+│ browser -> https://grafana.lan     │                                    │
+└───────┬─────────────────┬──────────┘                                    │
+        │ admin           │ OS, k3s                                       │
+        │                 │                                               ▼
+        ▼                 ▼                             ┌─ k3s: ns flux-system ────────────┐
+  k3s API            Pis .250-.252                      │ source, kustomize, helm ctrls    │
+  pi4-8gb .250       (hien@, sudo)                      │ apply clusters/homelab ->        │
+                                                        │ k8s/* in dependency order        │
+                                                        │ (secrets stay out of git)        │
+                                                        └──────────────────────────────────┘
+```
+<!-- diagram:ops:end -->
+
+### Admin workstation (Mac)
+
+The Mac is part of the system, not just a laptop:
+
+| Role | What lives there | If the Mac is lost |
+|---|---|---|
+| Git source | this repo; `git push` = deploy (Flux) | clone again from GitHub |
+| Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux (docker) | re-copy `/etc/rancher/k3s/k3s.yaml` from pi4-8gb |
+| Pi access | SSH key `~/.ssh/id_homelab`, ssh config, `/etc/hosts` names | **locked out** unless key is backed up |
+| Private CA | mkcert CA key (signs `grafana.lan` cert, expires 2029-02-08) | new CA + new cert; old cert keeps working until expiry |
+| LAN browser | trusts mkcert CA; Chrome needs Local Network permission | - |
+
+Back up `~/.ssh/id_homelab` and the kubeconfig in a password manager. Never copy the mkcert CA
+key to an always-on server: it can mint certificates this Mac trusts for any site.
+
+With Flux, routine changes need only `git push` from any machine. The Mac is the
+**break-glass** box: debugging, secrets, OS-level work on the Pis. Production setups use a
+bastion host reached over VPN/SSO with audit logs; the homelab equivalent would be Tailscale
+or Cloudflare Access for SSH (not set up).
+
+## Usage (GitOps)
+
+1. Edit manifests under `k8s/` (or Helm values in `k8s/releases/`).
+2. `git commit` and `git push` to `main`.
+3. Flux applies it within ~1 minute, in order:
+   `namespaces → releases → data → apps`, `namespaces → infra`, `releases → monitoring`.
 
 ```bash
 export KUBECONFIG=~/.kube/homelab.yaml
-kubectl apply -f k8s/infra/ -f k8s/data/ -f k8s/apps/
-# monitoring: see header of k8s/monitoring/vm-stack-values.yaml (helm), then
-kubectl apply -f k8s/monitoring/scrapes.yaml
+alias flux='docker run --rm -i -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/homelab.yaml ghcr.io/fluxcd/flux-cli:v2.10.0'
+flux get kustomizations          # sync status
+flux get helmreleases -A
+flux reconcile source git flux-system   # pull now instead of waiting
 ```
 
 - Full setup guide and checklist: [K3S-GUIDE.md](K3S-GUIDE.md)
-- Manifests: `k8s/<namespace>/`
-- Secrets (DB/Redis passwords, tunnel credentials) are created in-cluster with
-  `kubectl create secret` and are never stored in this repo.
+- Layout: `clusters/homelab/` (Flux entry), `k8s/<folder>/` (what gets applied)
+- Secrets are **not** in git; created once with `kubectl create secret` (list in K3S-GUIDE.md §11.3).
+  `namespaces` and `data` have `prune: false`: deleting their files never deletes the database.
 
 ## Updating the diagrams
 
