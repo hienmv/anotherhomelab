@@ -93,7 +93,7 @@ def draw_flow():
         "vmagent --scrape--> all pods",
         "  & node-exporter (3 nodes)",
         "VMSingle: 30d, PVC 10Gi",
-        "Grafana: http://grafana.lan",
+        "Grafana: https://grafana.lan",
         "(LAN only, not public)",
     ])
 

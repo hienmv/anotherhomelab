@@ -449,17 +449,24 @@ so `grafana.lan` is unreachable from the internet by design.
 - Chrome's own DNS cache: `chrome://net-internals/#dns` → Clear host cache.
 - DNS-over-HTTPS (Firefox) or iCloud Private Relay bypass `/etc/hosts`.
 
-### 10.3 Grafana HTTPS with a private CA (in progress)
+### 10.3 Grafana HTTPS with a private CA (done 2026-11-08)
 
-Goal: `https://grafana.lan` with no browser warning, using [mkcert](https://github.com/FiloSottile/mkcert).
+`https://grafana.lan` with no browser warning on this Mac, using [mkcert](https://github.com/FiloSottile/mkcert).
 
 1. [x] `brew install mkcert` (Mac)
-2. [ ] `mkcert -install`: adds a local CA to the macOS keychain (needs sudo, user runs it).
+2. [x] `mkcert -install`: adds a local CA to the macOS keychain (needs sudo, user runs it).
    The CA key stays in `~/Library/Application Support/mkcert/rootCA-key.pem`. Never copy or share it:
    whoever holds it can mint certs this Mac trusts for any site. Remove with `mkcert -uninstall`.
-3. [ ] Issue cert for `grafana.lan`, load as TLS secret `monitoring/grafana-lan-tls`, delete local key files.
-4. [ ] Helm values: `grafana.ingress.tls` with that secret, `root_url: https://grafana.lan`, http→https redirect.
-5. [ ] Verify in browser.
+3. [x] Issue cert for `grafana.lan` (expires 2029-02-08), load as TLS secret `monitoring/grafana-lan-tls`, delete local key files.
+   Commands: header of `k8s/monitoring/grafana-https.yaml`.
+4. [x] Helm values: `grafana.ingress.tls` with that secret, `root_url: https://grafana.lan`; http→https via Traefik
+   Middleware `monitoring/redirect-https` (301).
+5. [x] Verified: `curl https://grafana.lan` → 200 with system trust; `http://` → 301 to https;
+   `grafana.hien0ethan.com` still serves whoami (not public).
+
+Found while doing this: the System keychain also trusted an unrelated, older mkcert CA
+(`NTQ-SOLUTION\sy.le@d-os3-sylt`, SHA-256 `DA130CC5…`). Remove it with
+`sudo security delete-certificate -Z <sha256> /Library/Keychains/System.keychain`.
 
 Other devices (phone, other laptops) don't trust this CA. For access from anywhere, use
 `grafana.hien0ethan.com` behind Cloudflare Access instead.
@@ -496,7 +503,7 @@ Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo
 - [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9)
 - [x] Monitoring (10): victoria-metrics-k8s-stack 0.97.1, Grafana at grafana.lan (2026-11-08)
-- [ ] Grafana HTTPS via mkcert private CA (10.3, in progress)
+- [x] Grafana HTTPS via mkcert private CA (10.3)
 - [ ] Alerting (vmalert + Alertmanager + notification channel)
 - [ ] Flux (11)
 

@@ -1,0 +1,20 @@
+# HTTPS for Grafana on the LAN (https://grafana.lan).
+#
+# TLS secret `monitoring/grafana-lan-tls` is issued by the Mac's mkcert private CA
+# and created out-of-band (key never stored in git):
+#   D=$(mktemp -d); mkcert -cert-file $D/tls.crt -key-file $D/tls.key grafana.lan
+#   kubectl -n monitoring create secret tls grafana-lan-tls --cert=$D/tls.crt --key=$D/tls.key
+#   rm -rf $D
+# Cert expires 2029-02-08 -> re-issue with the same commands.
+#
+# Middleware: redirect http -> https. Referenced from the Grafana Ingress annotation
+# in vm-stack-values.yaml. Traefik skips the redirect when the request is already https.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: monitoring
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

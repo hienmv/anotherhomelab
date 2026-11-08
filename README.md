@@ -25,7 +25,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │                    ┌─────────────────────────────┐    │ vmagent --scrape--> all pods   │ │ │
 │ │                    │ cloudflared  (pod, pi4-8gb) │    │   & node-exporter (3 nodes)    │ │ │
 │ │                    └──────────────┬──────────────┘    │ VMSingle: 30d, PVC 10Gi        │ │ │
-│ │                                   │ svc traefik:80    │ Grafana: http://grafana.lan    │ │ │
+│ │                                   │ svc traefik:80    │ Grafana: https://grafana.lan   │ │ │
 │ │                                   ▼                   │ (LAN only, not public)         │ │ │
 │ │                    ┌─────────────────────────────┐    └────────────────────────────────┘ │ │
 │ │                    │       Traefik ingress       │                                       │ │
@@ -96,13 +96,13 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Queue workers + KEDA | apps | pi4-4gb | Redis list `jobs` | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
-| Grafana (39 dashboards) | monitoring | pi4-4gb | `http://grafana.lan` (LAN only) | running |
+| Grafana (39 dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
-Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open http://grafana.lan, user `admin`,
+Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open https://grafana.lan, user `admin`,
 password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
 Browser fails while `curl` works? See [K3S-GUIDE.md §10.2](K3S-GUIDE.md#102-grafana-access-lan-only).
 
