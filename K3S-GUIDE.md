@@ -402,7 +402,10 @@ spec:
 ```
 Then stop the host one: `ssh pi3 'sudo systemctl disable --now cloudflared'`. DNS already has a proxied wildcard `*` CNAME to the tunnel, so a new subdomain only needs an Ingress rule with that host.
 
-## 9. Backups (plan, 2026-11-08; not implemented yet)
+## 9. Backups (plan; deferred by decision 2026-11-08)
+
+**Status: deferred.** No backups run. Accepted risk: losing pi4-8gb's SD card loses Postgres,
+Redis, metrics and k3s state (manifests survive in git). Revisit before storing real data.
 
 A backup = a copy stored elsewhere **plus a tested restore**. It covers hardware death (SD card),
 mistakes (bad migration, accidental delete) and disaster (only an off-site copy survives).
@@ -586,7 +589,7 @@ Later: encrypt them into git with SOPS + age so a rebuilt cluster needs no manua
 - [ ] Move PG/Redis volumes to SSD
 - [ ] App image on GHCR, web/worker/cron (7)
 - [x] cloudflared in cluster, retire host cloudflared (8)
-- [ ] Backups + restore test (9)
+- [ ] Backups + restore test (9): deferred 2026-11-08, revisit before real data
 - [x] Monitoring (10): victoria-metrics-k8s-stack 0.97.1, Grafana at grafana.lan (2026-11-08)
 - [x] Grafana HTTPS via mkcert private CA (10.3)
 - [ ] Alerting (vmalert + Alertmanager + notification channel)
