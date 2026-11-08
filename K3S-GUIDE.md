@@ -448,6 +448,11 @@ so `grafana.lan` is unreachable from the internet by design.
 - Chrome treats bare `grafana.lan` as a search; type `http://grafana.lan/`.
 - Chrome's own DNS cache: `chrome://net-internals/#dns` → Clear host cache.
 - DNS-over-HTTPS (Firefox) or iCloud Private Relay bypass `/etc/hosts`.
+- **Chrome `ERR_ADDRESS_UNREACHABLE`** (seen 2026-11-08, after HTTPS was working in curl): macOS
+  **Local Network** privacy permission (macOS 15+) blocks the app from reaching LAN IPs, while
+  Terminal/curl is allowed. Fix: System Settings → Privacy & Security → Local Network → enable
+  Google Chrome, then quit Chrome fully (⌘Q) and reopen. Test: `http://192.168.40.250/` fails the same
+  way if this is the cause. Prompt never shows? `tccutil reset LocalNetwork com.google.Chrome`.
 
 ### 10.3 Grafana HTTPS with a private CA (done 2026-11-08)
 
