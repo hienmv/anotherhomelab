@@ -104,6 +104,7 @@ App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_P
 
 Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open http://grafana.lan, user `admin`,
 password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
+Browser fails while `curl` works? See [K3S-GUIDE.md §10.2](K3S-GUIDE.md#102-grafana-access-lan-only).
 
 ## Nodes
 

@@ -415,8 +415,54 @@ Test a restore once. A backup you have never restored is unverified.
 ## 10. Observability (light)
 
 - Built-in: `kubectl top nodes/pods` (k3s ships metrics-server), `k9s`.
-- Next step: **VictoriaMetrics single + Grafana** (or `victoria-metrics-k8s-stack`) on pi4-8gb. It is about 3x lighter than kube-prometheus-stack.
 - Logs: `kubectl logs`, or Loki single-binary later. Don't run heavy log stacks on SD cards.
+
+### 10.1 Metrics stack (installed 2026-11-08)
+
+`victoria-metrics-k8s-stack` 0.97.1, Helm release `vm`, namespace `monitoring`. Install commands are in the
+header of `k8s/monitoring/vm-stack-values.yaml`; extra scrapes (CNPG Postgres, cloudflared) in
+`k8s/monitoring/scrapes.yaml`.
+
+| Part | Node | Notes |
+|---|---|---|
+| VMSingle | pi4-8gb | 30d retention, PVC 10Gi |
+| vmagent | pi4-8gb | scrape every 30s |
+| Grafana | pi4-4gb | admin password in secret `monitoring/grafana-admin` |
+| node-exporter | all 3 | tolerates pi3 taint |
+
+Not scraped: kube-scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
+Alerting (vmalert + Alertmanager) is disabled until a notification channel is chosen.
+
+### 10.2 Grafana access (LAN only)
+
+Grafana uses Ingress host `grafana.lan`. The Cloudflare tunnel only forwards `*.hien0ethan.com`,
+so `grafana.lan` is unreachable from the internet by design.
+
+1. Mac: `echo "192.168.40.250 grafana.lan" | sudo tee -a /etc/hosts`
+2. Password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`
+
+**Troubleshooting: `curl` works but the browser fails.** Seen 2026-11-08: `/etc/hosts` and
+`curl http://grafana.lan` were fine (HTTP 200), the browser failed. Causes:
+- Browser upgrades to `https://` (Chrome "Always use secure connections", Safari, Firefox HTTPS-Only).
+  Traefik answers 443 with its built-in self-signed cert, so the upgrade fails.
+- Chrome treats bare `grafana.lan` as a search; type `http://grafana.lan/`.
+- Chrome's own DNS cache: `chrome://net-internals/#dns` → Clear host cache.
+- DNS-over-HTTPS (Firefox) or iCloud Private Relay bypass `/etc/hosts`.
+
+### 10.3 Grafana HTTPS with a private CA (in progress)
+
+Goal: `https://grafana.lan` with no browser warning, using [mkcert](https://github.com/FiloSottile/mkcert).
+
+1. [x] `brew install mkcert` (Mac)
+2. [ ] `mkcert -install`: adds a local CA to the macOS keychain (needs sudo, user runs it).
+   The CA key stays in `~/Library/Application Support/mkcert/rootCA-key.pem`. Never copy or share it:
+   whoever holds it can mint certs this Mac trusts for any site. Remove with `mkcert -uninstall`.
+3. [ ] Issue cert for `grafana.lan`, load as TLS secret `monitoring/grafana-lan-tls`, delete local key files.
+4. [ ] Helm values: `grafana.ingress.tls` with that secret, `root_url: https://grafana.lan`, http→https redirect.
+5. [ ] Verify in browser.
+
+Other devices (phone, other laptops) don't trust this CA. For access from anywhere, use
+`grafana.hien0ethan.com` behind Cloudflare Access instead.
 
 ## 11. Repo layout suggestion
 
@@ -450,6 +496,7 @@ Later: GitOps with **Flux** (lighter than Argo CD on Pis), which pulls this repo
 - [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9)
 - [x] Monitoring (10): victoria-metrics-k8s-stack 0.97.1, Grafana at grafana.lan (2026-11-08)
+- [ ] Grafana HTTPS via mkcert private CA (10.3, in progress)
 - [ ] Alerting (vmalert + Alertmanager + notification channel)
 - [ ] Flux (11)
 
