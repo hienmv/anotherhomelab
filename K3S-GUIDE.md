@@ -448,11 +448,17 @@ so `grafana.lan` is unreachable from the internet by design.
 - Chrome treats bare `grafana.lan` as a search; type `http://grafana.lan/`.
 - Chrome's own DNS cache: `chrome://net-internals/#dns` → Clear host cache.
 - DNS-over-HTTPS (Firefox) or iCloud Private Relay bypass `/etc/hosts`.
-- **Chrome `ERR_ADDRESS_UNREACHABLE`** (seen 2026-11-08, after HTTPS was working in curl): macOS
-  **Local Network** privacy permission (macOS 15+) blocks the app from reaching LAN IPs, while
-  Terminal/curl is allowed. Fix: System Settings → Privacy & Security → Local Network → enable
-  Google Chrome, then quit Chrome fully (⌘Q) and reopen. Test: `http://192.168.40.250/` fails the same
-  way if this is the cause. Prompt never shows? `tccutil reset LocalNetwork com.google.Chrome`.
+- **Chrome `ERR_ADDRESS_UNREACHABLE`** (seen and fixed 2026-11-08): Chrome resolved `grafana.lan`
+  correctly (`chrome://net-internals/#dns` → `192.168.40.250`) but could not reach any LAN IP, even
+  `http://192.168.40.250/`, while `curl` in Terminal worked.
+  - Cause: macOS **Local Network** permission (macOS 15+). Chrome auto-updates run Chrome from a
+    temporary copy (`/private/var/folders/.../com.google.Chrome.code_sign_clone/...`). The permission is
+    tied to the app's path, so the running copy was effectively denied. Toggling the setting in
+    System Settings → Privacy & Security → Local Network did **not** help; neither did ⌘Q.
+  - **Fix: open `chrome://restart`.** Chrome relaunched from `/Applications`, macOS showed the
+    "allow Google Chrome to access the local network" prompt → **Allow** → works.
+  - Still failing? Reboot the Mac, or `tccutil reset LocalNetwork com.google.Chrome` to get the prompt back.
+  - May come back after future Chrome auto-updates: same fix.
 
 ### 10.3 Grafana HTTPS with a private CA (done 2026-11-08)
 
