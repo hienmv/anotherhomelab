@@ -1,0 +1,17 @@
+---
+import Base from '../layouts/Base.astro'
+import apps from '../data/apps.json'
+---
+<Base title="Homelab" current="homelab">
+  <h1>Homelab</h1>
+  <p class="muted">Apps running on a 3-node Raspberry Pi k3s cluster at home, deployed with Flux.</p>
+  <ul class="app-list">
+    {apps.map((app) => (
+      <li class="app-card">
+        <h2><a href={app.url}>{app.name}</a></h2>
+        <p>{app.description}</p>
+        <p class="meta">{app.status}</p>
+      </li>
+    ))}
+  </ul>
+</Base>

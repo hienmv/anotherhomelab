@@ -1,6 +1,6 @@
 # Site (hien0ethan.com): design
 
-Status: **proposal, 2026-11-09**, awaiting approval. Replaces the placeholder in `k8s/apps/landing/`.
+Status: **approved 2026-11-09** (Astro, separate app, deployed by Flux). Implemented; see README.md. Replaces the placeholder in `k8s/apps/landing/`.
 
 Personal site on the apex domain: notes (migrated from `hienmv.github.io`, to be shut down), a menu of
 homelab apps, and an about page. A separate app from TicketLite: own folder, image, CI and k8s manifests.

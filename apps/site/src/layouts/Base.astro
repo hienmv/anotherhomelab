@@ -1,0 +1,32 @@
+---
+import Header from '../components/Header.astro'
+import profile from '../data/profile.json'
+import '../styles/global.css'
+interface Props {
+  title?: string
+  description?: string
+  lang?: 'vi' | 'en'
+  current?: 'notes' | 'homelab' | 'about' | null
+}
+const { title, description = profile.tagline, lang = 'en', current = null } = Astro.props
+const fullTitle = title ? `${title} · ${profile.siteTitle}` : profile.siteTitle
+---
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="alternate" type="application/rss+xml" title={`${profile.siteTitle}: notes`} href="/rss.xml" />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <title>{fullTitle}</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Header current={current} />
+    <main id="main" class="main"><slot /></main>
+    <footer class="footer muted">
+      © {new Date().getFullYear()} {profile.name} · Notes MIT licensed · <a href="/rss.xml">RSS</a> · Served from a Raspberry Pi k3s cluster
+    </footer>
+  </body>
+</html>

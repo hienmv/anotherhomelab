@@ -4,3 +4,4 @@ resources:
   - whoami.yaml
   - ticketlite
   - landing
+  - site

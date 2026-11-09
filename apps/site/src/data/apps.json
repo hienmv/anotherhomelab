@@ -1,0 +1,8 @@
+[
+  {
+    "name": "TicketLite",
+    "url": "https://ticketlite.hien0ethan.com",
+    "description": "Concert tickets with hot-ticket rush handling (Ktor, React, Redis, Postgres)",
+    "status": "live"
+  }
+]

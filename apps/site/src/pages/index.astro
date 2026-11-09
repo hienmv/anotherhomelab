@@ -1,0 +1,14 @@
+---
+import Base from '../layouts/Base.astro'
+import CategoryFilter from '../components/CategoryFilter.astro'
+import NoteList from '../components/NoteList.astro'
+import { allNotes, categories } from '../scripts/notes'
+const notes = await allNotes()
+---
+<Base current="notes">
+  <div class="page-head">
+    <h1>Notes</h1>
+    <CategoryFilter categories={await categories()} current={null} />
+  </div>
+  <NoteList notes={notes} />
+</Base>

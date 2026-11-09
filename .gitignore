@@ -37,3 +37,4 @@ dist/
 
 # Exception: database migrations are source code, not dumps
 !**/db/migration/*.sql
+.astro/
