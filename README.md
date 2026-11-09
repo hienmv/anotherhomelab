@@ -1,11 +1,17 @@
 # anotherhomelab
 
 On-prem distributed system on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
-queue workers, batch jobs. Public entry via Cloudflare Tunnel: **https://hien0ethan.com** (landing: intro, featured notes, homelab apps, about; [apps/landing](apps/landing/README.md)),
-**https://notes.hien0ethan.com** (notes; [apps/notes](apps/notes/README.md)),
-**https://ticketlite.hien0ethan.com** (TicketLite). Unknown subdomains redirect to the landing page.
-App hostnames must stay one level deep (`<app>.hien0ethan.com`): Cloudflare's free certificate
-does not cover `<app>.<sub>.hien0ethan.com`.
+queue workers, batch jobs. Public via Cloudflare Tunnel:
+
+| URL | App |
+|---|---|
+| https://hien0ethan.com | landing: intro, featured notes, homelab apps, about ([apps/landing](apps/landing/README.md)) |
+| https://notes.hien0ethan.com | notes ([apps/notes](apps/notes/README.md)) |
+| https://ticketlite.hien0ethan.com | TicketLite ([apps/ticketlite](apps/ticketlite/README.md)) |
+| https://grafana.lan | Grafana, LAN only |
+
+Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
+**[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting).
 
 ## System design
 
@@ -102,20 +108,18 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
-| Grafana (39 dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
+| Grafana (built-in + TicketLite dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Flux v2.10 (GitOps) | flux-system | Pi 4s | pulls this repo every 1m (read-only deploy key) | running |
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
-CI/CD: shared reusable workflows `build-image.yml` + `bump-tag.yml`; per app `ticketlite.yml`, `notes.yml`, `landing.yml`.
-`ticketlite.yml` builds arm64 images to GHCR on push to `main`, then
-commits the new image tag to `k8s/apps/ticketlite/`; Flux deploys it. Details: [apps/ticketlite/README.md](apps/ticketlite/README.md).
+CI/CD: per-app workflows (`ticketlite.yml`, `notes.yml`, `landing.yml`) call the shared
+`build-image.yml` (arm64 image to private GHCR, tests run inside the Docker build) and `bump-tag.yml`
+(commits the new tag to `k8s/apps/<app>/`); Flux deploys that commit.
 
-Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open https://grafana.lan, user `admin`,
-password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
-Browser fails while `curl` works? See [K3S-GUIDE.md §10.2](K3S-GUIDE.md#102-grafana-access-lan-only).
+Grafana access and browser troubleshooting: [K3S-GUIDE.md → Observability](K3S-GUIDE.md#7-observability).
 
 ## Nodes
 
@@ -188,16 +192,15 @@ then a backup target (NAS/mini PC).
    `namespaces → releases → data → apps`, `namespaces → infra`, `releases → monitoring`.
 
 ```bash
-export KUBECONFIG=~/.kube/homelab.yaml
+export KUBECONFIG=~/.kube/homelab.yaml   # put this in ~/.zshrc, or every kubectl needs it
 alias flux='docker run --rm -i --network host -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/homelab.yaml ghcr.io/fluxcd/flux-cli:v2.10.0'
 flux get kustomizations          # sync status
 flux get helmreleases -A
 flux reconcile source git flux-system   # pull now instead of waiting
 ```
 
-- Full setup guide and checklist: [K3S-GUIDE.md](K3S-GUIDE.md)
 - Layout: `clusters/homelab/` (Flux entry), `k8s/<folder>/` (what gets applied)
-- Secrets are **not** in git; created once with `kubectl create secret` (list in K3S-GUIDE.md §11.3).
+- Secrets are **not** in git; created once with `kubectl create secret` (list in [K3S-GUIDE.md → Secrets](K3S-GUIDE.md#secrets-kept-out-of-git-create-once-per-cluster)).
   `namespaces` and `data` have `prune: false`: deleting their files never deletes the database.
 
 ## Updating the diagrams

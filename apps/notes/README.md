@@ -2,7 +2,7 @@
 
 Notes migrated from hienmv.github.io (Jekyll). Astro static build served by nginx in the k3s cluster.
 The landing page (hien0ethan.com, `apps/landing`) shows featured notes, the homelab apps and About.
-Design history: [DESIGN.md](DESIGN.md).
+Hostnames and redirects: [docs/domains.md](../../docs/domains.md).
 
 ## Edit content
 

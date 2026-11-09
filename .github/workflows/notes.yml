@@ -10,7 +10,6 @@ on:
     paths:
       - "apps/notes/**"
       - "!apps/notes/README.md"
-      - "!apps/notes/DESIGN.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
       - ".github/workflows/bump-tag.yml"
@@ -18,7 +17,6 @@ on:
     paths:
       - "apps/notes/**"
       - "!apps/notes/README.md"
-      - "!apps/notes/DESIGN.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
   workflow_dispatch:

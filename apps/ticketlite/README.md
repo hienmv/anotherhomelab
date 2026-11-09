@@ -126,18 +126,9 @@ only the final arm64 runtime image is assembled for the Pis, so no slow emulatio
 ## Kubernetes
 
 Manifests: `k8s/apps/ticketlite/` (namespace `apps`). Secrets (not in git):
-- `app-env`: `DATABASE_URL`, `REDIS_URL` (existing, section 7.2 of the guide)
+- `app-env`: `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD` (shared; [K3S-GUIDE.md section 5](../../K3S-GUIDE.md#5-what-runs-where-pointers))
 - `ticketlite`: `SESSION_SECRET` (`kubectl -n apps create secret generic ticketlite --from-literal=SESSION_SECRET="$(openssl rand -hex 32)"`)
-- `ghcr-pull`: GHCR packages are private, so the cluster needs a pull token (classic PAT, only `read:packages`).
-  Run in your own terminal so the token stays out of logs/chat:
-  ```bash
-  read -s GHCR_TOKEN && kubectl -n apps create secret docker-registry ghcr-pull \
-    --docker-server=ghcr.io --docker-username=hienmv --docker-password="$GHCR_TOKEN"; unset GHCR_TOKEN
-  ```
-  The token expires: when pulls start failing with 401/403, create a new one and recreate the secret.
-  **Must be a classic token.** GHCR does not accept fine-grained tokens: they log in but get
-  `403 Forbidden` on the image (seen 2026-11-09). Classic token form, pre-filled:
-  https://github.com/settings/tokens/new?scopes=read:packages&description=homelab-ghcr-pull
+- `ghcr-pull`: shared image pull secret for all apps, see [K3S-GUIDE.md → Secrets](../../K3S-GUIDE.md#secrets-kept-out-of-git-create-once-per-cluster)
 
 ## Observability
 
@@ -161,9 +152,10 @@ otherwise the first burst after a pod start is invisible to `increase()` (dashbo
 ## Tests
 
 - Backend (JUnit, `gradle test`): config parsing, limits, metric names.
-- Frontend (Vitest + React Testing Library, `npm test`): one or more per Atomic Design level
-  (atom Price, molecule QuantityPicker, organisms ConcertCard + LoginForm), API client errors,
-  and the ConcertsPage flow (hot/normal split, login redirect, confirmed/failed orders).
+- Frontend (Vitest + React Testing Library, `npm test`, 31 tests): one or more per Atomic Design level
+  (atom Price, molecule QuantityPicker, organisms ConcertCard + LoginForm), `buyState` (why Buy is
+  disabled: limit reached / sold out / remaining allowance), API client errors, and the ConcertsPage
+  flow (hot/normal split, login redirect, confirmed/failed orders).
 - Not automated: end-to-end against real Postgres/Redis (done by hand with docker compose and the
   rush test above).
 
