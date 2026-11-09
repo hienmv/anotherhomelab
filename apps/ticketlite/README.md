@@ -146,7 +146,8 @@ dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded au
 | `ticketlite_queue_lag`, `ticketlite_queue_pending` | worker | stream backlog / unacked |
 | `ktor_http_server_requests_seconds` | api | HTTP latency histogram by route |
 
-`MetricsTest` fails the build if a metric the dashboard uses is renamed.
+`MetricsTest` fails the build if a metric the dashboard uses is renamed. Counters are pre-registered at 0:
+otherwise the first burst after a pod start is invisible to `increase()` (dashboard showed 8 of 18).
 
 ## Tests
 
@@ -162,3 +163,9 @@ dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded au
 - No payment, seat maps, or registration (by design).
 - Scale workers with KEDA on stream lag.
 - Rate limiting per user/IP for real rushes.
+- **Known gap: per-person limit under parallel requests (seen 2026-11-09).** 60 simultaneous buys by
+  3 users on a hot concert: 18 were *accepted* (202) though only 6 were allowed. The API's early check
+  reads Postgres, so same-instant requests all pass it. The worker still enforced the rule (6 CONFIRMED,
+  12 FAILED with `LIMIT`), so nothing is oversold, but users see "accepted" then "failed".
+  Fix: an atomic per-user counter in Redis (`hold:<user>:<concert>`) checked in the same Lua script
+  as the inventory gate.

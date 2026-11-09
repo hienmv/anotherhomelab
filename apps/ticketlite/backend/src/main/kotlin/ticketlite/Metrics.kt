@@ -29,6 +29,19 @@ object Metrics {
         .maximumExpectedValue(Duration.ofSeconds(10))
         .register(registry)
 
+    init {
+        // Create every counter at 0 up front. A series that first appears with value N has no
+        // "before" sample, so increase()/rate() treat its first N events as zero (seen 2026-11-09:
+        // dashboard showed 8 accepted orders instead of 18).
+        listOf("accepted", "sold_out", "limit", "invalid").forEach {
+            registry.counter("ticketlite.order.requests", "result", it)
+        }
+        listOf(OrderStatus.CONFIRMED to "none", OrderStatus.FAILED to "SOLD_OUT", OrderStatus.FAILED to "LIMIT").forEach { (status, reason) ->
+            registry.counter("ticketlite.orders.processed", "status", status, "reason", reason)
+        }
+        registry.counter("ticketlite.tickets.sold")
+    }
+
     fun bindJvm() {
         JvmMemoryMetrics().bindTo(registry)
         JvmGcMetrics().bindTo(registry)

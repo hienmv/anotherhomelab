@@ -20,6 +20,9 @@ class MetricsTest {
             "ticketlite_tickets_sold_total 2.0",
             "ticketlite_order_process_seconds_bucket",
             """ticketlite_inventory_available{concert="Test",hot="true"} 5.0""",
+            // pre-registered at 0 even though no "limit" request happened in this test
+            """ticketlite_order_requests_total{result="limit"} 0.0""",
+            """ticketlite_orders_processed_total{reason="LIMIT",status="FAILED"} 0.0""",
         ).forEach { assertTrue(it in text, "missing in /metrics: $it") }
     }
 }
