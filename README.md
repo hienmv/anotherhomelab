@@ -1,7 +1,7 @@
 # anotherhomelab
 
 On-prem distributed system on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
-queue workers, batch jobs. Public entry: **https://hien0ethan.com** (Cloudflare Tunnel).
+queue workers, batch jobs. Public entry: **https://hien0ethan.com** (TicketLite, via Cloudflare Tunnel).
 
 ## System design
 
@@ -34,8 +34,8 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │           ┌───────────────────────┴───────────────────────┐                              │ │
 │ │           ▼                                               ▼                              │ │
 │ │  ┌─────────────────┐                        ┌───────────────────────────┐                │ │
-│ │  │  whoami (demo)  │                        │  TicketLite web + api x2  │                │ │
-│ │  │ 2 pods, ns apps │                        │   tickets.hien0ethan.com  │                │ │
+│ │  │  whoami (debug) │                        │  TicketLite web + api x2  │                │ │
+│ │  │  host whoami.*  │                        │   hien0ethan.com (main)   │                │ │
 │ │  └─────────────────┘                        └─┬───────────────────┬─────┘                │ │
 │ │                                               │                   │                      │ │
 │ │                                               │ SQL               │ gate + XADD          │ │
@@ -91,8 +91,8 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
 | PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
-| whoami demo | apps | both | catch-all Ingress | running |
-| TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://tickets.hien0ethan.com` | running |
+| whoami demo | apps | Pi 4 | `https://whoami.hien0ethan.com` (debug headers) | running |
+| TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://hien0ethan.com` (main app; unknown subdomains redirect here) | running |
 | TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |

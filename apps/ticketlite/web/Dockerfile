@@ -5,7 +5,7 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run build
+RUN npm test && npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 ENV API_UPSTREAM=http://api:8080

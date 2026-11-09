@@ -29,3 +29,21 @@ spec:
       app: cloudflared
   podMetricsEndpoints:
     - port: metrics
+---
+# TicketLite api + worker: business metrics, HTTP latency, JVM (GET /metrics on :8080).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: ticketlite
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [apps]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ticketlite
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, worker] }
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics

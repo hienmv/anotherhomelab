@@ -104,8 +104,8 @@ def draw_flow():
     c.put(14, 23, "▼")
     c.put(62, 23, "▼")
 
-    c.box(5, 24, 19, 4, lines=["whoami (demo)", "2 pods, ns apps"], center=True)
-    c.box(48, 24, 29, 4, lines=["TicketLite web + api x2", "tickets.hien0ethan.com"], center=True)
+    c.box(5, 24, 19, 4, lines=["whoami (debug)", "host whoami.*"], center=True)
+    c.box(48, 24, 29, 4, lines=["TicketLite web + api x2", "hien0ethan.com (main)"], center=True)
 
     # web -> postgres / redis
     c.put(50, 27, "┬")

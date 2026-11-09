@@ -31,6 +31,9 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
     fun run() {
         Runtime.getRuntime().addShutdownHook(Thread { running.set(false) })
         ensureGroup()
+        // Backlog: entries not yet delivered to any worker; pending: delivered but not acked.
+        Metrics.gauge("ticketlite.queue.lag") { groupInfo()?.groupInfo?.get("lag") as? Number }
+        Metrics.gauge("ticketlite.queue.pending") { groupInfo()?.pending }
         log.info("worker {} started", consumer)
         var lastClaim = 0L
         while (running.get()) {
@@ -54,6 +57,10 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
         log.info("worker {} stopped", consumer)
     }
 
+    private fun groupInfo() = runCatching {
+        gate.jedis.xinfoGroups(RedisGate.STREAM).firstOrNull { it.name == RedisGate.GROUP }
+    }.getOrNull()
+
     private fun ensureGroup() {
         try {
             gate.jedis.xgroupCreate(RedisGate.STREAM, RedisGate.GROUP, StreamEntryID("0-0"), true)
@@ -74,10 +81,12 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
     private fun handle(entry: StreamEntry) {
         val orderId = entry.fields["orderId"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         if (orderId != null) {
+            val started = System.nanoTime()
             if (cfg.workerDelayMs > 0) Thread.sleep(cfg.workerDelayMs) // simulated payment step
             val outcome = process(orderId)
             if (outcome != null) {
                 if (outcome.status == OrderStatus.FAILED) gate.release(outcome.concertId, outcome.quantity)
+                Metrics.orderProcessed(outcome.status, outcome.reason, outcome.quantity, System.nanoTime() - started)
                 log.info("order {} -> {}{}", orderId, outcome.status, outcome.reason?.let { " ($it)" } ?: "")
             }
         }
@@ -120,9 +129,13 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
 }
 
 fun runWorker(cfg: AppConfig, db: Db, gate: RedisGate) {
+    Metrics.bindJvm() // the api gets JVM metrics from the Ktor Micrometer plugin
     // Small HTTP server only for Kubernetes probes.
     embeddedServer(CIO, port = cfg.port) {
-        routing { get("/healthz") { call.respondText("ok") } }
+        routing {
+            get("/healthz") { call.respondText("ok") }
+            get("/metrics") { call.respondText(Metrics.scrape()) }
+        }
     }.start(wait = false)
     Worker(cfg, db, gate).run()
 }

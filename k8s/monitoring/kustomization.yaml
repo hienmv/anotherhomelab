@@ -3,3 +3,16 @@ kind: Kustomization
 resources:
   - scrapes.yaml
   - grafana-https.yaml
+# Grafana dashboards: ConfigMaps labelled grafana_dashboard=1 are loaded by Grafana's sidecar.
+configMapGenerator:
+  - name: dashboard-ticketlite
+    namespace: monitoring
+    files:
+      - dashboards/ticketlite.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: Apps
+generatorOptions:
+  disableNameSuffixHash: true

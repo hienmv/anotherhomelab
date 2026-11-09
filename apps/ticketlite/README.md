@@ -1,7 +1,7 @@
 # TicketLite
 
 A small distributed ticket-selling system (a "light Ticketmaster") running on the homelab k3s cluster.
-Public URL: **https://tickets.hien0ethan.com**
+Public URL: **https://hien0ethan.com** (also `tickets.hien0ethan.com`; any unknown subdomain redirects to the main app)
 
 - Browse concerts, with a **Hot tickets** section (high demand, small inventory, max 2 per person)
 - Log in / log out with sample accounts (no registration): `alice/alice123`, `bob/bob123`, `carol/carol123`
@@ -100,7 +100,7 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 ## CI/CD
 
 `.github/workflows/ticketlite.yml`:
-1. On PR: build both images (backend image build runs `gradle test`, web runs `tsc` + `vite build`).
+1. On PR: build both images. The backend build runs `gradle test`; the web build runs `vitest` (22 tests), `tsc` and `vite build`. A failing test fails the image build.
 2. On push to `main`: build `linux/arm64` images and push to `ghcr.io/hienmv/ticketlite-{backend,web}`
    tagged `sha-<7>` and `main`.
 3. Commit the new tag into `k8s/apps/ticketlite/kustomization.yaml` (`[skip ci]`).
@@ -124,6 +124,33 @@ Manifests: `k8s/apps/ticketlite/` (namespace `apps`). Secrets (not in git):
   **Must be a classic token.** GHCR does not accept fine-grained tokens: they log in but get
   `403 Forbidden` on the image (seen 2026-11-09). Classic token form, pre-filled:
   https://github.com/settings/tokens/new?scopes=read:packages&description=homelab-ghcr-pull
+
+## Observability
+
+`GET /metrics` on api and worker pods (Prometheus format, in-cluster only: the Ingress routes just
+`/api` and `/`). Scraped by VictoriaMetrics (`k8s/monitoring/scrapes.yaml`), shown in the Grafana
+dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded automatically).
+
+| Metric | From | Meaning |
+|---|---|---|
+| `ticketlite_order_requests_total{result}` | api | accepted / sold_out / limit / invalid |
+| `ticketlite_orders_processed_total{status,reason}` | worker | CONFIRMED / FAILED after the DB check |
+| `ticketlite_tickets_sold_total` | worker | confirmed tickets |
+| `ticketlite_order_process_seconds` | worker | histogram, time per order |
+| `ticketlite_inventory_available{concert,hot}` | api | Redis gate per concert |
+| `ticketlite_queue_lag`, `ticketlite_queue_pending` | worker | stream backlog / unacked |
+| `ktor_http_server_requests_seconds` | api | HTTP latency histogram by route |
+
+`MetricsTest` fails the build if a metric the dashboard uses is renamed.
+
+## Tests
+
+- Backend (JUnit, `gradle test`): config parsing, limits, metric names.
+- Frontend (Vitest + React Testing Library, `npm test`): one or more per Atomic Design level
+  (atom Price, molecule QuantityPicker, organisms ConcertCard + LoginForm), API client errors,
+  and the ConcertsPage flow (hot/normal split, login redirect, confirmed/failed orders).
+- Not automated: end-to-end against real Postgres/Redis (done by hand with docker compose and the
+  rush test above).
 
 ## Limits / next steps
 

@@ -22,6 +22,8 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages:$ktor")
     implementation("io.ktor:ktor-server-forwarded-header:$ktor")
     implementation("io.ktor:ktor-server-call-logging:$ktor")
+    implementation("io.ktor:ktor-server-metrics-micrometer:$ktor")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.14.5")
     implementation("ch.qos.logback:logback-classic:1.5.18")
 
     implementation("com.zaxxer:HikariCP:6.3.0")
