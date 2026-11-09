@@ -9,10 +9,12 @@ on:
     branches: [main]
     paths:
       - "apps/ticketlite/**"
+      - "!apps/ticketlite/**/*.md"
       - ".github/workflows/ticketlite.yml"
   pull_request:
     paths:
       - "apps/ticketlite/**"
+      - "!apps/ticketlite/**/*.md"
       - ".github/workflows/ticketlite.yml"
   workflow_dispatch:
 

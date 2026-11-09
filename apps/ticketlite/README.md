@@ -116,6 +116,9 @@ Manifests: `k8s/apps/ticketlite/` (namespace `apps`). Secrets (not in git):
     --docker-server=ghcr.io --docker-username=hienmv --docker-password="$GHCR_TOKEN"; unset GHCR_TOKEN
   ```
   The token expires: when pulls start failing with 401/403, create a new one and recreate the secret.
+  **Must be a classic token.** GHCR does not accept fine-grained tokens: they log in but get
+  `403 Forbidden` on the image (seen 2026-11-09). Classic token form, pre-filled:
+  https://github.com/settings/tokens/new?scopes=read:packages&description=homelab-ghcr-pull
 
 ## Limits / next steps
 
