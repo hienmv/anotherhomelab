@@ -1,0 +1,52 @@
+# CI/CD for the notes app (apps/notes, Astro) on notes.hien0ethan.com.
+# Notes are content: Markdown changes DO trigger a build (only README/DESIGN are ignored).
+#   PR:   astro check, unit tests, build, link check (inside the Docker build), no push.
+#   main: same, push ghcr.io/hienmv/notes (arm64), bump the tag in k8s/apps/notes/. Flux deploys.
+name: notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/notes/**"
+      - "!apps/notes/README.md"
+      - "!apps/notes/DESIGN.md"
+      - ".github/workflows/notes.yml"
+      - ".github/workflows/build-image.yml"
+      - ".github/workflows/bump-tag.yml"
+  pull_request:
+    paths:
+      - "apps/notes/**"
+      - "!apps/notes/README.md"
+      - "!apps/notes/DESIGN.md"
+      - ".github/workflows/notes.yml"
+      - ".github/workflows/build-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: notes-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: notes
+      context: apps/notes
+      push: ${{ github.event_name != 'pull_request' }}
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/bump-tag.yml
+    permissions:
+      contents: write
+    with:
+      app: notes
+      kustomization: k8s/apps/notes/kustomization.yaml

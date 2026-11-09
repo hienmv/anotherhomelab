@@ -1,0 +1,32 @@
+---
+import { render } from 'astro:content'
+import Base from '../layouts/Base.astro'
+import { allNotes, formatDate, readingMinutes } from '../scripts/notes'
+
+export async function getStaticPaths() {
+  const notes = await allNotes()
+  return notes.map((note, i) => ({
+    params: { slug: note.id },
+    props: { note, newer: notes[i - 1] ?? null, older: notes[i + 1] ?? null },
+  }))
+}
+const { note, newer, older } = Astro.props
+const { Content } = await render(note)
+---
+<Base title={note.data.title} description={note.data.description} lang={note.data.lang} current="notes">
+  <article class="note">
+    <header class="note__head">
+      <p class="meta">
+        <time datetime={note.data.date.toISOString()}>{formatDate(note.data.date)}</time> ·
+        <a href={`/category/${note.data.category}/`}>{note.data.category}</a> ·
+        {readingMinutes(note.body)} min read
+      </p>
+      <h1>{note.data.title}</h1>
+    </header>
+    <div class="prose"><Content /></div>
+  </article>
+  <nav class="pager" aria-label="More notes">
+    {older ? <a href={`/${older.id}/`} rel="prev">← {older.data.title}</a> : <span />}
+    {newer ? <a href={`/${newer.id}/`} rel="next">{newer.data.title} →</a> : <span />}
+  </nav>
+</Base>

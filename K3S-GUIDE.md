@@ -596,7 +596,8 @@ Later: encrypt them into git with SOPS + age so a rebuilt cluster needs no manua
   `ticketlite.hien0ethan.com` = TicketLite only, unknown subdomains 301 → landing.
   Two-level names (`x.homelab.hien0ethan.com`) fail TLS on Cloudflare's free plan; use one level.
 - [x] Personal site (Astro) replaces the placeholder on hien0ethan.com: notes migrated from hienmv.github.io (2026-11-09)
-- [ ] Site About content (`apps/site/src/data/profile.json`) and archive hienmv.github.io (user)
+- [x] Split into two apps (2026-11-09): landing on hien0ethan.com (intro, featured notes, Homelab, About), notes on notes.hien0ethan.com; whoami removed
+- [ ] About content in `apps/landing/src/data/profile.json`; archive hienmv.github.io (user)
 - [x] Hosts: apex serves TicketLite, whoami only on `whoami.`, unknown subdomains 301 → apex (2026-11-09)
 - [x] TicketLite metrics + Grafana dashboard; frontend tests (22) run in CI (2026-11-09)
 - [x] Traefik trusts X-Forwarded-* from pods (`k8s/infra/traefik-config.yaml`) for Secure cookies via tunnel

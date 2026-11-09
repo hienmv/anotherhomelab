@@ -1,0 +1,40 @@
+{
+  "name": "Hien",
+  "headline": "Hi, I'm Hien.",
+  "intro": "Software engineer. I write notes on what I learn (JVM, algorithms, ways of working) and run a small homelab: a Raspberry Pi k3s cluster hosting the apps below.",
+  "notesUrl": "https://notes.hien0ethan.com",
+  "about": [
+    "TODO: short introduction (who you are, what you work on, what you're interested in)."
+  ],
+  "cv": {
+    "pdf": null,
+    "sections": [
+      {
+        "title": "Experience",
+        "items": [
+          "TODO: role, company, years, one line of impact"
+        ]
+      },
+      {
+        "title": "Skills",
+        "items": [
+          "TODO: e.g. Kotlin, Java, distributed systems, Kubernetes"
+        ]
+      }
+    ]
+  },
+  "links": [
+    {
+      "label": "GitHub",
+      "url": "https://github.com/hienmv"
+    },
+    {
+      "label": "LinkedIn",
+      "url": null
+    },
+    {
+      "label": "LeetCode",
+      "url": null
+    }
+  ]
+}

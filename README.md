@@ -1,7 +1,8 @@
 # anotherhomelab
 
 On-prem distributed system on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
-queue workers, batch jobs. Public entry via Cloudflare Tunnel: **https://hien0ethan.com** (personal site: notes, homelab apps, about; [apps/site](apps/site/README.md)),
+queue workers, batch jobs. Public entry via Cloudflare Tunnel: **https://hien0ethan.com** (landing: intro, featured notes, homelab apps, about; [apps/landing](apps/landing/README.md)),
+**https://notes.hien0ethan.com** (notes; [apps/notes](apps/notes/README.md)),
 **https://ticketlite.hien0ethan.com** (TicketLite). Unknown subdomains redirect to the landing page.
 App hostnames must stay one level deep (`<app>.hien0ethan.com`): Cloudflare's free certificate
 does not cover `<app>.<sub>.hien0ethan.com`.
@@ -37,8 +38,8 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │           ┌───────────────────────┴───────────────────────┐                              │ │
 │ │           ▼                                               ▼                              │ │
 │ │  ┌─────────────────┐                        ┌───────────────────────────┐                │ │
-│ │  │   site (apex)   │                        │  TicketLite web + api x2  │                │ │
-│ │  │  + whoami debug │                        │    ticketlite.<domain>    │                │ │
+│ │  │  landing (apex) │                        │  TicketLite web + api x2  │                │ │
+│ │  │   + notes app   │                        │    ticketlite.<domain>    │                │ │
 │ │  └─────────────────┘                        └─┬───────────────────┬─────┘                │ │
 │ │                                               │                   │                      │ │
 │ │                                               │ SQL               │ gate + XADD          │ │
@@ -71,11 +72,11 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ * traefik, coredns             │  │ * cnpg operator            │  │                          │
 │ * metrics-server, local-path   │  │ * grafana, vm-operator     │  │ * node-exporter          │
 │ * postgres pg-1                │  │ * node-exporter            │  │ * ufw firewall           │
-│ * redis-0                      │  │ * whoami x1                │  │ - light pods only        │
-│ * cloudflared (tunnel)         │  │ * ticketlite pods          │  │ ! under-voltage on load  │
-│ * vmsingle, vmagent, ksm       │  │ - KEDA autoscale (planned) │  │                          │
-│ * node-exporter                │  │ - batch CronJobs (planned) │  │                          │
-│ * whoami x1, ticketlite pods   │  │                            │  │                          │
+│ * redis-0                      │  │ * app pods (k8s spreads)   │  │ - light pods only        │
+│ * cloudflared (tunnel)         │  │ - KEDA autoscale (planned) │  │ ! under-voltage on load  │
+│ * vmsingle, vmagent, ksm       │  │ - batch CronJobs (planned) │  │                          │
+│ * node-exporter                │  │                            │  │                          │
+│ * app pods (k8s spreads)       │  │                            │  │                          │
 │ - SSD for PG/Redis (todo)      │  │                            │  │                          │
 └────────────────────────────────┘  └────────────────────────────┘  └──────────────────────────┘
 
@@ -94,9 +95,9 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
 | PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
-| whoami demo | apps | Pi 4 | `https://whoami.hien0ethan.com` (debug headers) | running |
 | TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://ticketlite.hien0ethan.com` | running |
-| Site (Astro: notes, Homelab menu, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | running |
+| Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | deploying |
+| Notes (Astro, migrated from hienmv.github.io) | apps | Pi 4 | `https://notes.hien0ethan.com` | deploying |
 | TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
@@ -108,7 +109,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
-CI/CD: shared reusable workflows `build-image.yml` + `bump-tag.yml`; per app `ticketlite.yml`, `site.yml`.
+CI/CD: shared reusable workflows `build-image.yml` + `bump-tag.yml`; per app `ticketlite.yml`, `notes.yml`, `landing.yml`.
 `ticketlite.yml` builds arm64 images to GHCR on push to `main`, then
 commits the new image tag to `k8s/apps/ticketlite/`; Flux deploys it. Details: [apps/ticketlite/README.md](apps/ticketlite/README.md).
 

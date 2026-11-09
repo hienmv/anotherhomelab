@@ -1,0 +1,48 @@
+---
+import Base from '../layouts/Base.astro'
+import apps from '../data/apps.json'
+import intro from '../data/profile.json'
+const links = intro.links.filter((l) => l.url)
+---
+<Base>
+  <section class="hero">
+    <h1>{intro.headline}</h1>
+    <p class="hero__intro">{intro.intro}</p>
+    <ul class="links">
+      {links.map((l) => <li><a href={l.url!} rel="me noopener">{l.label}</a></li>)}
+      <li><a href="/about/">About me</a></li>
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="featured-title">
+    <div class="section__head">
+      <h2 id="featured-title">Featured notes</h2>
+      <a href={intro.notesUrl}>All notes →</a>
+    </div>
+    <ul class="features" data-featured>
+      <li class="feature feature--fallback">
+        <a class="feature__title" href={intro.notesUrl}>Browse all notes</a>
+        <p class="muted">JVM internals, algorithms, ways of working.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section" id="homelab" aria-labelledby="homelab-title">
+    <h2 id="homelab-title">Homelab</h2>
+    <p class="muted">Apps running on a 3-node Raspberry Pi k3s cluster at home, deployed with Flux.</p>
+    <ul class="app-list">
+      {apps.map((app) => (
+        <li class="app-card">
+          <h3><a href={app.url}>{app.name}</a></h3>
+          <p>{app.description}</p>
+          <p class="meta">{app.status}</p>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>
+<script>
+  import { loadFeatured } from '../scripts/featured'
+  const list = document.querySelector<HTMLElement>('[data-featured]')
+  if (list) loadFeatured(list)
+</script>

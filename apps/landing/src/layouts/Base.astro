@@ -1,0 +1,23 @@
+---
+import Header from '../components/Header.astro'
+import intro from '../data/profile.json'
+import '../styles/global.css'
+interface Props { title?: string }
+const { title } = Astro.props
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={intro.intro} />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <title>{title ? `${title} · ${intro.name}` : intro.name}</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Header />
+    <main id="main" class="main"><slot /></main>
+    <footer class="footer muted">© {new Date().getFullYear()} {intro.name} · Served from a Raspberry Pi k3s cluster</footer>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+# CI/CD for the landing page (apps/landing, Astro) on hien0ethan.com.
+#   PR:   astro check, unit tests, build, link check (inside the Docker build), no push.
+#   main: same, push ghcr.io/hienmv/landing (arm64), bump the tag in k8s/apps/landing/. Flux deploys.
+name: landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
+      - "!apps/landing/README.md"
+      - ".github/workflows/landing.yml"
+      - ".github/workflows/build-image.yml"
+      - ".github/workflows/bump-tag.yml"
+  pull_request:
+    paths:
+      - "apps/landing/**"
+      - "!apps/landing/README.md"
+      - ".github/workflows/landing.yml"
+      - ".github/workflows/build-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: landing-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: landing
+      context: apps/landing
+      push: ${{ github.event_name != 'pull_request' }}
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/bump-tag.yml
+    permissions:
+      contents: write
+    with:
+      app: landing
+      kustomization: k8s/apps/landing/kustomization.yaml

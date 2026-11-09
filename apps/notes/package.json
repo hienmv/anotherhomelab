@@ -1,0 +1,25 @@
+{
+  "name": "notes",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "check": "astro check",
+    "build": "astro build",
+    "test": "vitest run",
+    "check:links": "node scripts/check-links.mjs dist",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/rss": "^4.0.11",
+    "astro": "^5.7.0",
+    "sharp": "^0.34.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "jsdom": "^26.1.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

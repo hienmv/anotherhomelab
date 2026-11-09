@@ -1,0 +1,23 @@
+---
+import Base from '../layouts/Base.astro'
+import profile from '../data/profile.json'
+const links = profile.links.filter((l) => l.url)
+---
+<Base title="About">
+  <h1>About</h1>
+  {profile.about.map((p) => <p>{p}</p>)}
+
+  <h2>CV</h2>
+  {profile.cv.pdf && <p><a href={profile.cv.pdf} download>Download CV (PDF)</a></p>}
+  {profile.cv.sections.map((s) => (
+    <section class="cv-section">
+      <h3>{s.title}</h3>
+      <ul>{s.items.map((i) => <li>{i}</li>)}</ul>
+    </section>
+  ))}
+
+  <h2>Elsewhere</h2>
+  <ul class="links">
+    {links.map((l) => <li><a href={l.url!} rel="me noopener">{l.label}</a></li>)}
+  </ul>
+</Base>

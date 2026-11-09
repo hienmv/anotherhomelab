@@ -1,0 +1,36 @@
+# Rendered by the nginx image entrypoint: envsubst fills ${NOTES_UPSTREAM} and
+# ${NGINX_LOCAL_RESOLVERS} (NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1); other $vars are left alone.
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    absolute_redirect off;
+
+    # Resolve the notes Service per request, so nginx starts even if notes is not up yet.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=30s ipv6=off;
+
+    # Content moved to notes.hien0ethan.com (old apex paths and old Jekyll URLs keep working).
+    rewrite "^/notes/(.*)$" https://notes.hien0ethan.com/$1 permanent;
+    rewrite "^/(tech|work-style)/\d{4}/\d{2}/\d{2}/([^/]+)\.html$" https://notes.hien0ethan.com/$2/ permanent;
+    rewrite "^/(rss\.xml|category/.*)$" https://notes.hien0ethan.com/$1 permanent;
+
+    # Featured notes, fetched from the notes app inside the cluster (same origin for the browser).
+    location = /featured.json {
+        set $notes_upstream ${NOTES_UPSTREAM};
+        proxy_pass $notes_upstream/featured.json;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+        add_header Cache-Control "public, max-age=60";
+    }
+
+    location /_astro/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ $uri.html =404;
+    }
+
+    error_page 404 /404.html;
+}
