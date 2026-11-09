@@ -48,6 +48,11 @@ reloaded from Postgres with `SET NX`).
 Tested locally (2026-11-08): 30 simultaneous requests from 3 users on a hot concert with 5 tickets left →
 3 accepted, 27 rejected instantly, exactly 5 sold (2/2/1, per-person limit held), gate = DB = 0.
 
+Tested on the cluster via https://tickets.hien0ethan.com (2026-11-09): same 30-request burst over the
+internet → 3 accepted, 27 rejected, exactly 5 sold (2/1/2), gate = DB = 0, nothing stuck PENDING;
+both workers (one per Pi 4) processed orders. Login cookie arrives with `Secure; HttpOnly; SameSite=Lax`.
+Idle footprint: api ~100 MiB each, worker ~80 MiB each, web 4 MiB.
+
 ### Frontend (Atomic Design)
 
 ```text
