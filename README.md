@@ -96,8 +96,8 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
 | TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://ticketlite.hien0ethan.com` | running |
-| Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | deploying |
-| Notes (Astro, migrated from hienmv.github.io) | apps | Pi 4 | `https://notes.hien0ethan.com` | deploying |
+| Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | running |
+| Notes (Astro, migrated from hienmv.github.io) | apps | Pi 4 | `https://notes.hien0ethan.com` | running |
 | TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
