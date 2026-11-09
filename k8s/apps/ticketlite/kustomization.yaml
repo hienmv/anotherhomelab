@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - backend.yaml
   - web.yaml
-  - redirects.yaml
 # Image tags are bumped by CI (.github/workflows/ticketlite.yml) after each build on main.
 images:
   - name: ghcr.io/hienmv/ticketlite-backend

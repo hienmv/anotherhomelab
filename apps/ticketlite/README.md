@@ -1,7 +1,7 @@
 # TicketLite
 
 A small distributed ticket-selling system (a "light Ticketmaster") running on the homelab k3s cluster.
-Public URL: **https://hien0ethan.com** (also `tickets.hien0ethan.com`; any unknown subdomain redirects to the main app)
+Public URL: **https://ticketlite.hien0ethan.com** (only this host; `hien0ethan.com` is the separate landing page)
 
 - Browse concerts, with a **Hot tickets** section (high demand, small inventory, max 2 per person)
 - The Buy button is disabled with the reason shown when you can't buy: sold out, or you already hold
@@ -54,7 +54,7 @@ reloaded from Postgres with `SET NX`).
 Tested locally (2026-11-08): 30 simultaneous requests from 3 users on a hot concert with 5 tickets left →
 3 accepted, 27 rejected instantly, exactly 5 sold (2/2/1, per-person limit held), gate = DB = 0.
 
-Tested on the cluster via https://tickets.hien0ethan.com (2026-11-09): same 30-request burst over the
+Tested on the cluster via https://tickets.hien0ethan.com, its former host (2026-11-09): same 30-request burst over the
 internet → 3 accepted, 27 rejected, exactly 5 sold (2/1/2), gate = DB = 0, nothing stuck PENDING;
 both workers (one per Pi 4) processed orders. Login cookie arrives with `Secure; HttpOnly; SameSite=Lax`.
 Idle footprint: api ~100 MiB each, worker ~80 MiB each, web 4 MiB.

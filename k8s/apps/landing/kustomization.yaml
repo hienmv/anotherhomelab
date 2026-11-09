@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - landing.yaml
+# Name gets a content hash, so editing index.html rolls the Deployment automatically.
+configMapGenerator:
+  - name: landing-html
+    namespace: apps
+    files:
+      - index.html
