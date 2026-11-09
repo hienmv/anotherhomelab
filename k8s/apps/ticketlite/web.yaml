@@ -1,5 +1,6 @@
 # TicketLite frontend (React static files on nginx) + public Ingress.
-# https://tickets.hien0ethan.com : /api -> api Service, everything else -> web.
+# Main app: https://hien0ethan.com (also https://tickets.hien0ethan.com).
+# /api -> api Service, everything else -> web. Unknown hosts: see redirects.yaml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,6 +53,15 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
+    - host: hien0ethan.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: ticketlite-api, port: { name: http } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ticketlite-web, port: { name: http } } }
     - host: tickets.hien0ethan.com
       http:
         paths:
