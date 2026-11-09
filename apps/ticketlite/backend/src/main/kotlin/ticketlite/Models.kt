@@ -23,6 +23,8 @@ data class ConcertDto(
     val available: Int,
     val hot: Boolean,
     val maxPerUser: Int,
+    /** Tickets the logged-in user holds or waits for (pending + confirmed); null when anonymous. */
+    val userHeld: Int? = null,
 )
 
 @Serializable

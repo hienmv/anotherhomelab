@@ -17,7 +17,10 @@ import redis.clients.jedis.resps.StreamEntry
 private val log = LoggerFactory.getLogger("ticketlite.worker")
 
 /** Result of processing one order, used to give back Redis gate capacity on failure. */
-private data class Outcome(val concertId: Long, val quantity: Int, val status: String, val reason: String?)
+private data class Outcome(
+    val userId: Long, val concertId: Long, val quantity: Int, val status: String, val reason: String?,
+    val dbAvailable: Int,
+)
 
 /**
  * Consumes order ids from the Redis stream `orders` (consumer group `workers`) and confirms them
@@ -85,7 +88,8 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
             if (cfg.workerDelayMs > 0) Thread.sleep(cfg.workerDelayMs) // simulated payment step
             val outcome = process(orderId)
             if (outcome != null) {
-                if (outcome.status == OrderStatus.FAILED) gate.release(outcome.concertId, outcome.quantity)
+                if (outcome.status == OrderStatus.FAILED) gate.release(outcome.concertId, outcome.userId, outcome.quantity)
+                if (outcome.reason == "SOLD_OUT") gate.resyncInventory(outcome.concertId, outcome.dbAvailable)
                 Metrics.orderProcessed(outcome.status, outcome.reason, outcome.quantity, System.nanoTime() - started)
                 log.info("order {} -> {}{}", orderId, outcome.status, outcome.reason?.let { " ($it)" } ?: "")
             }
@@ -120,10 +124,10 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
         if (reason == null) {
             c.update("update concerts set available = available - ? where id = ?", quantity, concertId)
             c.update("update orders set status = ?, updated_at = now() where id = ?", OrderStatus.CONFIRMED, orderId)
-            Outcome(concertId, quantity, OrderStatus.CONFIRMED, null)
+            Outcome(userId, concertId, quantity, OrderStatus.CONFIRMED, null, available - quantity)
         } else {
             c.update("update orders set status = ?, reason = ?, updated_at = now() where id = ?", OrderStatus.FAILED, reason, orderId)
-            Outcome(concertId, quantity, OrderStatus.FAILED, reason)
+            Outcome(userId, concertId, quantity, OrderStatus.FAILED, reason, available)
         }
     }
 }

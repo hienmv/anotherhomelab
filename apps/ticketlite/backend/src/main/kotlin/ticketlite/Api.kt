@@ -103,8 +103,12 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
             }
 
             get("/concerts") {
-                // Show what can still be reserved right now (the Redis gate) when known.
-                call.respond(repo.concerts().map { c -> c.copy(available = gate.available(c.id) ?: c.available) })
+                // Show what can still be reserved right now (the Redis gate) when known, plus how many
+                // tickets the logged-in user already holds so the UI can explain a disabled Buy button.
+                val held = call.sessions.get<UserSession>()?.let { repo.userHeldByConcert(it.userId) }
+                call.respond(repo.concerts().map { c ->
+                    c.copy(available = gate.available(c.id) ?: c.available, userHeld = held?.let { it[c.id] ?: 0 })
+                })
             }
 
             post("/orders") {
@@ -121,23 +125,31 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
                     call.respond(HttpStatusCode.BadRequest, ErrorDto("INVALID_QUANTITY", "1..$limit tickets"))
                     return@post
                 }
-                // Early check; the worker enforces the limit again inside the transaction.
-                if (repo.userHeld(s.userId, concert.id) + req.quantity > limit) {
-                    Metrics.orderRequest("limit")
-                    call.respond(HttpStatusCode.Conflict, ErrorDto("LIMIT", "max $limit per person"))
-                    return@post
-                }
-                if (!gate.reserve(concert.id, req.quantity) { repo.available(concert.id) }) {
-                    Metrics.orderRequest("sold_out")
-                    call.respond(HttpStatusCode.Conflict, ErrorDto("SOLD_OUT"))
-                    return@post
+                // Atomic in Redis: per-person limit + inventory. The worker re-checks both in Postgres.
+                val reservation = gate.reserve(
+                    concert.id, s.userId, req.quantity, limit,
+                    loadAvailable = { repo.available(concert.id) },
+                    loadHeld = { repo.userHeld(s.userId, concert.id) },
+                )
+                when (reservation) {
+                    Reservation.LIMIT -> {
+                        Metrics.orderRequest("limit")
+                        call.respond(HttpStatusCode.Conflict, ErrorDto("LIMIT", "max $limit per person"))
+                        return@post
+                    }
+                    Reservation.SOLD_OUT -> {
+                        Metrics.orderRequest("sold_out")
+                        call.respond(HttpStatusCode.Conflict, ErrorDto("SOLD_OUT"))
+                        return@post
+                    }
+                    Reservation.OK -> Unit
                 }
                 val id = UUID.randomUUID()
                 try {
                     repo.insertPending(id, s.userId, concert.id, req.quantity)
                     gate.enqueue(id)
                 } catch (e: Exception) {
-                    gate.release(concert.id, req.quantity)
+                    gate.release(concert.id, s.userId, req.quantity)
                     runCatching { repo.markFailed(id, "ENQUEUE_FAILED") }
                     throw e
                 }

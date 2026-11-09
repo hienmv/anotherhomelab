@@ -54,6 +54,30 @@ describe('ConcertCard', () => {
     expect(onBuy).toHaveBeenCalledWith(c, 2)
   })
 
+  it('disables Buy and explains why when the user reached the limit', () => {
+    render(<ConcertCard concert={concert({ hot: true, maxPerUser: 2, userHeld: 2 })} busy={false} onBuy={() => {}} />)
+    const buy = screen.getByRole('button', { name: 'Buy' })
+    expect(buy).toBeDisabled()
+    expect(screen.getByText('Limit reached')).toBeInTheDocument()
+    // the reason is linked to the button for screen readers
+    expect(buy).toHaveAccessibleDescription('You already have 2 tickets: the maximum for this concert (2 per person).')
+  })
+
+  it('explains sold out next to the disabled button', () => {
+    render(<ConcertCard concert={concert({ available: 0, userHeld: 0 })} busy={false} onBuy={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Buy' })).toHaveAccessibleDescription('Sold out. No tickets left for this concert.')
+  })
+
+  it('lets the user buy only the remaining allowance', async () => {
+    const onBuy = vi.fn()
+    const c = concert({ hot: true, maxPerUser: 2, userHeld: 1 })
+    render(<ConcertCard concert={c} busy={false} onBuy={onBuy} />)
+    expect(screen.getByText('You have 1; you can buy 1 more.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Buy' }))
+    expect(onBuy).toHaveBeenCalledWith(c, 1)
+  })
+
   it('shows progress while buying', () => {
     render(<ConcertCard concert={concert()} busy={true} onBuy={() => {}} />)
     expect(screen.getByRole('button', { name: 'Buying…' })).toBeDisabled()

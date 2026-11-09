@@ -15,6 +15,8 @@ export interface Concert {
   available: number
   hot: boolean
   maxPerUser: number
+  /** Tickets the logged-in user holds or waits for; absent when not logged in. */
+  userHeld?: number | null
 }
 
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'FAILED'

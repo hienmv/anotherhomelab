@@ -34,6 +34,14 @@ class Repo(private val db: Db) {
         ) { it.getInt(1) } ?: 0
     }
 
+    /** concertId -> tickets held (pending + confirmed) for one user, in one query. */
+    fun userHeldByConcert(userId: Long): Map<Long, Int> = db.read { c ->
+        c.queryList(
+            "select concert_id, sum(quantity) from orders where user_id = ? and status in ('PENDING','CONFIRMED') group by concert_id",
+            userId,
+        ) { it.getLong(1) to it.getInt(2) }.toMap()
+    }
+
     fun insertPending(id: UUID, userId: Long, concertId: Long, quantity: Int) = db.tx { c ->
         c.update(
             "insert into orders (id, user_id, concert_id, quantity, status) values (?, ?, ?, ?, ?)",

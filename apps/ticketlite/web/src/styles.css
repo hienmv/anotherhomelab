@@ -115,3 +115,6 @@ code { font-size: 0.9em; }
 
 .table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
 .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+
+.card__hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.card__hint--blocked { color: var(--text); font-weight: 600; }

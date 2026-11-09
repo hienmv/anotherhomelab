@@ -4,6 +4,9 @@ A small distributed ticket-selling system (a "light Ticketmaster") running on th
 Public URL: **https://hien0ethan.com** (also `tickets.hien0ethan.com`; any unknown subdomain redirects to the main app)
 
 - Browse concerts, with a **Hot tickets** section (high demand, small inventory, max 2 per person)
+- The Buy button is disabled with the reason shown when you can't buy: sold out, or you already hold
+  the per-person maximum ("You already have 2 tickets: the maximum for this concert"). The quantity
+  picker never offers more than you're still allowed.
 - Log in / log out with sample accounts (no registration): `alice/alice123`, `bob/bob123`, `carol/carol123`
 - Buy tickets; see "My orders"
 
@@ -31,14 +34,17 @@ Public URL: **https://hien0ethan.com** (also `tickets.hien0ethan.com`; any unkno
 
 ### How hot-ticket rushes are handled
 
-1. **Fast reject in Redis.** `inventory:<concertId>` counts tickets that can still be reserved. A Lua
-   script checks and decrements it atomically. When it hits 0, buyers get `409 SOLD_OUT` without
-   touching Postgres.
+1. **Fast reject in Redis.** `inventory:<concertId>` counts tickets that can still be reserved and
+   `hold:<userId>:<concertId>` counts what each user holds or waits for. One Lua script checks the
+   per-person limit and the stock and reserves both atomically: `409 LIMIT` / `409 SOLD_OUT` without
+   touching Postgres. (Until 2026-11-09 the limit was read from Postgres first; 60 parallel requests
+   from 3 users got 18 accepted for a limit of 6. Now exactly 6.)
 2. **Queue.** Accepted requests become a `PENDING` order plus a message on the Redis stream `orders`.
    The API answers `202` immediately, so a spike doesn't hold HTTP connections open.
 3. **Authoritative confirm.** Workers (consumer group, each message to one worker) lock the order and
    the concert row (`SELECT ... FOR UPDATE`), re-check stock and the per-person limit, then commit.
-   On failure the Redis gate gets the tickets back.
+   On failure the Redis gate gets the tickets and the user's hold back; on `SOLD_OUT` it is also reset
+   to Postgres' number, so a stale gate corrects itself after one failed order.
 4. **Crash safety.** A message read but never acknowledged (worker died) is reclaimed by another
    worker after 60s (`XAUTOCLAIM`). Orders that are no longer `PENDING` are skipped, so reprocessing is safe.
 
@@ -71,7 +77,7 @@ web/src/pages/ ConcertsPage, LoginPage, OrdersPage
 | POST | `/api/auth/login` | - | `{username, password}` → sets `TL_SESSION` cookie (HttpOnly, signed, Secure in k8s) |
 | POST | `/api/auth/logout` | - | clears the cookie |
 | GET | `/api/auth/me` | yes | current user or 401 |
-| GET | `/api/concerts` | - | list; `available` = what can still be reserved |
+| GET | `/api/concerts` | - | list; `available` = what can still be reserved; `userHeld` = your tickets (pending + confirmed) when logged in |
 | POST | `/api/orders` | yes | `{concertId, quantity}` → `202 PENDING`, or 409 `SOLD_OUT` / `LIMIT` |
 | GET | `/api/orders` | yes | my last 50 orders |
 | GET | `/api/orders/{id}` | yes | poll status: `PENDING` → `CONFIRMED` / `FAILED` |
@@ -166,9 +172,4 @@ otherwise the first burst after a pod start is invisible to `increase()` (dashbo
 - No payment, seat maps, or registration (by design).
 - Scale workers with KEDA on stream lag.
 - Rate limiting per user/IP for real rushes.
-- **Known gap: per-person limit under parallel requests (seen 2026-11-09).** 60 simultaneous buys by
-  3 users on a hot concert: 18 were *accepted* (202) though only 6 were allowed. The API's early check
-  reads Postgres, so same-instant requests all pass it. The worker still enforced the rule (6 CONFIRMED,
-  12 FAILED with `LIMIT`), so nothing is oversold, but users see "accepted" then "failed".
-  Fix: an atomic per-user counter in Redis (`hold:<user>:<concert>`) checked in the same Lua script
-  as the inventory gate.
+
