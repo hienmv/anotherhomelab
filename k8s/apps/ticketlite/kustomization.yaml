@@ -7,6 +7,6 @@ resources:
 # Image tags are bumped by CI (.github/workflows/ticketlite.yml) after each build on main.
 images:
   - name: ghcr.io/hienmv/ticketlite-backend
-    newTag: sha-e8f15ed
+    newTag: sha-70d6f90
   - name: ghcr.io/hienmv/ticketlite-web
-    newTag: sha-e8f15ed
+    newTag: sha-70d6f90
