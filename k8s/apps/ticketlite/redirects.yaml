@@ -1,0 +1,36 @@
+# Send the apex domain and the common typo "ticket." to the real app host.
+#   https://hien0ethan.com/...        -> https://tickets.hien0ethan.com/...
+#   https://ticket.hien0ethan.com/... -> https://tickets.hien0ethan.com/...
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: to-tickets
+  namespace: apps
+spec:
+  redirectRegex:
+    regex: ^https?://[^/]+(.*)
+    replacement: https://tickets.hien0ethan.com${1}
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ticketlite-redirects
+  namespace: apps
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: apps-to-tickets@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hien0ethan.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ticketlite-web, port: { name: http } } }
+    - host: ticket.hien0ethan.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ticketlite-web, port: { name: http } } }
