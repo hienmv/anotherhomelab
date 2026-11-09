@@ -2,16 +2,11 @@
 import Base from '../layouts/Base.astro'
 import apps from '../data/apps.json'
 import intro from '../data/profile.json'
-const links = intro.links.filter((l) => l.url)
 ---
 <Base>
   <section class="hero">
     <h1>{intro.headline}</h1>
     <p class="hero__intro">{intro.intro}</p>
-    <ul class="links">
-      {links.map((l) => <li><a href={l.url!} rel="me noopener">{l.label}</a></li>)}
-      <li><a href="/about/">About me</a></li>
-    </ul>
   </section>
 
   <section class="section" aria-labelledby="featured-title">

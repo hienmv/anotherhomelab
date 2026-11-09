@@ -26,7 +26,7 @@ const fullTitle = title ? `${title} · ${profile.siteTitle}` : profile.siteTitle
     <Header current={current} />
     <main id="main" class="main"><slot /></main>
     <footer class="footer muted">
-      © {new Date().getFullYear()} {profile.name} · Notes MIT licensed · <a href="/rss.xml">RSS</a> · <a href="https://hien0ethan.com">hien0ethan.com</a> · Served from a Raspberry Pi k3s cluster
+      © {new Date().getFullYear()} {profile.name} · <a href="https://hien0ethan.com">hien0ethan.com</a> · Served from a Raspberry Pi k3s cluster
     </footer>
   </body>
 </html>

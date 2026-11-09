@@ -1,7 +1,7 @@
 {
   "name": "Hien",
-  "headline": "Hi, I'm Hien.",
-  "intro": "Software engineer. I write notes on what I learn (JVM, algorithms, ways of working) and run a small homelab: a Raspberry Pi k3s cluster hosting the apps below.",
+  "headline": "Hi, I'm Hien (Ethan).",
+  "intro": "Software Engineer. I write notes on what I learn and run a small homelab: a Raspberry Pi k3s cluster hosting the apps below.",
   "notesUrl": "https://notes.hien0ethan.com",
   "about": [
     "TODO: short introduction (who you are, what you work on, what you're interested in)."
