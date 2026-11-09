@@ -590,6 +590,9 @@ Later: encrypt them into git with SOPS + age so a rebuilt cluster needs no manua
 - [x] CNPG 1.30.1 + Postgres 17 (`k8s/data/postgres.yaml`), Redis 8.2 (`k8s/data/redis.yaml`), secret `apps/app-env` (2026-11-07). On SD card for now.
 - [ ] Move PG/Redis volumes to SSD
 - [x] First app: TicketLite (web/api/worker), CI → GHCR → Flux (2026-11-08); cron still todo
+- [ ] **Pending (user):** create GHCR pull token (classic PAT, `read:packages`) → secret `apps/ghcr-pull`
+  (command in `apps/ticketlite/README.md`). Until then TicketLite pods are `ImagePullBackOff` (harmless).
+  After: delete leftover pods from the first rollout, test https://tickets.hien0ethan.com + a rush test.
 - [x] Traefik trusts X-Forwarded-* from pods (`k8s/infra/traefik-config.yaml`) for Secure cookies via tunnel
 - [x] cloudflared in cluster, retire host cloudflared (8)
 - [ ] Backups + restore test (9): deferred 2026-11-08, revisit before real data

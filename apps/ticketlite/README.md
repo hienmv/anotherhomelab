@@ -109,7 +109,13 @@ only the final arm64 runtime image is assembled for the Pis, so no slow emulatio
 Manifests: `k8s/apps/ticketlite/` (namespace `apps`). Secrets (not in git):
 - `app-env`: `DATABASE_URL`, `REDIS_URL` (existing, section 7.2 of the guide)
 - `ticketlite`: `SESSION_SECRET` (`kubectl -n apps create secret generic ticketlite --from-literal=SESSION_SECRET="$(openssl rand -hex 32)"`)
-- `ghcr-pull`: only if the GHCR packages are private
+- `ghcr-pull`: GHCR packages are private, so the cluster needs a pull token (classic PAT, only `read:packages`).
+  Run in your own terminal so the token stays out of logs/chat:
+  ```bash
+  read -s GHCR_TOKEN && kubectl -n apps create secret docker-registry ghcr-pull \
+    --docker-server=ghcr.io --docker-username=hienmv --docker-password="$GHCR_TOKEN"; unset GHCR_TOKEN
+  ```
+  The token expires: when pulls start failing with 401/403, create a new one and recreate the secret.
 
 ## Limits / next steps
 
