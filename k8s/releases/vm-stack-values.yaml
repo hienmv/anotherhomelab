@@ -39,7 +39,7 @@ alertmanager:
 vmalert:
   enabled: false
 
-# Grafana on pi4-4gb (role=apps), LAN-only ingress
+# Grafana on pi4-4gb (role=apps): public via the tunnel + LAN-only grafana.lan
 grafana:
   enabled: true
   nodeSelector: { role: apps }
@@ -61,6 +61,8 @@ grafana:
     annotations:
       # http -> https (Middleware in k8s/monitoring/grafana-https.yaml)
       traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
+    # LAN only (TLS from the Mac's mkcert CA). The public host grafana.hien0ethan.com has its own
+    # Ingress without the redirect middleware: k8s/monitoring/grafana-public.yaml
     hosts: [grafana.lan]
     path: /
     pathType: Prefix
@@ -69,7 +71,15 @@ grafana:
         hosts: [grafana.lan]
   grafana.ini:
     server:
-      root_url: https://grafana.lan
+      root_url: https://grafana.hien0ethan.com
+    security:
+      cookie_secure: true            # both hosts are HTTPS-only
+      cookie_samesite: lax
+      disable_gravatar: true
+    users:
+      allow_sign_up: false           # only the admin account (secret monitoring/grafana-admin)
+    auth.anonymous:
+      enabled: false
     analytics:
       reporting_enabled: false
       check_for_updates: false

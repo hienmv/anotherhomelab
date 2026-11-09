@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - scrapes.yaml
   - grafana-https.yaml
+  - grafana-public.yaml
 # Grafana dashboards: ConfigMaps labelled grafana_dashboard=1 are loaded by Grafana's sidecar.
 configMapGenerator:
   - name: dashboard-ticketlite

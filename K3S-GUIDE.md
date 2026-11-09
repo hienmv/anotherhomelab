@@ -202,13 +202,13 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 |---|---|---|
 | VictoriaMetrics single | pi4-8gb | 30d retention, 10Gi |
 | vmagent | pi4-8gb | scrapes every 30s; extra targets in `k8s/monitoring/scrapes.yaml` (CNPG, cloudflared, TicketLite) |
-| Grafana | pi4-4gb | https://grafana.lan (LAN only); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
+| Grafana | pi4-4gb | https://grafana.hien0ethan.com (public, admin login; add Cloudflare Access, see docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
 | node-exporter | all 3 nodes | tolerates pi3's taint |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
 Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.
 
-### Grafana on the Mac
+### Grafana on the Mac (LAN name)
 1. `echo "192.168.40.250 grafana.lan" | sudo tee -a /etc/hosts`
 2. Open https://grafana.lan, user `admin`, password:
    `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`

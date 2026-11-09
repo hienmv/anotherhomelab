@@ -1,0 +1,17 @@
+# Public Grafana: https://grafana.hien0ethan.com via the Cloudflare tunnel (TLS ends at Cloudflare).
+# Separate from the chart's LAN Ingress (grafana.lan) so the LAN-only http->https redirect middleware
+# never applies to tunnel traffic. Protect it with Cloudflare Access (docs/domains.md).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-public
+  namespace: monitoring
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: grafana.hien0ethan.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: vm-grafana, port: { name: service } } }

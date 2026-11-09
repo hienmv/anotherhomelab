@@ -8,7 +8,7 @@ queue workers, batch jobs. Public via Cloudflare Tunnel:
 | https://hien0ethan.com | landing: intro, featured notes, homelab apps, about ([apps/landing](apps/landing/README.md)) |
 | https://notes.hien0ethan.com | notes ([apps/notes](apps/notes/README.md)) |
 | https://ticketlite.hien0ethan.com | TicketLite ([apps/ticketlite](apps/ticketlite/README.md)) |
-| https://grafana.lan | Grafana, LAN only |
+| https://grafana.hien0ethan.com | Grafana (login; also `https://grafana.lan` on the LAN) |
 
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
 **[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting).
@@ -108,7 +108,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
-| Grafana (built-in + TicketLite dashboards) | monitoring | pi4-4gb | `https://grafana.lan` (LAN only, mkcert CA) | running |
+| Grafana (built-in + TicketLite dashboards) | monitoring | pi4-4gb | `https://grafana.hien0ethan.com` (public, login), `https://grafana.lan` (LAN, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Flux v2.10 (GitOps) | flux-system | Pi 4s | pulls this repo every 1m (read-only deploy key) | running |
 | Backups (PG, Redis, k3s DB) | - | - | - | todo |

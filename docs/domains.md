@@ -10,8 +10,9 @@ how to add a new one. Live state verified 2026-11-10.
 | `hien0ethan.com` | landing: intro, featured notes, Homelab, About | `k8s/apps/landing/ingress.yaml` (Ingress `landing`) |
 | `notes.hien0ethan.com` | notes | `k8s/apps/notes/ingress.yaml` (Ingress `notes`) |
 | `ticketlite.hien0ethan.com` | TicketLite (`/api` → api, `/` → web) | `k8s/apps/ticketlite/web.yaml` (Ingress `ticketlite`) |
+| `grafana.hien0ethan.com` | Grafana, public, admin login (add Cloudflare Access, below) | `k8s/monitoring/grafana-public.yaml` (Ingress `grafana-public`) |
 | any other `*.hien0ethan.com` | 301 to `https://hien0ethan.com` + same path | `k8s/apps/landing/ingress.yaml` (Ingress `fallback-to-landing`, Middleware `to-landing`) |
-| `grafana.lan` | Grafana, **LAN only** (not via Cloudflare) | `k8s/releases/vm-stack-values.yaml` (`grafana.ingress`) |
+| `grafana.lan` | same Grafana, **LAN only** (not via Cloudflare) | `k8s/releases/vm-stack-values.yaml` (`grafana.ingress`) |
 
 Retired names (now caught by the fallback): `tickets.`, `whoami.`, `hien.qzz.io` (expired free domain).
 
@@ -69,9 +70,23 @@ automatically because an Ingress with a host always wins over the host-less one.
 
 Apps behind the tunnel see `https` in `X-Forwarded-Proto`; use it for Secure cookies (TicketLite does).
 
+## Protect an app with Cloudflare Access (recommended for Grafana)
+
+Grafana's login page is public. Cloudflare Access adds a login step at Cloudflare's edge, so requests
+reach the Pi only after it. No cluster change is needed.
+
+1. Cloudflare dashboard → **Zero Trust** (first time: choose a team name, Free plan, up to 50 users).
+2. **Access → Applications → Add an application → Self-hosted**.
+3. Application domain: `grafana.hien0ethan.com`. Session duration: e.g. 24 hours.
+4. Policy: action **Allow**, include **Emails** → your email address.
+5. Login method: **One-time PIN** (default; code sent by email). Save.
+
+Check: a private browser window on `https://grafana.hien0ethan.com` must show Cloudflare's login page
+first, then Grafana's. Keep the Grafana password anyway (two layers).
+
 ## LAN-only names
 
-`grafana.lan` is not in Cloudflare DNS at all. It works only on devices that map it to a node IP:
+`grafana.lan` is not in Cloudflare DNS at all (the public name is `grafana.hien0ethan.com`). It works only on devices that map it to a node IP:
 the Mac has `192.168.40.250 grafana.lan` in `/etc/hosts`, and trusts its certificate through the mkcert
 CA (K3S-GUIDE.md section 10). Tunnel traffic can never reach it: cloudflared only forwards
 `*.hien0ethan.com`, and the fallback Ingress does not match because Traefik sees the real Host header.
