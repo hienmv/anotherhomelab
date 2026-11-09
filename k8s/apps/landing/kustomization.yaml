@@ -5,4 +5,4 @@ resources:
 # Image tag is bumped by CI (.github/workflows/landing.yml) after each build on main.
 images:
   - name: ghcr.io/hienmv/landing
-    newTag: main
+    newTag: sha-2439c25
