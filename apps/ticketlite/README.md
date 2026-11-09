@@ -106,10 +106,13 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 3. Commit the new tag into `k8s/apps/ticketlite/kustomization.yaml` (`[skip ci]`).
 4. Flux applies that commit within ~1 minute.
 
-**If CI fails:** check whether it's a download error (e.g. `504 Gateway Time-out` from
-github.com) before suspecting code. GitHub release downloads were flaky on 2026-11-08/09 (Flux CLI,
-Kotlin compiler). Gradle now retries downloads 5x (`backend/gradle.properties`); otherwise use
-"Re-run failed jobs" in the Actions tab.
+**Dependency caching (fixed 2026-11-09).** The backend Dockerfile downloads every jar, including the
+57 MB Kotlin compiler, in its own layer (`gradle resolveDependencies`), cached by CI until
+`build.gradle.kts`/`settings.gradle.kts` change. The compile step then runs `--offline`, so code-only
+changes download nothing. Before this, `gradle dependencies` fetched only `.pom` metadata and every run
+re-downloaded everything; two runs failed on a GitHub `504` because repo.maven.apache.org redirected
+the compiler jar to github.com. Google's Maven Central mirror is now tried first.
+If CI still fails on a download error, use "Re-run failed jobs".
 
 Build stages run natively on the amd64 runner (JVM bytecode and static JS are architecture-independent);
 only the final arm64 runtime image is assembled for the Pis, so no slow emulation.

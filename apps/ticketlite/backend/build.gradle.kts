@@ -8,6 +8,9 @@ group = "ticketlite"
 version = "1.0.0"
 
 repositories {
+    // Google's mirror of Maven Central first: on GitHub's runners repo.maven.apache.org sometimes
+    // redirects large jars (the Kotlin compiler) to github.com, which returned 504s (2026-11-09).
+    maven("https://maven-central.storage-download.googleapis.com/maven2/")
     mavenCentral()
 }
 
@@ -47,4 +50,17 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+/**
+ * Downloads every jar the build needs (libraries, test deps and the Kotlin compiler itself) without
+ * compiling anything. The Dockerfile runs it in its own layer, which stays cached until this file
+ * changes, so code-only changes download nothing. (`gradle dependencies` only fetches .pom metadata.)
+ */
+tasks.register("resolveDependencies") {
+    doLast {
+        configurations.filter { it.isCanBeResolved }.forEach { conf ->
+            runCatching { conf.resolve() }.onFailure { logger.info("skip ${conf.name}: ${it.message}") }
+        }
+    }
 }

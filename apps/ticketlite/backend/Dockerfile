@@ -4,9 +4,11 @@
 FROM --platform=$BUILDPLATFORM gradle:8.14-jdk21 AS build
 WORKDIR /src
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
-RUN gradle --no-daemon -q dependencies > /dev/null
+# Cached layer: downloads all jars incl. the Kotlin compiler; reruns only if the build files change.
+RUN gradle --no-daemon -q resolveDependencies
 COPY src ./src
-RUN gradle --no-daemon test installDist
+# --offline: everything must come from the cached layer above (no surprise downloads in CI).
+RUN gradle --no-daemon --offline test installDist
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
