@@ -1,7 +1,7 @@
 # anotherhomelab
 
 On-prem distributed system on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
-queue workers, batch jobs. Public entry via Cloudflare Tunnel: **https://hien0ethan.com** (landing page),
+queue workers, batch jobs. Public entry via Cloudflare Tunnel: **https://hien0ethan.com** (personal site: notes, homelab apps, about; [apps/site](apps/site/README.md)),
 **https://ticketlite.hien0ethan.com** (TicketLite). Unknown subdomains redirect to the landing page.
 App hostnames must stay one level deep (`<app>.hien0ethan.com`): Cloudflare's free certificate
 does not cover `<app>.<sub>.hien0ethan.com`.
@@ -37,7 +37,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │           ┌───────────────────────┴───────────────────────┐                              │ │
 │ │           ▼                                               ▼                              │ │
 │ │  ┌─────────────────┐                        ┌───────────────────────────┐                │ │
-│ │  │  landing (apex) │                        │  TicketLite web + api x2  │                │ │
+│ │  │   site (apex)   │                        │  TicketLite web + api x2  │                │ │
 │ │  │  + whoami debug │                        │    ticketlite.<domain>    │                │ │
 │ │  └─────────────────┘                        └─┬───────────────────┬─────┘                │ │
 │ │                                               │                   │                      │ │
@@ -96,7 +96,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
 | whoami demo | apps | Pi 4 | `https://whoami.hien0ethan.com` (debug headers) | running |
 | TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://ticketlite.hien0ethan.com` | running |
-| Landing page (placeholder) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | running |
+| Site (Astro: notes, Homelab menu, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | running |
 | TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | pi4-4gb | - | planned |
@@ -108,7 +108,8 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
-CI/CD: `.github/workflows/ticketlite.yml` builds arm64 images to GHCR on push to `main`, then
+CI/CD: shared reusable workflows `build-image.yml` + `bump-tag.yml`; per app `ticketlite.yml`, `site.yml`.
+`ticketlite.yml` builds arm64 images to GHCR on push to `main`, then
 commits the new image tag to `k8s/apps/ticketlite/`; Flux deploys it. Details: [apps/ticketlite/README.md](apps/ticketlite/README.md).
 
 Grafana: add `192.168.40.250 grafana.lan` to `/etc/hosts`, open https://grafana.lan, user `admin`,
