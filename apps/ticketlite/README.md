@@ -106,6 +106,11 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 3. Commit the new tag into `k8s/apps/ticketlite/kustomization.yaml` (`[skip ci]`).
 4. Flux applies that commit within ~1 minute.
 
+**If CI fails:** check whether it's a download error (e.g. `504 Gateway Time-out` from
+github.com) before suspecting code. GitHub release downloads were flaky on 2026-11-08/09 (Flux CLI,
+Kotlin compiler). Gradle now retries downloads 5x (`backend/gradle.properties`); otherwise use
+"Re-run failed jobs" in the Actions tab.
+
 Build stages run natively on the amd64 runner (JVM bytecode and static JS are architecture-independent);
 only the final arm64 runtime image is assembled for the Pis, so no slow emulation.
 

@@ -3,7 +3,7 @@
 # runtime stage is the target architecture (linux/arm64 for the Pis). No emulation needed.
 FROM --platform=$BUILDPLATFORM gradle:8.14-jdk21 AS build
 WORKDIR /src
-COPY settings.gradle.kts build.gradle.kts ./
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 RUN gradle --no-daemon -q dependencies > /dev/null
 COPY src ./src
 RUN gradle --no-daemon test installDist
