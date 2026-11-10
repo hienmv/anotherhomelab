@@ -10,7 +10,7 @@ how to add a new one. Live state verified 2026-11-10.
 | `hien0ethan.com` | landing: intro, featured notes, Homelab, About | `k8s/apps/landing/ingress.yaml` (Ingress `landing`) |
 | `notes.hien0ethan.com` | notes | `k8s/apps/notes/ingress.yaml` (Ingress `notes`) |
 | `ticketlite.hien0ethan.com` | TicketLite (`/api` → api, `/` → web) | `k8s/apps/ticketlite/web.yaml` (Ingress `ticketlite`) |
-| `grafana.hien0ethan.com` | Grafana, public, admin login (add Cloudflare Access, below) | `k8s/monitoring/grafana-public.yaml` (Ingress `grafana-public`) |
+| `grafana.hien0ethan.com` | Grafana, public, behind Cloudflare Access (email PIN), then Grafana login | `k8s/monitoring/grafana-public.yaml` (Ingress `grafana-public`) |
 | any other `*.hien0ethan.com` | 301 to `https://hien0ethan.com` + same path | `k8s/apps/landing/ingress.yaml` (Ingress `fallback-to-landing`, Middleware `to-landing`) |
 | `grafana.lan` | same Grafana, **LAN only** (not via Cloudflare) | `k8s/releases/vm-stack-values.yaml` (`grafana.ingress`) |
 
@@ -75,14 +75,31 @@ Apps behind the tunnel see `https` in `X-Forwarded-Proto`; use it for Secure coo
 Grafana's login page is public. Cloudflare Access adds a login step at Cloudflare's edge, so requests
 reach the Pi only after it. No cluster change is needed.
 
-1. Cloudflare dashboard → **Zero Trust** (first time: choose a team name, Free plan, up to 50 users).
-2. **Access → Applications → Add an application → Self-hosted**.
-3. Application domain: `grafana.hien0ethan.com`. Session duration: e.g. 24 hours.
-4. Policy: action **Allow**, include **Emails** → your email address.
-5. Login method: **One-time PIN** (default; code sent by email). Save.
+Status: enabled for `grafana.hien0ethan.com` (team `soft-violet-7a6b`, app `Grafana`).
 
-Check: a private browser window on `https://grafana.hien0ethan.com` must show Cloudflare's login page
-first, then Grafana's. Keep the Grafana password anyway (two layers).
+1. Cloudflare dashboard → **Zero Trust** (first time: choose a team name, Free plan, up to 50 users).
+2. **Access → Applications → Add an application → Self-hosted**. Name: `Grafana`.
+3. Public hostname: subdomain `grafana`, domain `hien0ethan.com`, path empty. Session duration: 24 hours.
+4. Policy: action **Allow**, include **Emails** → your email address. Policies are separate, reusable
+   objects (Access → Policies): create one, then in the app use **Select existing policies** to attach it.
+5. Login method: **One-time PIN** (code sent by email). If it is not listed, add it under
+   Settings → Authentication → Login methods. Click **Save** on the last wizard page.
+
+Check from any shell:
+
+```sh
+curl -sI https://grafana.hien0ethan.com | grep -i location
+# Access on:  location: https://<team>.cloudflareaccess.com/cdn-cgi/access/login/...
+# Access off: location: /login   (Grafana's own redirect, request reached the Pi)
+```
+
+In a browser, use a private window: Cloudflare's email/PIN page first, then Grafana's login. Keep the
+Grafana password anyway (two layers).
+
+Troubleshooting: `location: /login` means no Access application covers the hostname. A policy alone
+protects nothing; it must be attached to an application whose hostname matches exactly. Tools that call
+the public URL without a browser get the Cloudflare login page too: use an Access service token
+(`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers) or the LAN name.
 
 ## LAN-only names
 
