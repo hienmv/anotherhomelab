@@ -240,12 +240,17 @@
       register: pass2
       when: missing_keys | length > 0
 
-    - name: Passphrases match and are long enough
+    - name: Passphrase is at least 12 characters (empty = no protection, not allowed)
       ansible.builtin.assert:
-        that:
-          - pass1.user_input == pass2.user_input
-          - pass1.user_input | length >= 12
-        fail_msg: "Passphrases differ or are shorter than 12 characters. Re-run."
+        that: pass1.user_input | length >= 12
+        fail_msg: "Passphrase is {{ 'empty' if not pass1.user_input else 'shorter than 12 characters' }}. Re-run and type one (input is hidden)."
+        quiet: true
+      when: missing_keys | length > 0
+
+    - name: Both passphrases match
+      ansible.builtin.assert:
+        that: pass1.user_input == pass2.user_input
+        fail_msg: "The two passphrases differ. Re-run."
         quiet: true
       no_log: true
       when: missing_keys | length > 0
