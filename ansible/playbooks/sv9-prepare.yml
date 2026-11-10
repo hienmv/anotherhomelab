@@ -58,6 +58,12 @@
         validate: sshd -t -f %s
       notify: Reload sshd
 
+    - name: logind drop-in directory (not shipped by Ubuntu)
+      ansible.builtin.file:
+        path: /etc/systemd/logind.conf.d
+        state: directory
+        mode: "0755"
+
     - name: Never sleep on lid close (AC, battery, docked)
       ansible.builtin.copy:
         dest: /etc/systemd/logind.conf.d/homelab.conf
