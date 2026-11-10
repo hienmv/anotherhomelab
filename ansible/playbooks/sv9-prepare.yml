@@ -212,7 +212,7 @@
   # input with ansible-core 2.21 on macOS). Asked every run; once keys and repo exist, press Enter.
   vars_prompt:
     - name: key_passphrase
-      prompt: "Passphrase for sv9 SSH keys id_homelab + id_github (new keys: min 12 chars; keys and repo already there: just Enter)"
+      prompt: "Passphrase for sv9 SSH keys id_homelab + id_github (first run: invent one, min 12 chars; later runs: just Enter)"
       private: true
       confirm: true
   tasks:
