@@ -260,6 +260,50 @@ Open:
 - [ ] KEDA worker autoscaling; batch CronJobs
 - [ ] Archive hienmv.github.io once the notes site is confirmed (user)
 
+## 10. Migration: CF-SV9 as k3s server + data node (in progress, 2026-11-10)
+
+Decision: a Panasonic CF-SV9 (amd64, 16 GB RAM, SSD ~80 GB usable, Ubuntu 26.04 LTS) stays always on at
+home as **k3s server**, **`role=data` node** and **admin workstation**. The Mac only SSHes into it.
+Why: control plane and Postgres/Redis leave the SD cards; the laptop battery acts as a UPS. This
+reverses the 2026-11-08 "no admin box in the cluster" decision (README → Operations).
+
+Target: `sv9` `.249` server + `role=data` (PG, Redis, VMSingle, cloudflared follow the label, no
+manifest change); `pi4-8gb` and `pi4-4gb` agents `role=apps`; `pi3` unchanged. The 64 GB SD card
+moves from pi4-4gb to pi4-8gb (32 GB the other way).
+
+Plan: (0) prepare sv9, no downtime; (1) export secrets + `pg_dump`; (2) uninstall k3s, swap SD cards,
+fix hostnames/IPs, install server on sv9, join Pis, restore secrets, Flux rebuilds, restore PG;
+(3) verify, update README diagrams and this guide. App images must be multi-arch (amd64 + arm64).
+
+### 10.1 Prepare sv9 (at its keyboard)
+
+Use **wired Ethernet** for a server (Wi-Fi power saving and roaming cause API timeouts and flannel
+drops). Plug the cable in first, so the static IP goes on the wired profile.
+
+```bash
+sudo apt update && sudo apt -y full-upgrade
+sudo apt -y install openssh-server curl git
+sudo hostnamectl set-hostname sv9
+
+# never sleep: lid closed, on AC or battery
+sudo mkdir -p /etc/systemd/logind.conf.d
+printf '[Login]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\nHandleLidSwitchDocked=ignore\n' \
+  | sudo tee /etc/systemd/logind.conf.d/homelab.conf
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
+# static IP on the wired profile (name from the first command, usually "Wired connection 1")
+nmcli -t -f NAME,DEVICE,TYPE connection show
+sudo nmcli connection modify "Wired connection 1" ipv4.method manual \
+  ipv4.addresses 192.168.40.249/24 ipv4.gateway 192.168.40.1 ipv4.dns 192.168.40.1
+sudo nmcli connection up "Wired connection 1"
+sudo reboot
+```
+
+BIOS (F2 at boot): if a battery charge limit / economy mode exists, enable it (battery sits on AC forever).
+
+Mac side: key `~/.ssh/id_sv9`, `Host sv9` in `~/.ssh/config` (User `hien`), `192.168.40.249 sv9` in
+`/etc/hosts`, then `ssh-copy-id -i ~/.ssh/id_sv9 sv9` (password once).
+
 ## Uninstall / reset
 ```bash
 ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh
