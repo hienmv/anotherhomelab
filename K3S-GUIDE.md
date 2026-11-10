@@ -275,34 +275,26 @@ Plan: (0) prepare sv9, no downtime; (1) export secrets + `pg_dump`; (2) uninstal
 fix hostnames/IPs, install server on sv9, join Pis, restore secrets, Flux rebuilds, restore PG;
 (3) verify, update README diagrams and this guide. App images must be multi-arch (amd64 + arm64).
 
-### 10.1 Prepare sv9 (at its keyboard)
+### 10.1 Prepare sv9 (Ansible, phase 0)
 
-Use **wired Ethernet** for a server (Wi-Fi power saving and roaming cause API timeouts and flannel
-drops). Plug the cable in first, so the static IP goes on the wired profile.
+Everything runs from Ansible (`ansible/`, see [ansible/README.md](ansible/README.md)). `hien` is an
+Ubuntu **Administrator** (sudo group); the playbook adds passwordless sudo like on the Pis. Use
+**wired Ethernet** for a server: Wi-Fi power saving and roaming cause API timeouts and flannel drops.
+The playbook puts the static IP `.249` on a wired profile; Wi-Fi keeps DHCP as a fallback.
 
-```bash
-sudo apt update && sudo apt -y full-upgrade
-sudo apt -y install openssh-server curl git
-sudo hostnamectl set-hostname sv9
+Manual, once:
+1. At sv9: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
+2. Mac: `ssh-copy-id -i ~/.ssh/id_sv9 hien@<that IP>` (key and `Host sv9` already in `~/.ssh/config`).
+3. Mac: `cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<that IP> -K`
+   (`-K` = sudo password, only this first time).
 
-# never sleep: lid closed, on AC or battery
-sudo mkdir -p /etc/systemd/logind.conf.d
-printf '[Login]\nHandleLidSwitch=ignore\nHandleLidSwitchExternalPower=ignore\nHandleLidSwitchDocked=ignore\n' \
-  | sudo tee /etc/systemd/logind.conf.d/homelab.conf
-sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+What it does: hostname `sv9`, `/etc/hosts` names, upgrade, never sleep (logind + masked sleep
+targets), Wi-Fi power saving off, static IP on `homelab-wired`, kubectl/helm/k9s/flux/sops/age
+(pinned in `ansible/group_vars/all.yml`), SSH keys sv9 -> Pis (added to their `authorized_keys`),
+a GitHub deploy key `sv9-admin` (write, this repo only, added with `gh` from the Mac), kubeconfig
+`~/.kube/homelab.yaml`, repo clone at `~/workspace/source/homelab`. Reboots once on first run.
 
-# static IP on the wired profile (name from the first command, usually "Wired connection 1")
-nmcli -t -f NAME,DEVICE,TYPE connection show
-sudo nmcli connection modify "Wired connection 1" ipv4.method manual \
-  ipv4.addresses 192.168.40.249/24 ipv4.gateway 192.168.40.1 ipv4.dns 192.168.40.1
-sudo nmcli connection up "Wired connection 1"
-sudo reboot
-```
-
-BIOS (F2 at boot): if a battery charge limit / economy mode exists, enable it (battery sits on AC forever).
-
-Mac side: key `~/.ssh/id_sv9`, `Host sv9` in `~/.ssh/config` (User `hien`), `192.168.40.249 sv9` in
-`/etc/hosts`, then `ssh-copy-id -i ~/.ssh/id_sv9 sv9` (password once).
+BIOS (F2 at boot), by hand: enable a battery charge limit / economy mode if present.
 
 ## Uninstall / reset
 ```bash

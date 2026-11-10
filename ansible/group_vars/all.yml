@@ -1,0 +1,11 @@
+# Pinned tool versions (checked 2026-11-11). kubectl matches the k3s server.
+kubectl_version: v1.37.2
+helm_version: v4.3.1
+k9s_version: v0.51.0
+flux_version: 2.10.0
+sops_version: v3.13.3
+
+repo_ssh_url: git@github.com:hienmv/anotherhomelab.git
+repo_slug: hienmv/anotherhomelab
+repo_dest: /home/hien/workspace/source/homelab
+k3s_server_ip: 192.168.40.250   # changes to sv9 (.249) in phase 2

@@ -1,0 +1,24 @@
+# Homelab hosts. IPs are static (set on each host, router has no reservations).
+# Run from the Mac today; from sv9 itself once it is the admin workstation.
+all:
+  vars:
+    ansible_user: hien
+    lan_prefix: 24
+    lan_gateway: 192.168.40.1
+    lan_dns: 192.168.40.1
+  children:
+    workstation:
+      hosts:
+        sv9:
+          static_ip: 192.168.40.249
+          # First run: sv9 is still on Wi-Fi/DHCP, pass -e sv9_ip=<current IP>.
+          ansible_host: "{{ sv9_ip | default(static_ip) }}"
+          ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if lookup('pipe', 'hostname -s') != 'sv9' else omit }}"
+          # Running on sv9 itself: no SSH to self.
+          ansible_connection: "{{ 'local' if lookup('pipe', 'hostname -s') == 'sv9' else 'ssh' }}"
+    pis:
+      # SSH user/key for the Pis come from ~/.ssh/config on the control machine.
+      hosts:
+        pi4-8gb: { static_ip: 192.168.40.250 }
+        pi4-4gb: { static_ip: 192.168.40.251 }
+        pi3: { static_ip: 192.168.40.252 }

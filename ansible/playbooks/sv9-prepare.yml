@@ -1,0 +1,304 @@
+# Phase 0 (K3S-GUIDE section 10): make sv9 an always-on host and the admin workstation.
+# No cluster change, no downtime. Idempotent: safe to re-run.
+#
+# First run, from the Mac (sv9 still on Wi-Fi, sudo still asks a password):
+#   cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<current IP> -K
+# Later runs: ansible-playbook playbooks/sv9-prepare.yml
+
+- name: Base system on sv9
+  hosts: sv9
+  become: true
+  tasks:
+    - name: Passwordless sudo for hien (automation; same as the Pis)
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/hien
+        content: "hien ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
+    - name: Hostname sv9
+      ansible.builtin.hostname:
+        name: sv9
+      notify: Reboot
+
+    - name: 127.0.1.1 points at the new hostname
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 sv9"
+
+    - name: Homelab names in /etc/hosts
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} homelab (ansible)"
+        block: |
+          {% for h in groups['all'] %}
+          {{ hostvars[h].static_ip }} {{ h }}
+          {% endfor %}
+
+    - name: Upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Base packages
+      ansible.builtin.apt:
+        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates]
+        state: present
+
+    - name: Never sleep on lid close (AC, battery, docked)
+      ansible.builtin.copy:
+        dest: /etc/systemd/logind.conf.d/homelab.conf
+        content: |
+          [Login]
+          HandleLidSwitch=ignore
+          HandleLidSwitchExternalPower=ignore
+          HandleLidSwitchDocked=ignore
+        mode: "0644"
+      notify: Reboot
+
+    - name: Mask sleep targets (also stops GNOME idle suspend)
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        masked: true
+      loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
+
+    - name: Wi-Fi power saving off (fallback link stays responsive)
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/conf.d/wifi-powersave-off.conf
+        content: |
+          [connection]
+          wifi.powersave = 2
+        mode: "0644"
+      notify: Reload NetworkManager
+
+    - name: Find the wired interface
+      ansible.builtin.set_fact:
+        wired_iface: "{{ ansible_facts.interfaces | select('match', '^(en|eth)') | first }}"
+
+    - name: Static IP on a dedicated wired profile (Wi-Fi keeps DHCP as fallback)
+      ansible.builtin.shell: |
+        set -e
+        want="manual|{{ static_ip }}/{{ lan_prefix }}|{{ lan_gateway }}|{{ lan_dns }}|100"
+        if nmcli -g NAME connection show | grep -qx homelab-wired; then
+          have="$(nmcli -g ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns,connection.autoconnect-priority connection show homelab-wired | paste -sd'|')"
+          [ "$have" = "$want" ] && { echo UNCHANGED; exit 0; }
+        else
+          nmcli connection add type ethernet con-name homelab-wired ifname {{ wired_iface }}
+        fi
+        nmcli connection modify homelab-wired ipv4.method manual \
+          ipv4.addresses {{ static_ip }}/{{ lan_prefix }} ipv4.gateway {{ lan_gateway }} \
+          ipv4.dns {{ lan_dns }} connection.autoconnect yes connection.autoconnect-priority 100
+        echo CHANGED
+      register: wired
+      changed_when: "'CHANGED' in wired.stdout"
+
+    - name: Bring the wired profile up if a cable is plugged in
+      ansible.builtin.shell: |
+        if [ "$(cat /sys/class/net/{{ wired_iface }}/carrier 2>/dev/null)" = 1 ]; then
+          nmcli connection up homelab-wired >/dev/null && echo UP
+        else
+          echo NO-CABLE
+        fi
+      register: wired_up
+      changed_when: "'UP' in wired_up.stdout and wired.changed"
+
+    - name: Warn when no cable
+      ansible.builtin.debug:
+        msg: "No Ethernet cable on {{ wired_iface }}. sv9 stays on Wi-Fi until one is plugged in (profile autoconnects)."
+      when: "'NO-CABLE' in wired_up.stdout"
+
+    - name: kubectl {{ kubectl_version }}
+      ansible.builtin.get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        checksum: "sha256:https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+
+    - name: sops {{ sops_version }}
+      ansible.builtin.get_url:
+        url: "https://github.com/getsops/sops/releases/download/{{ sops_version }}/sops-{{ sops_version }}.linux.amd64"
+        checksum: "sha256:https://github.com/getsops/sops/releases/download/{{ sops_version }}/sops-{{ sops_version }}.checksums.txt"
+        dest: /usr/local/bin/sops
+        mode: "0755"
+
+    - name: Download tarball tools (helm, k9s, flux)
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        checksum: "{{ item.checksum }}"
+        dest: "/var/cache/{{ item.url | basename }}"
+        mode: "0644"
+      loop: "{{ tarball_tools }}"
+      loop_control: { label: "{{ item.name }}" }
+
+    - name: Install tarball tools to /usr/local/bin
+      ansible.builtin.unarchive:
+        src: "/var/cache/{{ item.url | basename }}"
+        remote_src: true
+        dest: /usr/local/bin
+        include: ["{{ item.member }}"]
+        extra_opts: "{{ item.extra_opts | default([]) }}"
+        creates: "/usr/local/bin/.{{ item.name }}-{{ item.version }}"
+      loop: "{{ tarball_tools }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: unpacked
+
+    - name: Version markers (re-install only when a version changes)
+      ansible.builtin.file:
+        path: "/usr/local/bin/.{{ item.item.name }}-{{ item.item.version }}"
+        state: touch
+        mode: "0644"
+      loop: "{{ unpacked.results }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: item.changed
+
+  vars:
+    tarball_tools:
+      - name: helm
+        version: "{{ helm_version }}"
+        url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz.sha256sum"
+        member: linux-amd64/helm
+        extra_opts: [--strip-components=1]
+      - name: k9s
+        version: "{{ k9s_version }}"
+        url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
+        checksum: "sha256:https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/checksums.sha256"
+        member: k9s
+      - name: flux
+        version: "{{ flux_version }}"
+        url: "https://github.com/fluxcd/flux2/releases/download/v{{ flux_version }}/flux_{{ flux_version }}_linux_amd64.tar.gz"
+        checksum: "sha256:https://github.com/fluxcd/flux2/releases/download/v{{ flux_version }}/flux_{{ flux_version }}_checksums.txt"
+        member: flux
+
+  handlers:
+    - name: Reload NetworkManager
+      ansible.builtin.systemd_service:
+        name: NetworkManager
+        state: reloaded
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        msg: "ansible: hostname / logind change"
+        reboot_timeout: 600
+      when: ansible_connection != 'local'
+
+- name: Admin workstation keys and config (as hien)
+  hosts: sv9
+  tasks:
+    - name: SSH keys on sv9 (Pis, GitHub)
+      ansible.builtin.command:
+        cmd: ssh-keygen -q -t ed25519 -N "" -C "sv9->{{ item }}" -f /home/hien/.ssh/id_{{ item }}
+        creates: /home/hien/.ssh/id_{{ item }}
+      loop: [homelab, github]
+
+    - name: Read public keys
+      ansible.builtin.slurp:
+        src: /home/hien/.ssh/id_{{ item }}.pub
+      loop: [homelab, github]
+      register: pubkeys
+
+    - name: Remember public keys
+      ansible.builtin.set_fact:
+        homelab_pubkey: "{{ pubkeys.results[0].content | b64decode | trim }}"
+        github_pubkey: "{{ pubkeys.results[1].content | b64decode | trim }}"
+
+    - name: SSH client config
+      ansible.builtin.blockinfile:
+        path: /home/hien/.ssh/config
+        create: true
+        mode: "0600"
+        marker: "# {mark} homelab (ansible)"
+        block: |
+          Host pi3 pi4-8gb pi4-4gb
+            User hien
+            IdentityFile ~/.ssh/id_homelab
+            IdentitiesOnly yes
+          Host github.com
+            User git
+            IdentityFile ~/.ssh/id_github
+            IdentitiesOnly yes
+
+    - name: KUBECONFIG in ~/.bashrc
+      ansible.builtin.lineinfile:
+        path: /home/hien/.bashrc
+        line: export KUBECONFIG=~/.kube/homelab.yaml
+
+    - name: Git identity
+      community.general.git_config:
+        scope: global
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+      loop: "{{ git_identity | dict2items }}"
+      vars:
+        git_identity:
+          user.name: "{{ lookup('pipe', 'git config user.name') }}"
+          user.email: "{{ lookup('pipe', 'git config user.email') }}"
+          pull.rebase: "true"
+          rebase.autoStash: "true"
+
+- name: Authorize sv9's key on the Pis
+  hosts: pis
+  tasks:
+    - name: sv9 -> Pi SSH key
+      ansible.posix.authorized_key:
+        user: hien
+        key: "{{ hostvars['sv9'].homelab_pubkey }}"
+
+- name: GitHub deploy key for sv9 (read/write, this repo only)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Existing deploy keys
+      ansible.builtin.command: gh repo deploy-key list -R {{ repo_slug }}
+      register: deploy_keys
+      changed_when: false
+
+    - name: Add sv9 deploy key
+      ansible.builtin.command: >-
+        gh repo deploy-key add - -R {{ repo_slug }} --title sv9-admin --allow-write
+      args:
+        stdin: "{{ hostvars['sv9'].github_pubkey }}"
+      when: hostvars['sv9'].github_pubkey.split()[1] not in deploy_keys.stdout and 'sv9-admin' not in deploy_keys.stdout
+
+- name: Kubeconfig and repo on sv9
+  hosts: sv9
+  tasks:
+    - name: Read kubeconfig from the current k3s server
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      delegate_to: pi4-8gb
+      become: true
+      register: k3s_yaml
+
+    - name: ~/.kube
+      ansible.builtin.file:
+        path: /home/hien/.kube
+        state: directory
+        mode: "0700"
+
+    - name: ~/.kube/homelab.yaml (server address instead of 127.0.0.1)
+      ansible.builtin.copy:
+        dest: /home/hien/.kube/homelab.yaml
+        content: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ k3s_server_ip ~ ':6443') | replace(': default', ': homelab') }}"
+        mode: "0600"
+
+    - name: Clone the repo (never touches an existing checkout)
+      ansible.builtin.git:
+        repo: "{{ repo_ssh_url }}"
+        dest: "{{ repo_dest }}"
+        accept_newhostkey: true
+        update: false
+
+    - name: Check cluster access
+      ansible.builtin.command: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /home/hien/.kube/homelab.yaml
+      register: nodes
+      changed_when: false
+
+    - name: Nodes
+      ansible.builtin.debug:
+        var: nodes.stdout_lines
