@@ -47,6 +47,17 @@
         name: [openssh-server, curl, git, jq, age, ansible, ca-certificates]
         state: present
 
+    - name: SSH server - keys only, no root login (LAN password brute force)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-homelab.conf
+        content: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        mode: "0644"
+        validate: sshd -t -f %s
+      notify: Reload sshd
+
     - name: Never sleep on lid close (AC, battery, docked)
       ansible.builtin.copy:
         dest: /etc/systemd/logind.conf.d/homelab.conf
@@ -173,6 +184,11 @@
         member: flux
 
   handlers:
+    - name: Reload sshd
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+
     - name: Reload NetworkManager
       ansible.builtin.systemd_service:
         name: NetworkManager
@@ -272,6 +288,12 @@
       delegate_to: pi4-8gb
       become: true
       register: k3s_yaml
+      no_log: true   # cluster-admin client key
+
+    - name: Kubeconfig must not leak into output (--diff, -v)
+      ansible.builtin.set_fact:
+        kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ k3s_server_ip ~ ':6443') | replace(': default', ': homelab') }}"
+      no_log: true
 
     - name: ~/.kube
       ansible.builtin.file:
@@ -282,8 +304,10 @@
     - name: ~/.kube/homelab.yaml (server address instead of 127.0.0.1)
       ansible.builtin.copy:
         dest: /home/hien/.kube/homelab.yaml
-        content: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ k3s_server_ip ~ ':6443') | replace(': default', ': homelab') }}"
+        content: "{{ kubeconfig_text }}"
         mode: "0600"
+      no_log: true
+      diff: false
 
     - name: Clone the repo (never touches an existing checkout)
       ansible.builtin.git:
