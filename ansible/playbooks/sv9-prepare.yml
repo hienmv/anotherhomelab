@@ -9,12 +9,12 @@
   hosts: sv9
   become: true
   tasks:
-    - name: Passwordless sudo for hien (automation; same as the Pis)
-      ansible.builtin.copy:
-        dest: /etc/sudoers.d/hien
-        content: "hien ALL=(ALL) NOPASSWD:ALL\n"
-        mode: "0440"
-        validate: visudo -cf %s
+    # sv9 is a desktop that browses the web: sudo keeps its password (Ansible asks once per run,
+    # become_ask_pass in ansible.cfg). Passwordless sudo stays on the Pis only.
+    - name: No passwordless sudo on sv9
+      ansible.builtin.file:
+        path: /etc/sudoers.d/hien
+        state: absent
 
     - name: Hostname sv9
       ansible.builtin.hostname:
@@ -44,7 +44,7 @@
 
     - name: Base packages
       ansible.builtin.apt:
-        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates]
+        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography]
         state: present
 
     - name: SSH server - keys only, no root login (LAN password brute force)
@@ -203,11 +203,58 @@
 - name: Admin workstation keys and config (as hien)
   hosts: sv9
   tasks:
-    - name: SSH keys on sv9 (Pis, GitHub)
-      ansible.builtin.command:
-        cmd: ssh-keygen -q -t ed25519 -N "" -C "sv9->{{ item }}" -f /home/hien/.ssh/id_{{ item }}
-        creates: /home/hien/.ssh/id_{{ item }}
+    - name: Which SSH keys exist
+      ansible.builtin.stat:
+        path: /home/hien/.ssh/id_{{ item }}
       loop: [homelab, github]
+      register: key_stat
+
+    - name: Repo already cloned?
+      ansible.builtin.stat:
+        path: "{{ repo_dest }}/.git"
+      register: repo_stat
+
+    - name: Keys to create
+      ansible.builtin.set_fact:
+        missing_keys: "{{ key_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
+
+    # Asked only when a key is missing (create) or the repo is not cloned yet (unlock the GitHub key
+    # for the clone). One passphrase for both keys.
+    - name: Passphrase for the sv9 SSH keys
+      ansible.builtin.pause:
+        prompt: "Passphrase for sv9 keys id_homelab + id_github{{ ' (new, min 12 chars)' if missing_keys else '' }}"
+        echo: false
+      register: pass1
+      when: missing_keys | length > 0 or not repo_stat.stat.exists
+
+    - name: Passphrase again
+      ansible.builtin.pause:
+        prompt: "Repeat passphrase"
+        echo: false
+      register: pass2
+      when: missing_keys | length > 0
+
+    - name: Passphrases match and are long enough
+      ansible.builtin.assert:
+        that:
+          - pass1.user_input == pass2.user_input
+          - pass1.user_input | length >= 12
+        fail_msg: "Passphrases differ or are shorter than 12 characters. Re-run."
+        quiet: true
+      no_log: true
+      when: missing_keys | length > 0
+
+    # openssh_keypair encrypts in Python: the passphrase never appears in a process list.
+    - name: Create passphrase-protected SSH keys (Pis, GitHub)
+      community.crypto.openssh_keypair:
+        path: /home/hien/.ssh/id_{{ item }}
+        type: ed25519
+        comment: "sv9->{{ item }}"
+        passphrase: "{{ pass1.user_input }}"
+        private_key_format: ssh
+        mode: "0600"
+      loop: "{{ missing_keys }}"
+      no_log: true
 
     - name: Read public keys
       ansible.builtin.slurp:
@@ -235,6 +282,25 @@
             User git
             IdentityFile ~/.ssh/id_github
             IdentitiesOnly yes
+          Host *
+            # passphrase asked once, then cached in the agent for 8 h
+            AddKeysToAgent 8h
+
+    # Desktop login has GNOME's agent. Over SSH from the Mac there is none: start one on a
+    # fixed socket and reuse it, so the passphrase is typed once per 8 h, not per command.
+    - name: ssh-agent for SSH sessions
+      ansible.builtin.blockinfile:
+        path: /home/hien/.bashrc
+        marker: "# {mark} ssh-agent (ansible)"
+        block: |
+          if [ -z "$SSH_AUTH_SOCK" ]; then
+            export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+            ssh-add -l >/dev/null 2>&1
+            if [ $? -eq 2 ]; then
+              rm -f "$SSH_AUTH_SOCK"
+              eval "$(ssh-agent -a "$SSH_AUTH_SOCK")" >/dev/null
+            fi
+          fi
 
     - name: KUBECONFIG in ~/.bashrc
       ansible.builtin.lineinfile:
@@ -309,12 +375,22 @@
       no_log: true
       diff: false
 
-    - name: Clone the repo (never touches an existing checkout)
-      ansible.builtin.git:
-        repo: "{{ repo_ssh_url }}"
-        dest: "{{ repo_dest }}"
-        accept_newhostkey: true
-        update: false
+    # The GitHub key has a passphrase and this SSH session has no agent: unlock it in a throwaway
+    # agent (passphrase via env + SSH_ASKPASS, never on a command line), clone, kill the agent.
+    - name: Clone the repo (only if missing; never touches an existing checkout)
+      ansible.builtin.shell: |
+        set -e
+        askpass="$(mktemp)"; trap 'rm -f "$askpass"; ssh-agent -k >/dev/null 2>&1 || true' EXIT
+        printf '#!/bin/sh\necho "$KEY_PASSPHRASE"\n' > "$askpass"; chmod 700 "$askpass"
+        eval "$(ssh-agent -s)" >/dev/null
+        SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=none ssh-add ~/.ssh/id_github </dev/null
+        mkdir -p "$(dirname {{ repo_dest }})"
+        GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git clone {{ repo_ssh_url }} {{ repo_dest }}
+      args:
+        creates: "{{ repo_dest }}/.git"
+      environment:
+        KEY_PASSPHRASE: "{{ hostvars['sv9'].pass1.user_input | default('') }}"
+      no_log: true
 
     - name: Check cluster access
       ansible.builtin.command: kubectl get nodes -o wide

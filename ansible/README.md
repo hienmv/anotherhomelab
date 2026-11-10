@@ -18,4 +18,6 @@ ansible-playbook playbooks/sv9-prepare.yml --check --diff   # dry run
 ansible-playbook playbooks/sv9-prepare.yml
 ```
 
-First run only: `-e sv9_ip=<current Wi-Fi IP> -K` (sv9 has no static IP and no passwordless sudo yet).
+First run only: `-e sv9_ip=<current Wi-Fi IP>` (no static IP yet). Every run asks the sv9 sudo
+password (`become_ask_pass` in `ansible.cfg`; sv9 keeps its sudo password). Commands that need no
+sudo can skip the prompt: `ANSIBLE_BECOME_ASK_PASS=false ansible pis -m ping`.

@@ -278,19 +278,24 @@ fix hostnames/IPs, install server on sv9, join Pis, restore secrets, Flux rebuil
 ### 10.1 Prepare sv9 (Ansible, phase 0)
 
 Everything runs from Ansible (`ansible/`, see [ansible/README.md](ansible/README.md)). `hien` is an
-Ubuntu **Administrator** (sudo group); the playbook adds passwordless sudo like on the Pis. Use
+Ubuntu **Administrator** (sudo group) and **keeps its sudo password** (sv9 is a desktop that browses
+the web; passwordless sudo stays on the Pis only). Use
 **wired Ethernet** for a server: Wi-Fi power saving and roaming cause API timeouts and flannel drops.
 The playbook puts the static IP `.249` on a wired profile; Wi-Fi keeps DHCP as a fallback.
 
 Manual, once:
 1. At sv9: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
-2. Mac: `ssh-copy-id -i ~/.ssh/id_sv9 hien@<that IP>` (key and `Host sv9` already in `~/.ssh/config`).
-3. Mac: `cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<that IP> -K`
-   (`-K` = sudo password, only this first time).
+2. Mac: give the Mac key a passphrase and keep it in the Keychain, then copy it:
+   `ssh-keygen -p -f ~/.ssh/id_sv9 && ssh-add --apple-use-keychain ~/.ssh/id_sv9 && ssh-copy-id -i ~/.ssh/id_sv9 hien@<that IP>`
+3. Mac: `cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<that IP>`
+   (asks the sv9 sudo password on every run, `become_ask_pass`; the first run also asks a passphrase
+   for the new sv9 keys).
 
-What it does: hostname `sv9`, `/etc/hosts` names, upgrade, never sleep (logind + masked sleep
+What it does: hostname `sv9`, `/etc/hosts` names, upgrade, SSH server keys-only, never sleep (logind + masked sleep
 targets), Wi-Fi power saving off, static IP on `homelab-wired`, kubectl/helm/k9s/flux/sops/age
-(pinned in `ansible/group_vars/all.yml`), SSH keys sv9 -> Pis (added to their `authorized_keys`),
+(pinned in `ansible/group_vars/all.yml`), passphrase-protected SSH keys sv9 -> Pis (added to their
+`authorized_keys`) and sv9 -> GitHub, cached 8 h in an ssh-agent (GNOME's on the desktop, a fixed
+`~/.ssh/agent.sock` one in SSH sessions),
 a GitHub deploy key `sv9-admin` (write, this repo only, added with `gh` from the Mac), kubeconfig
 `~/.kube/homelab.yaml`, repo clone at `~/workspace/source/homelab`. Reboots once on first run.
 
