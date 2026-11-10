@@ -208,6 +208,13 @@
 
 - name: Admin workstation keys and config (as hien)
   hosts: sv9
+  # vars_prompt reads in the main process with getpass (the pause module returned empty hidden
+  # input with ansible-core 2.21 on macOS). Asked every run; once keys and repo exist, press Enter.
+  vars_prompt:
+    - name: key_passphrase
+      prompt: "Passphrase for sv9 SSH keys id_homelab + id_github (new keys: min 12 chars; keys and repo already there: just Enter)"
+      private: true
+      confirm: true
   tasks:
     - name: Which SSH keys exist
       ansible.builtin.stat:
@@ -220,40 +227,18 @@
         path: "{{ repo_dest }}/.git"
       register: repo_stat
 
-    - name: Keys to create
+    - name: Keys to create; keep the passphrase as a host fact for the clone play
       ansible.builtin.set_fact:
         missing_keys: "{{ key_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
-
-    # Asked only when a key is missing (create) or the repo is not cloned yet (unlock the GitHub key
-    # for the clone). One passphrase for both keys.
-    - name: Passphrase for the sv9 SSH keys
-      ansible.builtin.pause:
-        prompt: "Passphrase for sv9 keys id_homelab + id_github{{ ' (new, min 12 chars)' if missing_keys else '' }}"
-        echo: false
-      register: pass1
-      when: missing_keys | length > 0 or not repo_stat.stat.exists
-
-    - name: Passphrase again
-      ansible.builtin.pause:
-        prompt: "Repeat passphrase"
-        echo: false
-      register: pass2
-      when: missing_keys | length > 0
+        sv9_key_passphrase: "{{ key_passphrase }}"
+      no_log: true
 
     - name: Passphrase is at least 12 characters (empty = no protection, not allowed)
       ansible.builtin.assert:
-        that: pass1.user_input | length >= 12
-        fail_msg: "Passphrase is {{ 'empty' if not pass1.user_input else 'shorter than 12 characters' }}. Re-run and type one (input is hidden)."
+        that: key_passphrase | length >= 12
+        fail_msg: "Passphrase is {{ 'empty' if not key_passphrase else 'shorter than 12 characters' }}. Re-run and type one (input is hidden)."
         quiet: true
-      when: missing_keys | length > 0
-
-    - name: Both passphrases match
-      ansible.builtin.assert:
-        that: pass1.user_input == pass2.user_input
-        fail_msg: "The two passphrases differ. Re-run."
-        quiet: true
-      no_log: true
-      when: missing_keys | length > 0
+      when: missing_keys | length > 0 or not repo_stat.stat.exists
 
     # openssh_keypair encrypts in Python: the passphrase never appears in a process list.
     - name: Create passphrase-protected SSH keys (Pis, GitHub)
@@ -261,7 +246,7 @@
         path: /home/hien/.ssh/id_{{ item }}
         type: ed25519
         comment: "sv9->{{ item }}"
-        passphrase: "{{ pass1.user_input }}"
+        passphrase: "{{ key_passphrase }}"
         private_key_format: ssh
         mode: "0600"
       loop: "{{ missing_keys }}"
@@ -400,7 +385,7 @@
       args:
         creates: "{{ repo_dest }}/.git"
       environment:
-        KEY_PASSPHRASE: "{{ hostvars['sv9'].pass1.user_input | default('') }}"
+        KEY_PASSPHRASE: "{{ hostvars['sv9'].sv9_key_passphrase | default('') }}"
       no_log: true
 
     - name: Check cluster access
