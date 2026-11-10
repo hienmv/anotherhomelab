@@ -7,6 +7,7 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `inventory.yml` | hosts (`sv9`, `pi4-8gb`, `pi4-4gb`, `pi3`), static IPs |
 | `group_vars/all.yml` | pinned tool versions, repo, current k3s server IP |
 | `playbooks/sv9-prepare.yml` | phase 0: sv9 base system + admin workstation (no cluster change) |
+| `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on sv9 + a copy on the Mac |
 
 Run from the `ansible/` folder, on the Mac (today) or on sv9 (afterwards; it detects itself and runs
 locally). The Pis' SSH user and key come from `~/.ssh/config` on the machine running Ansible.

@@ -301,6 +301,28 @@ a GitHub deploy key `sv9-admin` (write, this repo only, added with `gh` from the
 
 BIOS (F2 at boot), by hand: enable a battery charge limit / economy mode if present.
 
+### 10.2 Back up secrets and PostgreSQL (phase 1, done 2026-11-11)
+
+`ansible/playbooks/backup.yml` (script `ansible/files/backup.sh`), runnable any time, no downtime:
+
+```bash
+cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml   # -e sv9_ip=... while on Wi-Fi
+```
+
+- Exports the hand-made Secrets (list in the playbook, plus `data/pg-app`, whose password is inside
+  `apps/app-env`'s `DATABASE_URL`) one file each, and every other Secret as `all-secrets.json`.
+- `pg_dumpall --globals-only` + `pg_dump -Fc` per database (today: `app`).
+- Plaintext only in `$XDG_RUNTIME_DIR` (tmpfs); the bundle is encrypted with **age** to
+  `~/homelab-backup/homelab-<date>.tar.gz.age` on sv9 and copied to `~/homelab-backups/` on the Mac.
+- Key: `~/.config/sops/age/keys.txt` on sv9 (also the future SOPS key). **Copy it to the password
+  manager**: without it no backup can be decrypted.
+- Restore: `age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>`.
+  Check a dump without restoring: `... | tar -xOzf - ./postgres/app.dump | kubectl -n data exec -i pg-1 -c postgres -- pg_restore -l`.
+- Not backed up: Redis (TicketLite resyncs its gates from Postgres), metrics history, Grafana's own DB
+  (dashboards are in git).
+
+Multi-arch: `build-image.yml` builds `linux/amd64,linux/arm64`, so app pods can run on sv9 too.
+
 ## Uninstall / reset
 ```bash
 ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh

@@ -1,0 +1,71 @@
+# Phase 1 (K3S-GUIDE section 10) and any manual backup later: export the hand-made Secrets and
+# dump PostgreSQL, encrypted with sv9's age key. No downtime, no sudo, read-only on the cluster.
+#
+#   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml
+#
+# Result: ~/homelab-backup/homelab-<date>.tar.gz.age on sv9, plus a copy on the machine running
+# Ansible (~/homelab-backups/) when that is not sv9.
+# Restore: age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>
+
+- name: Backup secrets and PostgreSQL
+  hosts: sv9
+  gather_facts: false
+  vars:
+    backup_dir: /home/hien/homelab-backup
+    age_key: /home/hien/.config/sops/age/keys.txt
+    # Secrets created by hand (K3S-GUIDE → Secrets) + pg-app, whose password app-env's DATABASE_URL uses.
+    hand_secrets:
+      - flux-system/flux-system
+      - infra/tunnel-creds
+      - data/pg-app
+      - data/redis
+      - apps/app-env
+      - apps/ticketlite
+      - apps/ghcr-pull
+      - monitoring/grafana-admin
+      - monitoring/grafana-lan-tls
+  tasks:
+    - name: age key directory
+      ansible.builtin.file:
+        path: "{{ age_key | dirname }}"
+        state: directory
+        mode: "0700"
+
+    # Same key SOPS will use later (standard path). Lose it = backups unreadable: copy it to a
+    # password manager.
+    - name: age key for backups and SOPS
+      ansible.builtin.command:
+        cmd: age-keygen -o {{ age_key }}
+        creates: "{{ age_key }}"
+      register: age_new
+
+    - name: age public key (recipient)
+      ansible.builtin.command: age-keygen -y {{ age_key }}
+      register: age_pub
+      changed_when: false
+
+    - name: Run backup
+      ansible.builtin.script:
+        cmd: >-
+          ../files/backup.sh {{ backup_dir }} {{ age_pub.stdout }}
+          {{ hand_secrets | join(' ') }}
+      register: backup
+      changed_when: true
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ backup.stdout_lines | reject('match', '^BACKUP_FILE=') | list }}"
+
+    - name: Copy the encrypted backup to the machine running Ansible (second copy)
+      ansible.builtin.fetch:
+        src: "{{ backup.stdout_lines | select('match', '^BACKUP_FILE=') | first | regex_replace('^BACKUP_FILE=', '') }}"
+        dest: ~/homelab-backups/
+        flat: true
+      when: ansible_connection != 'local'
+
+    - name: New age key - save it now
+      ansible.builtin.debug:
+        msg: >-
+          A new age key was created at {{ age_key }} on sv9. Without it the backup cannot be
+          decrypted. Copy the whole file into your password manager now (on sv9: cat {{ age_key }}).
+      when: age_new.changed
