@@ -8,4 +8,4 @@ sops_version: v3.13.3
 repo_ssh_url: git@github.com:hienmv/anotherhomelab.git
 repo_slug: hienmv/anotherhomelab
 repo_dest: /home/hien/workspace/source/homelab
-k3s_server_ip: 192.168.40.250   # changes to sv9 (.249) in phase 2
+k3s_server: pi4-8gb   # inventory name of the k3s server (IP from inventory); sv9 after phase 2

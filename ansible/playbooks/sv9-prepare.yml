@@ -90,41 +90,25 @@
         mode: "0644"
       notify: Reload NetworkManager
 
-    - name: Find the wired interface
+    # lan_link (inventory) picks the link that holds static_ip: wifi or ethernet, never both.
+    - name: Static IP on the {{ lan_link }} link
+      ansible.builtin.script:
+        cmd: >-
+          ../files/net-static.sh {{ lan_link }} {{ static_ip }} {{ lan_prefix }}
+          {{ lan_gateway }} {{ lan_dns }}
+      register: net
+      changed_when: "'CHANGED' in net.stdout"
+
+    - name: Follow sv9 to its static IP
       ansible.builtin.set_fact:
-        wired_iface: "{{ ansible_facts.interfaces | select('match', '^(en|eth)') | first }}"
+        ansible_host: "{{ static_ip }}"
+      when: "'RECONNECT' in net.stdout"
 
-    - name: Static IP on a dedicated wired profile (Wi-Fi keeps DHCP as fallback)
-      ansible.builtin.shell: |
-        set -e
-        want="manual|{{ static_ip }}/{{ lan_prefix }}|{{ lan_gateway }}|{{ lan_dns }}|100"
-        if nmcli -g NAME connection show | grep -qx homelab-wired; then
-          have="$(nmcli -g ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns,connection.autoconnect-priority connection show homelab-wired | paste -sd'|')"
-          [ "$have" = "$want" ] && { echo UNCHANGED; exit 0; }
-        else
-          nmcli connection add type ethernet con-name homelab-wired ifname {{ wired_iface }}
-        fi
-        nmcli connection modify homelab-wired ipv4.method manual \
-          ipv4.addresses {{ static_ip }}/{{ lan_prefix }} ipv4.gateway {{ lan_gateway }} \
-          ipv4.dns {{ lan_dns }} connection.autoconnect yes connection.autoconnect-priority 100
-        echo CHANGED
-      register: wired
-      changed_when: "'CHANGED' in wired.stdout"
-
-    - name: Bring the wired profile up if a cable is plugged in
-      ansible.builtin.shell: |
-        if [ "$(cat /sys/class/net/{{ wired_iface }}/carrier 2>/dev/null)" = 1 ]; then
-          nmcli connection up homelab-wired >/dev/null && echo UP
-        else
-          echo NO-CABLE
-        fi
-      register: wired_up
-      changed_when: "'UP' in wired_up.stdout and wired.changed"
-
-    - name: Warn when no cable
-      ansible.builtin.debug:
-        msg: "No Ethernet cable on {{ wired_iface }}. sv9 stays on Wi-Fi until one is plugged in (profile autoconnects)."
-      when: "'NO-CABLE' in wired_up.stdout"
+    - name: Wait until sv9 answers on {{ static_ip }}
+      ansible.builtin.wait_for_connection:
+        delay: 8
+        timeout: 120
+      when: "'RECONNECT' in net.stdout"
 
     - name: kubectl {{ kubectl_version }}
       ansible.builtin.get_url:
@@ -347,14 +331,14 @@
     - name: Read kubeconfig from the current k3s server
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
-      delegate_to: pi4-8gb
+      delegate_to: "{{ k3s_server }}"
       become: true
       register: k3s_yaml
       no_log: true   # cluster-admin client key
 
     - name: Kubeconfig must not leak into output (--diff, -v)
       ansible.builtin.set_fact:
-        kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ k3s_server_ip ~ ':6443') | replace(': default', ': homelab') }}"
+        kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443') | replace(': default', ': homelab') }}"
       no_log: true
 
     - name: ~/.kube

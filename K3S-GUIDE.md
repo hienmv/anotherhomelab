@@ -279,9 +279,16 @@ fix hostnames/IPs, install server on sv9, join Pis, restore secrets, Flux rebuil
 
 Everything runs from Ansible (`ansible/`, see [ansible/README.md](ansible/README.md)). `hien` is an
 Ubuntu **Administrator** (sudo group) and **keeps its sudo password** (sv9 is a desktop that browses
-the web; passwordless sudo stays on the Pis only). Use
-**wired Ethernet** for a server: Wi-Fi power saving and roaming cause API timeouts and flannel drops.
-The playbook puts the static IP `.249` on a wired profile; Wi-Fi keeps DHCP as a fallback.
+the web; passwordless sudo stays on the Pis only).
+
+All LAN addresses live in `ansible/inventory.yml` (hosts' `static_ip`, gateway, DNS); playbooks and
+scripts read them from there. sv9's `lan_link` picks the link holding `.249`: **`wifi` (current)** or
+`ethernet` (change the value, re-run the playbook; `ansible/files/net-static.sh` moves the address and
+the playbook follows sv9 to it). Wi-Fi is acceptable here: the profile is system-wide (connects at
+boot without a login) and power saving is off. Costs: higher latency and short drops; the AP uses
+DFS channel 124 (5.6 GHz), where radar detection can move the AP and cut Wi-Fi for about a minute,
+long enough for agents to show `NotReady`. If that shows up, pick a non-DFS 5 GHz channel (36-48) on
+the router or switch to `ethernet`.
 
 Manual, once:
 1. At sv9: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
@@ -292,7 +299,7 @@ Manual, once:
    for the new sv9 keys).
 
 What it does: hostname `sv9`, `/etc/hosts` names, upgrade, SSH server keys-only, never sleep (logind + masked sleep
-targets), Wi-Fi power saving off, static IP on `homelab-wired`, kubectl/helm/k9s/flux/sops/age
+targets), Wi-Fi power saving off, static IP on the `lan_link` link, kubectl/helm/k9s/flux/sops/age
 (pinned in `ansible/group_vars/all.yml`), passphrase-protected SSH keys sv9 -> Pis (added to their
 `authorized_keys`) and sv9 -> GitHub, cached 8 h in an ssh-agent (GNOME's on the desktop, a fixed
 `~/.ssh/agent.sock` one in SSH sessions),

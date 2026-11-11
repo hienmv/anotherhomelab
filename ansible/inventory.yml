@@ -1,4 +1,5 @@
-# Homelab hosts. IPs are static (set on each host, router has no reservations).
+# Homelab hosts: the ONE place for LAN addresses. Playbooks and scripts take every IP from here.
+# IPs are static (set on each host; the router has no DHCP reservations).
 # Run from the Mac today; from sv9 itself once it is the admin workstation.
 all:
   vars:
@@ -11,6 +12,8 @@ all:
       hosts:
         sv9:
           static_ip: 192.168.40.249
+          # Link that holds static_ip: wifi or ethernet (switch = change here + re-run sv9-prepare).
+          lan_link: wifi
           # First run: sv9 is still on Wi-Fi/DHCP, pass -e sv9_ip=<current IP>.
           ansible_host: "{{ sv9_ip | default(static_ip) }}"
           ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if lookup('pipe', 'hostname -s') != 'sv9' else omit }}"
