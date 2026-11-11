@@ -52,7 +52,7 @@
 
     - name: Base packages
       ansible.builtin.apt:
-        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography]
+        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography, python3-bcrypt]
         state: present
 
     - name: SSH server - keys only, no root login (LAN password brute force)
