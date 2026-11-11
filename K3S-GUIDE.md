@@ -375,6 +375,29 @@ Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
 - Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
 - Until phase 2 has run, `workstation-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already node-workstation).
 
+### 10.4 Runbook: (re)install node-workstation (done 2026-11-12, Ubuntu 24.04.4 LTS)
+
+Use this for a reinstall, a replacement laptop, or a disk failure. Before wiping: backups must be on
+another machine (`scp 'node-workstation:homelab-backup/*.age' ~/homelab-backups/` on the Mac) and the
+age key in the password manager.
+
+| # | Where | Step | Why |
+|---|---|---|---|
+| 1 | CF-SV9 | Install **Ubuntu 24.04 LTS** desktop from USB (F2 → Boot → USB first). User `hien`, computer name `node-workstation`, Wi-Fi | not 26.04: its AppArmor default breaks containers (10.3) |
+| 2 | CF-SV9 | `sudo apt install -y openssh-server` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
+| 3 | Mac | `ssh-keygen -R 192.168.40.249` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_sv9 hien@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
+| 4 | Mac | `gh repo deploy-key delete <id> -R hienmv/anotherhomelab` for the old `sv9-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
+| 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
+| 6 | workstation | paste the age key into `~/.config/sops/age/keys.txt`, `chmod 600`; `age-keygen -y` shows the public key | needed to decrypt backups (and SOPS later) |
+| 7 | Mac | `scp ~/homelab-backups/homelab-*.tar.gz.age node-workstation:homelab-backup/`, then decrypt-test each file | restore.yml reads them from the workstation |
+
+Then the cluster: `phase2-migrate.yml --tags teardown,k3s` (Pis leave the old cluster, new empty
+cluster), canary test (below), `--tags restore`.
+
+Issues met on the way (all fixed in the playbooks): logind drop-in directory missing; `pause` vs
+`vars_prompt` for the passphrase; `python3-bcrypt` not preinstalled on 24.04 (needed to encrypt keys);
+sudo-rs on 26.04 (gone with 24.04).
+
 ## Uninstall / reset
 ```bash
 ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh
