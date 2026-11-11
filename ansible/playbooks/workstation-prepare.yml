@@ -353,7 +353,16 @@
 - name: Kubeconfig and repo on the workstation
   hosts: workstation
   tasks:
+    # Fresh install: k3s is not there yet (k3s.yml installs it and writes the kubeconfig itself).
+    - name: Is k3s installed on the server?
+      ansible.builtin.stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      delegate_to: "{{ k3s_server }}"
+      become: true
+      register: k3s_yaml_stat
+
     - name: Read kubeconfig from the current k3s server
+      when: k3s_yaml_stat.stat.exists
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
       delegate_to: "{{ k3s_server }}"
@@ -362,6 +371,7 @@
       no_log: true   # cluster-admin client key
 
     - name: Kubeconfig must not leak into output (--diff, -v)
+      when: k3s_yaml_stat.stat.exists
       ansible.builtin.set_fact:
         kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443') | replace(': default', ': homelab') }}"
       no_log: true
@@ -373,6 +383,7 @@
         mode: "0700"
 
     - name: ~/.kube/homelab.yaml (server address instead of 127.0.0.1)
+      when: k3s_yaml_stat.stat.exists
       ansible.builtin.copy:
         dest: /home/hien/.kube/homelab.yaml
         content: "{{ kubeconfig_text }}"
@@ -398,6 +409,7 @@
       no_log: true
 
     - name: Check cluster access
+      when: k3s_yaml_stat.stat.exists
       ansible.builtin.command: kubectl get nodes -o wide
       environment:
         KUBECONFIG: /home/hien/.kube/homelab.yaml
@@ -405,5 +417,6 @@
       changed_when: false
 
     - name: Nodes
+      when: k3s_yaml_stat.stat.exists
       ansible.builtin.debug:
         var: nodes.stdout_lines
