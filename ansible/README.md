@@ -4,25 +4,25 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 
 | File | What |
 |---|---|
-| `inventory.yml` | hosts (`sv9`, `pi4-8gb`, `pi4-4gb`, `pi3`), static IPs |
+| `inventory.yml` | hosts (`node-workstation`, `node-8gb`, `node-4gb`, `node-1gb`), static IPs, k3s roles and per-node settings |
 | `group_vars/all.yml` | pinned tool versions, repo, current k3s server IP |
-| `playbooks/sv9-prepare.yml` | phase 0: sv9 base system + admin workstation (no cluster change) |
-| `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on sv9 + a copy on the Mac |
+| `playbooks/workstation-prepare.yml` | phase 0: node-workstation base system + admin workstation (no cluster change) |
+| `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on node-workstation + a copy on the Mac |
 | `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
 | `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
 | `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |
-| `files/net-static.sh` | static IP on the `lan_link` link (used by sv9-prepare) |
+| `files/net-static.sh` | static IP on the `lan_link` link (used by workstation-prepare) |
 
-Run from the `ansible/` folder, on the Mac (today) or on sv9 (afterwards; it detects itself and runs
-locally). The Pis' SSH user and key come from `~/.ssh/config` on the machine running Ansible.
+Run from the `ansible/` folder, on the Mac (today) or on node-workstation (afterwards; it detects itself and runs
+locally). Ansible connects by IP with `~/.ssh/id_homelab` (Pis) and `~/.ssh/id_sv9` (workstation, from the Mac).
 
 ```bash
-brew install ansible                     # Mac; on sv9 the playbook installs it with apt
+brew install ansible                     # Mac; on node-workstation the playbook installs it with apt
 ansible pis -m ping                      # connectivity
-ansible-playbook playbooks/sv9-prepare.yml --check --diff   # dry run
-ansible-playbook playbooks/sv9-prepare.yml
+ansible-playbook playbooks/workstation-prepare.yml --check --diff   # dry run
+ansible-playbook playbooks/workstation-prepare.yml
 ```
 
-First run only: `-e sv9_ip=<current Wi-Fi IP>` (no static IP yet). Every run asks the sv9 sudo
-password (`become_ask_pass` in `ansible.cfg`; sv9 keeps its sudo password). Commands that need no
+First run only: `-e workstation_ip=<current Wi-Fi IP>` (no static IP yet). Every run asks the node-workstation sudo
+password (`become_ask_pass` in `ansible.cfg`; node-workstation keeps its sudo password). Commands that need no
 sudo can skip the prompt: `ANSIBLE_BECOME_ASK_PASS=false ansible pis -m ping`.

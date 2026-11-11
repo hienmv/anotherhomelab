@@ -262,46 +262,50 @@ Open:
 
 ## 10. Migration: CF-SV9 as k3s server + data node (in progress, 2026-11-10)
 
+Names from phase 2 on (inventory = OS hostname = Kubernetes node): `node-workstation` (CF-SV9,
+was `sv9`), `node-8gb` (was `pi4-8gb`), `node-4gb` (was `pi4-4gb`), `node-1gb` (was `pi3`).
+Ansible connects by IP from the inventory.
+
 Decision: a Panasonic CF-SV9 (amd64, 16 GB RAM, SSD ~80 GB usable, Ubuntu 26.04 LTS) stays always on at
 home as **k3s server**, **`role=data` node** and **admin workstation**. The Mac only SSHes into it.
 Why: control plane and Postgres/Redis leave the SD cards; the laptop battery acts as a UPS. This
 reverses the 2026-11-08 "no admin box in the cluster" decision (README → Operations).
 
-Target: `sv9` `.249` server + `role=data` (PG, Redis, VMSingle, cloudflared follow the label, no
-manifest change); `pi4-8gb` and `pi4-4gb` agents `role=apps`; `pi3` unchanged. The 64 GB SD card
-moves from pi4-4gb to pi4-8gb (32 GB the other way).
+Target: `node-workstation` `.249` server + `role=data` (PG, Redis, VMSingle, cloudflared follow the label, no
+manifest change); `node-8gb` and `node-4gb` agents `role=apps`; `node-1gb` unchanged. The 64 GB SD card
+moves from node-4gb to node-8gb (32 GB the other way).
 
-Plan: (0) prepare sv9, no downtime; (1) export secrets + `pg_dump`; (2) uninstall k3s, swap SD cards,
-fix hostnames/IPs, install server on sv9, join Pis, restore secrets, Flux rebuilds, restore PG;
+Plan: (0) prepare node-workstation, no downtime; (1) export secrets + `pg_dump`; (2) uninstall k3s, swap SD cards,
+fix hostnames/IPs, install server on node-workstation, join Pis, restore secrets, Flux rebuilds, restore PG;
 (3) verify, update README diagrams and this guide. App images must be multi-arch (amd64 + arm64).
 
-### 10.1 Prepare sv9 (Ansible, phase 0)
+### 10.1 Prepare node-workstation (Ansible, phase 0)
 
 Everything runs from Ansible (`ansible/`, see [ansible/README.md](ansible/README.md)). `hien` is an
-Ubuntu **Administrator** (sudo group) and **keeps its sudo password** (sv9 is a desktop that browses
+Ubuntu **Administrator** (sudo group) and **keeps its sudo password** (node-workstation is a desktop that browses
 the web; passwordless sudo stays on the Pis only).
 
 All LAN addresses live in `ansible/inventory.yml` (hosts' `static_ip`, gateway, DNS); playbooks and
-scripts read them from there. sv9's `lan_link` picks the link holding `.249`: **`wifi` (current)** or
+scripts read them from there. node-workstation's `lan_link` picks the link holding `.249`: **`wifi` (current)** or
 `ethernet` (change the value, re-run the playbook; `ansible/files/net-static.sh` moves the address and
-the playbook follows sv9 to it). Wi-Fi is acceptable here: the profile is system-wide (connects at
+the playbook follows node-workstation to it). Wi-Fi is acceptable here: the profile is system-wide (connects at
 boot without a login) and power saving is off. Costs: higher latency and short drops; the AP uses
 DFS channel 124 (5.6 GHz), where radar detection can move the AP and cut Wi-Fi for about a minute,
 long enough for agents to show `NotReady`. If that shows up, pick a non-DFS 5 GHz channel (36-48) on
 the router or switch to `ethernet`.
 
 Manual, once:
-1. At sv9: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
+1. At node-workstation: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
 2. Mac: give the Mac key a passphrase and keep it in the Keychain, then copy it:
    `ssh-keygen -p -f ~/.ssh/id_sv9 && ssh-add --apple-use-keychain ~/.ssh/id_sv9 && ssh-copy-id -i ~/.ssh/id_sv9 hien@<that IP>`
-3. Mac: `cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<that IP>`
-   (asks the sv9 sudo password on every run, `become_ask_pass`; the first run also asks a passphrase
-   for the new sv9 keys).
+3. Mac: `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<that IP>`
+   (asks the node-workstation sudo password on every run, `become_ask_pass`; the first run also asks a passphrase
+   for the new node-workstation keys).
 
-What it does: hostname `sv9`, `/etc/hosts` names, upgrade, SSH server keys-only, never sleep (logind + masked sleep
+What it does: hostname `node-workstation`, `/etc/hosts` names, upgrade, SSH server keys-only, never sleep (logind + masked sleep
 targets), Wi-Fi power saving off, static IP on the `lan_link` link, kubectl/helm/k9s/flux/sops/age
-(pinned in `ansible/group_vars/all.yml`), passphrase-protected SSH keys sv9 -> Pis (added to their
-`authorized_keys`) and sv9 -> GitHub, cached 8 h in an ssh-agent (GNOME's on the desktop, a fixed
+(pinned in `ansible/group_vars/all.yml`), passphrase-protected SSH keys node-workstation -> Pis (added to their
+`authorized_keys`) and node-workstation -> GitHub, cached 8 h in an ssh-agent (GNOME's on the desktop, a fixed
 `~/.ssh/agent.sock` one in SSH sessions),
 a GitHub deploy key `sv9-admin` (write, this repo only, added with `gh` from the Mac), kubeconfig
 `~/.kube/homelab.yaml`, repo clone at `~/workspace/source/homelab`. Reboots once on first run.
@@ -313,24 +317,24 @@ BIOS (F2 at boot), by hand: enable a battery charge limit / economy mode if pres
 `ansible/playbooks/backup.yml` (script `ansible/files/backup.sh`), runnable any time, no downtime:
 
 ```bash
-cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml   # -e sv9_ip=... while on Wi-Fi
+cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml   # -e workstation_ip=... while on Wi-Fi
 ```
 
 - Exports the hand-made Secrets (list in the playbook, plus `data/pg-app`, whose password is inside
   `apps/app-env`'s `DATABASE_URL`) one file each, and every other Secret as `all-secrets.json`.
 - `pg_dumpall --globals-only` + `pg_dump -Fc` per database (today: `app`).
 - Plaintext only in `$XDG_RUNTIME_DIR` (tmpfs); the bundle is encrypted with **age** to
-  `~/homelab-backup/homelab-<date>.tar.gz.age` on sv9 and copied to `~/homelab-backups/` on the Mac.
-- Key: `~/.config/sops/age/keys.txt` on sv9 (also the future SOPS key). **Copy it to the password
+  `~/homelab-backup/homelab-<date>.tar.gz.age` on node-workstation and copied to `~/homelab-backups/` on the Mac.
+- Key: `~/.config/sops/age/keys.txt` on node-workstation (also the future SOPS key). **Copy it to the password
   manager**: without it no backup can be decrypted.
 - Restore: `age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>`.
   Check a dump without restoring: `... | tar -xOzf - ./postgres/app.dump | kubectl -n data exec -i pg-1 -c postgres -- pg_restore -l`.
 - Not backed up: Redis (TicketLite resyncs its gates from Postgres), metrics history, Grafana's own DB
   (dashboards are in git).
 
-Multi-arch: `build-image.yml` builds `linux/amd64,linux/arm64`, so app pods can run on sv9 too.
+Multi-arch: `build-image.yml` builds `linux/amd64,linux/arm64`, so app pods can run on node-workstation too.
 
-### 10.3 Rebuild with sv9 as server (phase 2, ready, not run yet)
+### 10.3 Rebuild with node-workstation as server (phase 2, ready, not run yet)
 
 One command, about 1 h of downtime, run in a real terminal (prompts):
 
@@ -338,15 +342,15 @@ One command, about 1 h of downtime, run in a real terminal (prompts):
 cd ansible && ansible-playbook playbooks/phase2-migrate.yml      # -e sd_swap=false: no SD swap
 ```
 
-Prompts: sv9 sudo password, `REBUILD`, Enter after the SD swap. Steps (header of the playbook has the
+Prompts: node-workstation sudo password, `REBUILD`, Enter after the SD swap. Steps (header of the playbook has the
 detail): fresh backup → uninstall k3s (agents, then the old server: its volumes are deleted) →
 Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
 
-- **Names**: inventory name = SSH name = OS hostname = Kubernetes node name (`sv9`, `pi4-8gb`,
-  `pi4-4gb`, `pi3`; before: `hien-pi-4b`, `hien-pi-4b-4gb`, `hien-pi-3b`).
+- **Names**: inventory name = SSH name = OS hostname = Kubernetes node name (`node-workstation`, `node-8gb`,
+  `node-4gb`, `node-1gb`; before: `sv9`/`pi4-8gb`/`pi4-4gb`/`pi3`, OS `hien-pi-4b`, `hien-pi-4b-4gb`, `hien-pi-3b`).
 - **SD swap**: before power-off, each Pi 4 card is pre-set to the identity of the board it moves to
   (hostname, static IP, SSH host keys), so after the swap the name, IP and host key still match;
-  `known_hosts` on sv9 and the Mac stays valid. Step 6 checks hostname, IP, RAM size and SD size
+  `known_hosts` on node-workstation and the Mac stays valid. Step 6 checks hostname, IP, RAM size and SD size
   against `ram_gb` / `sd_gb` in the inventory and stops if a card is in the wrong Pi.
 - **cloud-init** (Raspberry Pi OS, NoCloud from `/boot/firmware/user-data`) re-applies the hostname at
   every boot (`preserve_hostname: false`). The playbook disables it (`/etc/cloud/cloud-init.disabled`)
@@ -358,7 +362,7 @@ Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
   wait for Postgres, rebuild `apps/app-env` from the new `pg-app`, `pg_restore --clean` as the owner,
   row counts compared with the backup, apps restarted, `public_urls` checked.
 - Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
-- Until phase 2 has run, `sv9-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already sv9).
+- Until phase 2 has run, `workstation-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already node-workstation).
 
 ## Uninstall / reset
 ```bash

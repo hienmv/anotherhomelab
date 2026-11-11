@@ -1,3 +1,5 @@
+admin_host: "{{ groups['workstation'] | first }}"   # admin workstation (kubectl, backups, keys)
+
 # Pinned tool versions (checked 2026-11-11). kubectl matches the k3s server.
 kubectl_version: v1.37.2
 helm_version: v4.3.1
@@ -10,9 +12,9 @@ repo_slug: hienmv/anotherhomelab
 repo_dest: /home/hien/workspace/source/homelab
 k3s_version: v1.37.2+k3s1
 k3s_server: "{{ groups['k3s_servers'] | first }}"   # set in inventory.yml (group k3s_servers)
-k3s_old_server: pi4-8gb   # server before phase 2; used only by phase2-migrate.yml
+k3s_old_server: node-8gb   # server before phase 2 (was pi4-8gb); used only by phase2-migrate.yml
 
-# sv9-prepare: full package upgrade only when asked (-e upgrade_packages=true); a kernel update
+# workstation-prepare: full package upgrade only when asked (-e upgrade_packages=true); a kernel update
 # without a reboot is harmless, but the reboot takes the cluster down.
 upgrade_packages: false
 

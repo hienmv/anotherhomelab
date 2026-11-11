@@ -1,4 +1,4 @@
-# Phase 2 (K3S-GUIDE section 10): rebuild the cluster with sv9 as k3s server + data node.
+# Phase 2 (K3S-GUIDE section 10): rebuild the cluster with node-workstation as k3s server + data node.
 # DOWNTIME: all sites are down from the teardown until the restore finishes (about 1 h).
 #
 #   cd ansible && ansible-playbook playbooks/phase2-migrate.yml
@@ -8,15 +8,15 @@
 #   1. confirm            type REBUILD
 #   2. backup.yml         fresh encrypted backup of the OLD cluster (secrets + Postgres + row counts)
 #   3. teardown           uninstall k3s: agents, then the old server (k3s_old_server, its data is gone)
-#   4. identities         hostnames = inventory names; with sd_swap each Pi 4 card is pre-set to the
+#   4. identities         hostnames = inventory names (Pis and the workstation); with sd_swap each Pi 4 card is pre-set to the
 #                         identity of the board it moves to (hostname, IP, SSH host keys), cloud-init
 #                         disabled (it would reset the hostname at boot); Pi 4s power off
 #   5. pause              you swap the SD cards and power the Pi 4s on
 #   6. verify             each Pi: name, IP, RAM size and SD size match the inventory
-#   7. k3s.yml            new cluster: server sv9, agents the Pis
+#   7. k3s.yml            new cluster: server node-workstation, agents the Pis
 #   8. restore.yml        Flux, secrets, Postgres (row counts checked), apps restarted, URLs checked
 #
-# Prompts: sudo password for sv9 (become_ask_pass), REBUILD, Enter after the SD swap.
+# Prompts: sudo password for node-workstation (become_ask_pass), REBUILD, Enter after the SD swap.
 
 - name: 1. Confirm
   hosts: localhost
@@ -63,7 +63,7 @@
   vars:
     swap: "{{ sd_swap | default(true) | bool }}"
     # board the card currently in this Pi moves to
-    card_moves_to: "{{ {'pi4-8gb': 'pi4-4gb', 'pi4-4gb': 'pi4-8gb'}.get(inventory_hostname, inventory_hostname) if swap else inventory_hostname }}"
+    card_moves_to: "{{ {'node-8gb': 'node-4gb', 'node-4gb': 'node-8gb'}.get(inventory_hostname, inventory_hostname) if swap else inventory_hostname }}"
     target: "{{ hostvars[card_moves_to] }}"
   tasks:
     - name: Read SSH host keys (they travel with the name, not the card)
@@ -126,6 +126,21 @@
       ansible.builtin.command: systemd-run --on-active=3s systemctl poweroff
       when: card_moves_to != inventory_hostname
 
+- name: 4b. Workstation hostname = inventory name (no reboot needed)
+  hosts: workstation
+  become: true
+  gather_facts: false
+  tasks:
+    - name: 127.0.1.1 line (before the hostname, so sudo keeps resolving it)
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ inventory_hostname }} sv9"
+
+    - name: Hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
 - name: 5. SD card swap (by hand)
   hosts: localhost
   connection: local
@@ -135,8 +150,8 @@
       ansible.builtin.pause:
         prompt: |
           Wait ~30 s until the green LEDs of both Pi 4s stay off, then unplug both.
-            - 64 GB card (now in the 4 GB Pi)  -> 8 GB Pi  (pi4-8gb, {{ hostvars['pi4-8gb'].static_ip }})
-            - 32 GB card (now in the 8 GB Pi)  -> 4 GB Pi  (pi4-4gb, {{ hostvars['pi4-4gb'].static_ip }})
+            - 64 GB card (now in the 4 GB Pi)  -> 8 GB Pi  (node-8gb, {{ hostvars['node-8gb'].static_ip }})
+            - 32 GB card (now in the 8 GB Pi)  -> 4 GB Pi  (node-4gb, {{ hostvars['node-4gb'].static_ip }})
           Plug both back in. Press Enter when done
       when: sd_swap | default(true) | bool
 

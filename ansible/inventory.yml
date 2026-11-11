@@ -1,7 +1,8 @@
 # Homelab hosts: the ONE place for LAN addresses and per-node settings. Playbooks and scripts take
 # every IP from here. IPs are static (set on each host; the router has no DHCP reservations).
-# Host names here = SSH names = OS hostnames = Kubernetes node names (from phase 2 on).
-# Run from the Mac or from sv9 (it detects itself and runs locally).
+# Host name here = OS hostname = Kubernetes node name. Ansible connects by IP (ansible_host), so
+# it needs no /etc/hosts or ~/.ssh/config entries on the machine running it.
+# Run from the Mac or from node-workstation (it detects itself and runs locally).
 all:
   vars:
     ansible_user: hien
@@ -11,39 +12,41 @@ all:
   children:
     workstation:
       hosts:
-        sv9:
+        node-workstation:   # Panasonic CF-SV9, amd64, 16 GB, SSD
           static_ip: 192.168.40.249
-          # Link that holds static_ip: wifi or ethernet (switch = change here + re-run sv9-prepare).
+          # Link that holds static_ip: wifi or ethernet (switch = change here + re-run workstation-prepare).
           lan_link: wifi
           wifi_profile: JCOM_CKQY   # NetworkManager profile that gets static_ip when lan_link=wifi
-          # Only while sv9 is not on its static_ip yet: -e sv9_ip=<current IP>.
-          ansible_host: "{{ sv9_ip | default(static_ip) }}"
-          ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if lookup('pipe', 'hostname -s') != 'sv9' else omit }}"
-          # Running on sv9 itself: no SSH to self.
-          ansible_connection: "{{ 'local' if lookup('pipe', 'hostname -s') == 'sv9' else 'ssh' }}"
+          # Only while the workstation is not on its static_ip yet: -e workstation_ip=<current IP>.
+          ansible_host: "{{ workstation_ip | default(static_ip) }}"
+          ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if not is_self else omit }}"
+          ansible_connection: "{{ 'local' if is_self else 'ssh' }}"   # on itself: no SSH to self
+          is_self: "{{ lookup('pipe', 'hostname -s') in ['node-workstation', 'sv9'] }}"
           k3s_labels: [role=data]
           # also a desktop: keep CPU and memory for GNOME, the browser, Ansible
           k3s_reserved: cpu=1,memory=3Gi
     pis:
-      # SSH user/key for the Pis come from ~/.ssh/config on the control machine.
       # ram_gb + sd_gb identify the board and the SD card (checked after the SD swap).
       # nm_profile: NetworkManager profile that holds static_ip.
+      vars:
+        ansible_host: "{{ static_ip }}"
+        ansible_ssh_private_key_file: ~/.ssh/id_homelab   # same path on the Mac and the workstation
       hosts:
-        pi4-8gb:
+        node-8gb:   # Raspberry Pi 4B 8 GB (was pi4-8gb / hien-pi-4b)
           static_ip: 192.168.40.250
           ram_gb: 8
           sd_gb: 64
           nm_profile: netplan-eth0
           k3s_labels: [role=apps]
           k3s_reserved: cpu=250m,memory=512Mi
-        pi4-4gb:
+        node-4gb:   # Raspberry Pi 4B 4 GB (was pi4-4gb / hien-pi-4b-4gb)
           static_ip: 192.168.40.251
           ram_gb: 4
           sd_gb: 32
           nm_profile: netplan-eth0
           k3s_labels: [role=apps]
           k3s_reserved: memory=256Mi
-        pi3:
+        node-1gb:   # Raspberry Pi 3B+ 1 GB (was pi3 / hien-pi-3b)
           static_ip: 192.168.40.252
           ram_gb: 1
           sd_gb: 32
@@ -54,12 +57,12 @@ all:
     # Cluster roles. Exactly one server. Moving the server = move the host here + rebuild.
     k3s_servers:
       hosts:
-        sv9:
+        node-workstation:
     k3s_agents:
       hosts:
-        pi4-8gb:
-        pi4-4gb:
-        pi3:
+        node-8gb:
+        node-4gb:
+        node-1gb:
     k3s:
       children:
         k3s_servers:

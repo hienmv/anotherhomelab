@@ -147,8 +147,8 @@
       delay: 10
       changed_when: false
 
-- name: Admin kubeconfig on sv9
-  hosts: sv9
+- name: Admin kubeconfig on the workstation
+  hosts: workstation
   tasks:
     - name: ~/.kube
       ansible.builtin.file:

@@ -1,33 +1,33 @@
-# Phase 0 (K3S-GUIDE section 10): make sv9 an always-on host and the admin workstation.
+# Phase 0 (K3S-GUIDE section 10): make node-workstation (CF-SV9) an always-on host and the admin workstation.
 # No cluster change, no downtime. Idempotent: safe to re-run.
 #
-# Prompts every run: sv9 sudo password (become_ask_pass), then the sv9 key passphrase twice
+# Prompts every run: workstation sudo password (become_ask_pass), then the key passphrase twice
 # (first run: invent one; later: Enter). Run it in a real terminal, not through a non-interactive shell.
 #
-#   cd ansible && ansible-playbook playbooks/sv9-prepare.yml
-#   ... -e sv9_ip=<IP>   only while sv9 is not yet on its static_ip (first run)
+#   cd ansible && ansible-playbook playbooks/workstation-prepare.yml
+#   ... -e workstation_ip=<IP>   only while it is not yet on its static_ip (first run)
 
-- name: Base system on sv9
-  hosts: sv9
+- name: Base system on the workstation
+  hosts: workstation
   become: true
   tasks:
-    # sv9 is a desktop that browses the web: sudo keeps its password (Ansible asks once per run,
+    # The workstation is a desktop that browses the web: sudo keeps its password (Ansible asks once per run,
     # become_ask_pass in ansible.cfg). Passwordless sudo stays on the Pis only.
-    - name: No passwordless sudo on sv9
+    - name: No passwordless sudo on the workstation
       ansible.builtin.file:
         path: /etc/sudoers.d/hien
         state: absent
 
-    - name: Hostname sv9
+    - name: Hostname {{ inventory_hostname }}
       ansible.builtin.hostname:
-        name: sv9
+        name: "{{ inventory_hostname }}"
       notify: Reboot
 
     - name: 127.0.1.1 points at the new hostname
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: '^127\.0\.1\.1\s'
-        line: "127.0.1.1 sv9"
+        line: "127.0.1.1 {{ inventory_hostname }}"
 
     - name: Homelab names in /etc/hosts
       ansible.builtin.blockinfile:
@@ -107,12 +107,12 @@
       register: net
       changed_when: "'CHANGED' in net.stdout"
 
-    - name: Follow sv9 to its static IP
+    - name: Follow the workstation to its static IP
       ansible.builtin.set_fact:
         ansible_host: "{{ static_ip }}"
       when: "'RECONNECT' in net.stdout"
 
-    - name: Wait until sv9 answers on {{ static_ip }}
+    - name: Wait until it answers on {{ static_ip }}
       ansible.builtin.wait_for_connection:
         delay: 8
         timeout: 120
@@ -199,11 +199,11 @@
       when: ansible_connection != 'local'
 
 - name: Admin workstation keys and config (as hien)
-  hosts: sv9
+  hosts: workstation
   # Asked every run (vars_prompt cannot be conditional); once keys and repo exist, press Enter.
   vars_prompt:
     - name: key_passphrase
-      prompt: "Passphrase for sv9 SSH keys id_homelab + id_github (first run: invent one, min 12 chars; later runs: just Enter)"
+      prompt: "Passphrase for the workstation SSH keys id_homelab + id_github (first run: invent one, min 12 chars; later runs: just Enter)"
       private: true
       confirm: true
   tasks:
@@ -221,7 +221,7 @@
     - name: Keys to create; keep the passphrase as a host fact for the clone play
       ansible.builtin.set_fact:
         missing_keys: "{{ key_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
-        sv9_key_passphrase: "{{ key_passphrase }}"
+        admin_key_passphrase: "{{ key_passphrase }}"
       no_log: true
 
     - name: Passphrase is at least 12 characters (empty = no protection, not allowed)
@@ -236,7 +236,7 @@
       community.crypto.openssh_keypair:
         path: /home/hien/.ssh/id_{{ item }}
         type: ed25519
-        comment: "sv9->{{ item }}"
+        comment: "{{ inventory_hostname }}->{{ item }}"
         passphrase: "{{ key_passphrase }}"
         private_key_format: ssh
         mode: "0600"
@@ -261,7 +261,7 @@
         mode: "0600"
         marker: "# {mark} homelab (ansible)"
         block: |
-          Host pi3 pi4-8gb pi4-4gb
+          Host {{ groups['pis'] | join(' ') }}
             User hien
             IdentityFile ~/.ssh/id_homelab
             IdentitiesOnly yes
@@ -315,15 +315,15 @@
           pull.rebase: "true"
           rebase.autoStash: "true"
 
-- name: Authorize sv9's key on the Pis
+- name: Authorize the workstation's key on the Pis
   hosts: pis
   tasks:
-    - name: sv9 -> Pi SSH key
+    - name: workstation -> Pi SSH key
       ansible.posix.authorized_key:
         user: hien
-        key: "{{ hostvars['sv9'].homelab_pubkey }}"
+        key: "{{ hostvars[admin_host].homelab_pubkey }}"
 
-- name: GitHub deploy key for sv9 (read/write, this repo only)
+- name: GitHub deploy key for the workstation (read/write, this repo only)
   hosts: localhost
   connection: local
   gather_facts: false
@@ -333,25 +333,25 @@
       register: deploy_keys
       changed_when: false
 
-    # sv9's key recreated -> the old sv9-admin entry no longer matches: stop instead of skipping.
-    - name: sv9-admin entry matches sv9's current key
+    # workstation key recreated -> the old sv9-admin entry no longer matches: stop instead of skipping.
+    - name: sv9-admin entry matches the workstation's current key
       ansible.builtin.assert:
-        that: hostvars['sv9'].github_pubkey.split()[1] in deploy_keys.stdout
+        that: hostvars[admin_host].github_pubkey.split()[1] in deploy_keys.stdout
         fail_msg: >-
           Deploy key sv9-admin exists but holds another key. Delete it
           (gh repo deploy-key list/delete -R {{ repo_slug }}) and re-run.
         quiet: true
       when: "'sv9-admin' in deploy_keys.stdout"
 
-    - name: Add sv9 deploy key
+    - name: Add the workstation deploy key (title kept as sv9-admin)
       ansible.builtin.command: >-
         gh repo deploy-key add - -R {{ repo_slug }} --title sv9-admin --allow-write
       args:
-        stdin: "{{ hostvars['sv9'].github_pubkey }}"
+        stdin: "{{ hostvars[admin_host].github_pubkey }}"
       when: "'sv9-admin' not in deploy_keys.stdout"
 
-- name: Kubeconfig and repo on sv9
-  hosts: sv9
+- name: Kubeconfig and repo on the workstation
+  hosts: workstation
   tasks:
     - name: Read kubeconfig from the current k3s server
       ansible.builtin.slurp:
@@ -394,7 +394,7 @@
       args:
         creates: "{{ repo_dest }}/.git"
       environment:
-        KEY_PASSPHRASE: "{{ hostvars['sv9'].sv9_key_passphrase | default('') }}"
+        KEY_PASSPHRASE: "{{ hostvars[admin_host].admin_key_passphrase | default('') }}"
       no_log: true
 
     - name: Check cluster access

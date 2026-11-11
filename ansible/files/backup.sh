@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Homelab backup: Kubernetes Secrets + PostgreSQL, encrypted with age. Runs on the admin
-# workstation (sv9). Plaintext only ever lives in $XDG_RUNTIME_DIR (tmpfs, mode 700, this user).
+# workstation (node-workstation). Plaintext only ever lives in $XDG_RUNTIME_DIR (tmpfs, mode 700, this user).
 #
 # Usage: backup.sh <out-dir> <age-recipient> <secret> [<secret> ...]   (secret = namespace/name)
 set -euo pipefail

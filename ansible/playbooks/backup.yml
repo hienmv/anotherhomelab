@@ -1,14 +1,14 @@
 # Phase 1 (K3S-GUIDE section 10) and any manual backup later: export the hand-made Secrets and
-# dump PostgreSQL, encrypted with sv9's age key. No downtime, no sudo, read-only on the cluster.
+# dump PostgreSQL, encrypted with the workstation's age key. No downtime, no sudo, read-only on the cluster.
 #
 #   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml
 #
-# Result: ~/homelab-backup/homelab-<date>.tar.gz.age on sv9, plus a copy on the machine running
-# Ansible (~/homelab-backups/) when that is not sv9.
+# Result: ~/homelab-backup/homelab-<date>.tar.gz.age on node-workstation, plus a copy on the machine
+# running Ansible (~/homelab-backups/) when that is not the workstation.
 # Restore: age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>
 
 - name: Backup secrets and PostgreSQL
-  hosts: sv9
+  hosts: workstation
   gather_facts: false
   vars:
     backup_dir: /home/hien/homelab-backup
@@ -66,6 +66,6 @@
     - name: New age key - save it now
       ansible.builtin.debug:
         msg: >-
-          A new age key was created at {{ age_key }} on sv9. Without it the backup cannot be
-          decrypted. Copy the whole file into your password manager now (on sv9: cat {{ age_key }}).
+          A new age key was created at {{ age_key }} on {{ inventory_hostname }}. Without it the backup cannot be
+          decrypted. Copy the whole file into your password manager now (there: cat {{ age_key }}).
       when: age_new.changed

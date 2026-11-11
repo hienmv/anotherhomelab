@@ -1,5 +1,5 @@
 # Restore a fresh cluster from a backup made by backup.yml: Flux, the hand-made Secrets, PostgreSQL.
-# Runs kubectl on sv9 (KUBECONFIG ~/.kube/homelab.yaml must point at the NEW cluster).
+# Runs kubectl on node-workstation (KUBECONFIG ~/.kube/homelab.yaml must point at the NEW cluster).
 # Decrypted files live only in tmpfs and are deleted at the end, also on failure.
 #
 #   cd ansible && ansible-playbook playbooks/restore.yml                 # newest backup
@@ -9,7 +9,7 @@
 # new pg-app + the restored redis secret, the same way K3S-GUIDE section 5 builds it).
 
 - name: Restore secrets, Flux and PostgreSQL
-  hosts: sv9
+  hosts: workstation
   gather_facts: false
   environment:
     KUBECONFIG: /home/hien/.kube/homelab.yaml
