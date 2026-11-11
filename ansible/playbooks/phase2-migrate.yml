@@ -17,8 +17,13 @@
 #   8. restore.yml        Flux, secrets, Postgres (row counts checked), apps restarted, URLs checked
 #
 # Prompts: sudo password for node-workstation (become_ask_pass), REBUILD, Enter after the SD swap.
+#
+# Resume after a failure: every step has a tag (confirm backup teardown identities workstation swap
+# verify k3s restore). Example, teardown and identities done:
+#   ansible-playbook playbooks/phase2-migrate.yml --tags workstation,swap,verify,k3s,restore
 
 - name: 1. Confirm
+  tags: [confirm]
   hosts: localhost
   connection: local
   gather_facts: false
@@ -39,9 +44,11 @@
         quiet: true
 
 - name: 2. Fresh backup of the old cluster
+  tags: [backup]
   ansible.builtin.import_playbook: backup.yml
 
 - name: 3. Teardown of the old cluster
+  tags: [teardown]
   hosts: pis
   become: true
   tasks:
@@ -58,6 +65,7 @@
       when: inventory_hostname == k3s_old_server
 
 - name: 4. Pi identities (hostname, IP, SSH host keys) for after the SD swap
+  tags: [identities]
   hosts: pis
   become: true
   vars:
@@ -127,6 +135,7 @@
       when: card_moves_to != inventory_hostname
 
 - name: 4b. Workstation hostname = inventory name (no reboot needed)
+  tags: [workstation]
   hosts: workstation
   become: true
   gather_facts: false
@@ -142,6 +151,7 @@
         name: "{{ inventory_hostname }}"
 
 - name: 5. SD card swap (by hand)
+  tags: [swap]
   hosts: localhost
   connection: local
   gather_facts: false
@@ -156,6 +166,7 @@
       when: sd_swap | default(true) | bool
 
 - name: 6. Verify each Pi matches the inventory
+  tags: [verify]
   hosts: pis
   become: true
   gather_facts: false
@@ -192,7 +203,9 @@
           SD {{ (sd_bytes.stdout | int / 1e9) | round(1) }} GB
 
 - name: 7. New cluster
+  tags: [k3s]
   ansible.builtin.import_playbook: k3s.yml
 
 - name: 8. Restore
+  tags: [restore]
   ansible.builtin.import_playbook: restore.yml
