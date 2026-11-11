@@ -361,6 +361,10 @@ Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
 - **Restore**: Flux components, hand-made Secrets (not `pg-app`: CNPG makes a new one), Flux sync,
   wait for Postgres, rebuild `apps/app-env` from the new `pg-app`, `pg_restore --clean` as the owner,
   row counts compared with the backup, apps restarted, `public_urls` checked.
+- Run log 2026-11-11: step 4b failed (sudo-rs prompt, fixed with `ansible_become_exe: sudo.ws`);
+  resumed with `--tags workstation,swap,verify,k3s,restore`. In the restore, the first Postgres start
+  on node-workstation hung after crash recovery ("redo done", postmaster stuck in `starting`, readiness
+  500); deleting pod `pg-1` fixed it, and restore.yml now does that once by itself after 5 min.
 - Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
 - Until phase 2 has run, `workstation-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already node-workstation).
 

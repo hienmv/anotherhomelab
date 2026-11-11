@@ -97,8 +97,21 @@
           changed_when: false
 
         - name: Postgres ready
-          ansible.builtin.command: kubectl -n data wait cluster.postgresql.cnpg.io/pg --for=condition=Ready --timeout=900s
+          ansible.builtin.command: kubectl -n data wait cluster.postgresql.cnpg.io/pg --for=condition=Ready --timeout=300s
+          register: pg_ready
+          failed_when: false
           changed_when: false
+
+        # Seen 2026-11-11 on the first start after initdb: crash recovery finished ("redo done") but
+        # the postmaster stayed in "starting" for 30+ min. Restarting the pod (same volume) fixed it.
+        - name: Postgres stuck in startup - restart the pod once
+          ansible.builtin.command: kubectl -n data delete pod -l cnpg.io/cluster=pg --wait=true
+          when: pg_ready.rc != 0
+
+        - name: Postgres ready (after the restart)
+          ansible.builtin.command: kubectl -n data wait cluster.postgresql.cnpg.io/pg --for=condition=Ready --timeout=600s
+          changed_when: false
+          when: pg_ready.rc != 0
 
         - name: apps/app-env from the new pg-app and the restored redis secret
           ansible.builtin.shell: |
