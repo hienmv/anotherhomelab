@@ -364,7 +364,12 @@ Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
 - Run log 2026-11-11: step 4b failed (sudo-rs prompt, fixed with `ansible_become_exe: sudo.ws`);
   resumed with `--tags workstation,swap,verify,k3s,restore`. In the restore, the first Postgres start
   on node-workstation hung after crash recovery ("redo done", postmaster stuck in `starting`, readiness
-  500); deleting pod `pg-1` fixed it, and restore.yml now does that once by itself after 5 min.
+  500). Real cause: **AppArmor 5 on Ubuntu 26.04** denied every signal inside containers (kernel
+  log: `apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d" ...
+  peer="cri-containerd.apparmor.d//&unconfined"`); vmagent crashed the same way ("cannot send SIGHUP
+  to itself"). Fix: `ansible/files/apparmor/cri-containerd.apparmor.d`, loaded by k3s.yml before k3s
+  (containerd keeps an already loaded profile). restore.yml also restarts a stuck Postgres pod once.
+  Check on a node: `journalctl -k | grep 'apparmor="DENIED"'` must stay empty for containers.
 - Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
 - Until phase 2 has run, `workstation-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already node-workstation).
 

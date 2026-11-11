@@ -28,6 +28,22 @@
         state: reloaded
       when: nm_cni.changed
 
+    # Ubuntu 26.04 / AppArmor 5: containerd's own profile denies signals inside containers.
+    # Pre-load a fixed one; containerd keeps an already loaded profile. Details in the file.
+    - name: Container AppArmor profile (Ubuntu)
+      ansible.builtin.copy:
+        src: ../files/apparmor/cri-containerd.apparmor.d
+        dest: /etc/apparmor.d/cri-containerd.apparmor.d
+        mode: "0644"
+        validate: apparmor_parser -Q -K %s
+      register: aa_profile
+      when: ansible_facts.distribution == 'Ubuntu'
+
+    # -r replaces the loaded profile: running containers get it at once, no restart needed.
+    - name: Load the container AppArmor profile now
+      ansible.builtin.command: apparmor_parser -r /etc/apparmor.d/cri-containerd.apparmor.d
+      when: aa_profile is changed
+
     - name: k3s installer (pinned to the k3s version)
       ansible.builtin.get_url:
         url: "https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version | urlencode }}/install.sh"
