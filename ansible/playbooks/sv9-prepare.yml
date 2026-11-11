@@ -1,9 +1,11 @@
 # Phase 0 (K3S-GUIDE section 10): make sv9 an always-on host and the admin workstation.
 # No cluster change, no downtime. Idempotent: safe to re-run.
 #
-# First run, from the Mac (sv9 still on Wi-Fi, sudo still asks a password):
-#   cd ansible && ansible-playbook playbooks/sv9-prepare.yml -e sv9_ip=<current IP> -K
-# Later runs: ansible-playbook playbooks/sv9-prepare.yml
+# Prompts every run: sv9 sudo password (become_ask_pass), then the sv9 key passphrase twice
+# (first run: invent one; later: Enter). Run it in a real terminal, not through a non-interactive shell.
+#
+#   cd ansible && ansible-playbook playbooks/sv9-prepare.yml
+#   ... -e sv9_ip=<IP>   only while sv9 is not yet on its static_ip (first run)
 
 - name: Base system on sv9
   hosts: sv9
@@ -81,7 +83,7 @@
         masked: true
       loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
 
-    - name: Wi-Fi power saving off (fallback link stays responsive)
+    - name: Wi-Fi power saving off (fewer latency spikes and drops)
       ansible.builtin.copy:
         dest: /etc/NetworkManager/conf.d/wifi-powersave-off.conf
         content: |
@@ -95,7 +97,7 @@
       ansible.builtin.script:
         cmd: >-
           ../files/net-static.sh {{ lan_link }} {{ static_ip }} {{ lan_prefix }}
-          {{ lan_gateway }} {{ lan_dns }}
+          {{ lan_gateway }} {{ lan_dns }} {{ wifi_profile | default('') | quote }}
       register: net
       changed_when: "'CHANGED' in net.stdout"
 
@@ -192,8 +194,7 @@
 
 - name: Admin workstation keys and config (as hien)
   hosts: sv9
-  # vars_prompt reads in the main process with getpass (the pause module returned empty hidden
-  # input with ansible-core 2.21 on macOS). Asked every run; once keys and repo exist, press Enter.
+  # Asked every run (vars_prompt cannot be conditional); once keys and repo exist, press Enter.
   vars_prompt:
     - name: key_passphrase
       prompt: "Passphrase for sv9 SSH keys id_homelab + id_github (first run: invent one, min 12 chars; later runs: just Enter)"
@@ -287,6 +288,14 @@
         path: /home/hien/.bashrc
         line: export KUBECONFIG=~/.kube/homelab.yaml
 
+    - name: Git identity of the machine running Ansible is known
+      ansible.builtin.assert:
+        that:
+          - lookup('pipe', 'git config user.name') | length > 0
+          - lookup('pipe', 'git config user.email') | length > 0
+        fail_msg: "Set git user.name and user.email on the machine running Ansible first."
+        quiet: true
+
     - name: Git identity
       community.general.git_config:
         scope: global
@@ -318,12 +327,22 @@
       register: deploy_keys
       changed_when: false
 
+    # sv9's key recreated -> the old sv9-admin entry no longer matches: stop instead of skipping.
+    - name: sv9-admin entry matches sv9's current key
+      ansible.builtin.assert:
+        that: hostvars['sv9'].github_pubkey.split()[1] in deploy_keys.stdout
+        fail_msg: >-
+          Deploy key sv9-admin exists but holds another key. Delete it
+          (gh repo deploy-key list/delete -R {{ repo_slug }}) and re-run.
+        quiet: true
+      when: "'sv9-admin' in deploy_keys.stdout"
+
     - name: Add sv9 deploy key
       ansible.builtin.command: >-
         gh repo deploy-key add - -R {{ repo_slug }} --title sv9-admin --allow-write
       args:
         stdin: "{{ hostvars['sv9'].github_pubkey }}"
-      when: hostvars['sv9'].github_pubkey.split()[1] not in deploy_keys.stdout and 'sv9-admin' not in deploy_keys.stdout
+      when: "'sv9-admin' not in deploy_keys.stdout"
 
 - name: Kubeconfig and repo on sv9
   hosts: sv9

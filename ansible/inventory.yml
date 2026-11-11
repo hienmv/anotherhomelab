@@ -14,6 +14,7 @@ all:
           static_ip: 192.168.40.249
           # Link that holds static_ip: wifi or ethernet (switch = change here + re-run sv9-prepare).
           lan_link: wifi
+          wifi_profile: JCOM_CKQY   # NetworkManager profile that gets static_ip when lan_link=wifi
           # First run: sv9 is still on Wi-Fi/DHCP, pass -e sv9_ip=<current IP>.
           ansible_host: "{{ sv9_ip | default(static_ip) }}"
           ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if lookup('pipe', 'hostname -s') != 'sv9' else omit }}"

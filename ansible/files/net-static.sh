@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # Put the host's static IP on exactly one link (NetworkManager), values from the Ansible inventory.
-#   wifi:     static IP on the active (else first) Wi-Fi profile; the wired profile is removed.
+#   wifi:     static IP on Wi-Fi profile <wifi-profile> (default: the active one); wired profile removed.
 #   ethernet: static IP on profile `homelab-wired`; Wi-Fi goes back to DHCP as a fallback link.
 # Reconnects are scheduled 3 s later via systemd-run, so the SSH session running this returns first.
 # Prints CHANGED/UNCHANGED, and RECONNECT when the address of an active link changes.
 #
-# Usage: net-static.sh <wifi|ethernet> <ip> <prefix> <gateway> <dns>
+# Usage: net-static.sh <wifi|ethernet> <ip> <prefix> <gateway> <dns> [<wifi-profile>]
 set -euo pipefail
-link=$1 ip=$2 prefix=$3 gw=$4 dns=$5
+link=$1 ip=$2 prefix=$3 gw=$4 dns=$5 wifi=${6:-}
 want="manual|$ip/$prefix|$gw|$dns"
 
 wired_if=$(ls /sys/class/net | grep -E '^(en|eth)' | head -1 || true)
-wifi=$(nmcli -t -f NAME,TYPE connection show --active | awk -F: '$2=="802-11-wireless"{print $1; exit}')
-[ -n "$wifi" ] || wifi=$(nmcli -t -f NAME,TYPE connection show | awk -F: '$2=="802-11-wireless"{print $1; exit}')
+if [ -n "$wifi" ]; then
+  nmcli -g NAME connection show | grep -qxF "$wifi" || { echo "Wi-Fi profile not found: $wifi" >&2; exit 1; }
+else
+  wifi=$(nmcli -t -f NAME,TYPE connection show --active | awk -F: '$2=="802-11-wireless"{print $1; exit}')
+fi
 
 get()        { nmcli -g ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns connection show "$1" | paste -sd'|'; }
 set_static() { nmcli connection modify "$1" ipv4.method manual ipv4.addresses "$ip/$prefix" ipv4.gateway "$gw" ipv4.dns "$dns"; }
@@ -22,7 +25,7 @@ has_wired()  { nmcli -g NAME connection show | grep -qx homelab-wired; }
 changed=0; up=()
 case "$link" in
   wifi)
-    [ -n "$wifi" ] || { echo "no Wi-Fi profile found" >&2; exit 1; }
+    [ -n "$wifi" ] || { echo "no active Wi-Fi profile; set wifi_profile in the inventory" >&2; exit 1; }
     if [ "$(get "$wifi")" != "$want" ]; then set_static "$wifi"; changed=1; up+=("$wifi"); fi
     if has_wired; then nmcli connection delete homelab-wired >/dev/null; changed=1; fi
     ;;
