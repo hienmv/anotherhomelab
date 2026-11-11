@@ -365,6 +365,13 @@ Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
   resumed with `--tags workstation,swap,verify,k3s,restore`. In the restore, the first Postgres start
   on node-workstation hung after crash recovery ("redo done", postmaster stuck in `starting`, readiness
   500); deleting pod `pg-1` fixed it, and restore.yml now does that once by itself after 5 min.
+- Decision 2026-11-11: node-workstation is reinstalled with **Ubuntu 24.04 LTS** instead of a host
+  AppArmor change. Ubuntu 26.04's apparmor package sets
+  `kernel.apparmor_restrict_unprivileged_unconfined = 1` (`/usr/lib/sysctl.d/10-apparmor.conf`), which
+  stacks the container label and breaks containerd's signal rule (containerd issue #14485, no fixed
+  release yet); 24.04's package (`4.0.1really4.0.1-0ubuntu0.24.04.9`) sets only
+  `restrict_unprivileged_userns`. The custom profile (f431be6) was reverted, and `sudo.ws` removed
+  (24.04's sudo is classic sudo). Before moving data: test Postgres pod + `journalctl -k | grep DENIED`.
 - Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
 - Until phase 2 has run, `workstation-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already node-workstation).
 

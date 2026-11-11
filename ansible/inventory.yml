@@ -22,10 +22,6 @@ all:
           ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if not is_self else omit }}"
           ansible_connection: "{{ 'local' if is_self else 'ssh' }}"   # on itself: no SSH to self
           is_self: "{{ lookup('pipe', 'hostname -s') in ['node-workstation', 'sv9'] }}"
-          # Ubuntu 26.04's default sudo is sudo-rs; ansible-core 2.20 (Ubuntu's package) does not
-          # recognise its password prompt ("Timed out waiting for become ... password prompt").
-          # Classic sudo is still installed as sudo.ws.
-          ansible_become_exe: sudo.ws
           k3s_labels: [role=data]
           # also a desktop: keep CPU and memory for GNOME, the browser, Ansible
           k3s_reserved: cpu=1,memory=3Gi
