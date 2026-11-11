@@ -8,6 +8,10 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `group_vars/all.yml` | pinned tool versions, repo, current k3s server IP |
 | `playbooks/sv9-prepare.yml` | phase 0: sv9 base system + admin workstation (no cluster change) |
 | `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on sv9 + a copy on the Mac |
+| `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
+| `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
+| `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |
+| `files/net-static.sh` | static IP on the `lan_link` link (used by sv9-prepare) |
 
 Run from the `ansible/` folder, on the Mac (today) or on sv9 (afterwards; it detects itself and runs
 locally). The Pis' SSH user and key come from `~/.ssh/config` on the machine running Ansible.

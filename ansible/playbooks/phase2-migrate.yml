@@ -1,0 +1,183 @@
+# Phase 2 (K3S-GUIDE section 10): rebuild the cluster with sv9 as k3s server + data node.
+# DOWNTIME: all sites are down from the teardown until the restore finishes (about 1 h).
+#
+#   cd ansible && ansible-playbook playbooks/phase2-migrate.yml
+#   ... -e sd_swap=false     skip the SD card swap (Pi 4 identities stay as they are)
+#
+# Steps (each stops the run on failure; fix and re-run the remaining part by hand):
+#   1. confirm            type REBUILD
+#   2. backup.yml         fresh encrypted backup of the OLD cluster (secrets + Postgres + row counts)
+#   3. teardown           uninstall k3s: agents, then the old server (k3s_old_server, its data is gone)
+#   4. identities         hostnames = inventory names; with sd_swap each Pi 4 card is pre-set to the
+#                         identity of the board it moves to (hostname, IP, SSH host keys), cloud-init
+#                         disabled (it would reset the hostname at boot); Pi 4s power off
+#   5. pause              you swap the SD cards and power the Pi 4s on
+#   6. verify             each Pi: name, IP, RAM size and SD size match the inventory
+#   7. k3s.yml            new cluster: server sv9, agents the Pis
+#   8. restore.yml        Flux, secrets, Postgres (row counts checked), apps restarted, URLs checked
+#
+# Prompts: sudo password for sv9 (become_ask_pass), REBUILD, Enter after the SD swap.
+
+- name: 1. Confirm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Confirm the rebuild
+      ansible.builtin.pause:
+        prompt: |
+          This DELETES the current k3s cluster on {{ k3s_old_server }} (Postgres data included; a backup
+          is taken first) and builds a new one with {{ k3s_server }} as server. All sites go down for
+          about an hour. SD card swap: {{ sd_swap | default(true) | bool }}.
+          Type REBUILD to continue
+      register: confirm
+
+    - name: Confirmed
+      ansible.builtin.assert:
+        that: confirm.user_input == 'REBUILD'
+        fail_msg: "Not confirmed, nothing changed."
+        quiet: true
+
+- name: 2. Fresh backup of the old cluster
+  ansible.builtin.import_playbook: backup.yml
+
+- name: 3. Teardown of the old cluster
+  hosts: pis
+  become: true
+  tasks:
+    - name: Uninstall k3s agents
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-agent-uninstall.sh
+        removes: /usr/local/bin/k3s-agent-uninstall.sh
+      when: inventory_hostname != k3s_old_server
+
+    - name: Uninstall the old k3s server (deletes its cluster state and volumes)
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-uninstall.sh
+        removes: /usr/local/bin/k3s-uninstall.sh
+      when: inventory_hostname == k3s_old_server
+
+- name: 4. Pi identities (hostname, IP, SSH host keys) for after the SD swap
+  hosts: pis
+  become: true
+  vars:
+    swap: "{{ sd_swap | default(true) | bool }}"
+    # board the card currently in this Pi moves to
+    card_moves_to: "{{ {'pi4-8gb': 'pi4-4gb', 'pi4-4gb': 'pi4-8gb'}.get(inventory_hostname, inventory_hostname) if swap else inventory_hostname }}"
+    target: "{{ hostvars[card_moves_to] }}"
+  tasks:
+    - name: Read SSH host keys (they travel with the name, not the card)
+      ansible.builtin.slurp:
+        src: /etc/ssh/{{ item }}
+      loop: [ssh_host_ed25519_key, ssh_host_ed25519_key.pub, ssh_host_ecdsa_key, ssh_host_ecdsa_key.pub,
+             ssh_host_rsa_key, ssh_host_rsa_key.pub]
+      register: host_keys
+      no_log: true
+
+    - name: Card summary
+      ansible.builtin.debug:
+        msg: "card in {{ inventory_hostname }} becomes {{ card_moves_to }} ({{ target.static_ip }})"
+
+    - name: cloud-init off (provisioning is done; it would reset the hostname at every boot)
+      ansible.builtin.copy:
+        dest: /etc/cloud/cloud-init.disabled
+        content: "disabled by ansible phase2-migrate.yml: hostname is managed in the inventory\n"
+        mode: "0644"
+
+    - name: cloud-init user-data hostname (in case it is ever re-enabled)
+      ansible.builtin.lineinfile:
+        path: /boot/firmware/user-data
+        regexp: '^hostname:'
+        line: "hostname: {{ card_moves_to }}"
+
+    - name: 127.0.1.1 line (before the hostname, so sudo keeps resolving it)
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ card_moves_to }} {{ inventory_hostname }}"
+
+    - name: Hostname
+      ansible.builtin.hostname:
+        name: "{{ card_moves_to }}"
+
+    - name: 127.0.1.1 line (final)
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ card_moves_to }}"
+
+    - name: Static IP for the next boot (not applied now)
+      ansible.builtin.command: >-
+        nmcli connection modify {{ nm_profile | quote }} ipv4.method manual
+        ipv4.addresses {{ target.static_ip }}/{{ lan_prefix }} ipv4.gateway {{ lan_gateway }} ipv4.dns {{ lan_dns }}
+      when: card_moves_to != inventory_hostname
+
+    - name: SSH host keys of the target name
+      ansible.builtin.copy:
+        dest: /etc/ssh/{{ item.item }}
+        content: "{{ item.content | b64decode }}"
+        mode: "{{ '0644' if item.item.endswith('.pub') else '0600' }}"
+      loop: "{{ hostvars[card_moves_to].host_keys.results }}"
+      loop_control: { label: "{{ item.item }}" }
+      no_log: true
+      when: card_moves_to != inventory_hostname
+
+    - name: Power off the Pi 4s for the SD swap (3 s later, so this task returns)
+      ansible.builtin.command: systemd-run --on-active=3s systemctl poweroff
+      when: card_moves_to != inventory_hostname
+
+- name: 5. SD card swap (by hand)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Swap the SD cards
+      ansible.builtin.pause:
+        prompt: |
+          Wait ~30 s until the green LEDs of both Pi 4s stay off, then unplug both.
+            - 64 GB card (now in the 4 GB Pi)  -> 8 GB Pi  (pi4-8gb, {{ hostvars['pi4-8gb'].static_ip }})
+            - 32 GB card (now in the 8 GB Pi)  -> 4 GB Pi  (pi4-4gb, {{ hostvars['pi4-4gb'].static_ip }})
+          Plug both back in. Press Enter when done
+      when: sd_swap | default(true) | bool
+
+- name: 6. Verify each Pi matches the inventory
+  hosts: pis
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Pi reachable
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 600
+
+    - name: Facts
+      ansible.builtin.setup:
+        gather_subset: [hardware, network]
+
+    - name: SD card size
+      ansible.builtin.command: lsblk -bdno SIZE /dev/mmcblk0
+      register: sd_bytes
+      changed_when: false
+
+    - name: Name, IP, RAM and SD card match
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.hostname == inventory_hostname
+          - static_ip in ansible_facts.all_ipv4_addresses
+          - ansible_facts.memtotal_mb > ram_gb * 1024 * 0.8
+          - ansible_facts.memtotal_mb < ram_gb * 1024 * 1.1
+          - (sd_bytes.stdout | int) > sd_gb * 1e9 * 0.85
+          - (sd_bytes.stdout | int) < sd_gb * 1e9 * 1.1
+        fail_msg: >-
+          {{ inventory_hostname }}: hostname {{ ansible_facts.hostname }}, IPs {{ ansible_facts.all_ipv4_addresses }},
+          RAM {{ ansible_facts.memtotal_mb }} MB (want {{ ram_gb }} GB), SD {{ (sd_bytes.stdout | int / 1e9) | round(1) }} GB
+          (want {{ sd_gb }} GB). Cards in the wrong Pi? Power off, fix, re-run from step 6.
+        success_msg: >-
+          {{ inventory_hostname }} OK: {{ static_ip }}, RAM {{ ansible_facts.memtotal_mb }} MB,
+          SD {{ (sd_bytes.stdout | int / 1e9) | round(1) }} GB
+
+- name: 7. New cluster
+  ansible.builtin.import_playbook: k3s.yml
+
+- name: 8. Restore
+  ansible.builtin.import_playbook: restore.yml

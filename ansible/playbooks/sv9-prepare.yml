@@ -38,10 +38,16 @@
           {{ hostvars[h].static_ip }} {{ h }}
           {% endfor %}
 
-    - name: Upgrade packages
+    - name: Upgrade packages (only with -e upgrade_packages=true)
       ansible.builtin.apt:
         update_cache: true
         upgrade: dist
+        cache_valid_time: 3600
+      when: upgrade_packages | bool
+
+    - name: Package index
+      ansible.builtin.apt:
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Base packages

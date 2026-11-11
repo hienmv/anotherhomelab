@@ -36,6 +36,12 @@ for db in $(kubectl -n data exec "$pod" -c postgres -- psql -U postgres -Atc \
             "select datname from pg_database where not datistemplate and datname <> 'postgres'"); do
   kubectl -n data exec "$pod" -c postgres -- pg_dump -U postgres -Fc "$db" > "$work/postgres/$db.dump"
   head -c 5 "$work/postgres/$db.dump" | grep -q PGDMP || { echo "bad dump: $db" >&2; exit 1; }
+  # exact row counts, checked again after a restore (restore.yml)
+  kubectl -n data exec "$pod" -c postgres -- psql -U postgres -d "$db" -Atc \
+    "select format('select %L, count(*) from %I.%I;', schemaname||'.'||relname, schemaname, relname)
+       from pg_stat_user_tables order by 1" \
+    | kubectl -n data exec -i "$pod" -c postgres -- psql -U postgres -d "$db" -At -F' ' \
+    > "$work/postgres/$db.rows"
 done
 
 # 4. Manifest of what is inside (no secret values).
@@ -48,9 +54,11 @@ done
 # 5. Encrypt, then prove it decrypts with the local key.
 mkdir -p "$out_dir"; chmod 700 "$out_dir"
 file="$out_dir/homelab-$stamp.tar.gz.age"
-tar -C "$work" -czf - . | age -r "$recipient" -o "$file"
-chmod 600 "$file"
-count=$(age -d -i "$HOME/.config/sops/age/keys.txt" "$file" | tar -tzf - | grep -c -v '/$')
+# write to .partial, rename only after the decrypt check: restore.yml picks the newest *.tar.gz.age
+tar -C "$work" -czf - . | age -r "$recipient" -o "$file.partial"
+chmod 600 "$file.partial"
+count=$(age -d -i "$HOME/.config/sops/age/keys.txt" "$file.partial" | tar -tzf - | grep -c -v '/$')
+mv "$file.partial" "$file"
 
 cat "$work/MANIFEST"
 echo "encrypted: $file ($(du -h "$file" | cut -f1), $count files, decrypt check OK)"

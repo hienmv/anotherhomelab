@@ -8,4 +8,17 @@ sops_version: v3.13.3
 repo_ssh_url: git@github.com:hienmv/anotherhomelab.git
 repo_slug: hienmv/anotherhomelab
 repo_dest: /home/hien/workspace/source/homelab
-k3s_server: pi4-8gb   # inventory name of the k3s server (IP from inventory); sv9 after phase 2
+k3s_version: v1.37.2+k3s1
+k3s_server: "{{ groups['k3s_servers'] | first }}"   # set in inventory.yml (group k3s_servers)
+k3s_old_server: pi4-8gb   # server before phase 2; used only by phase2-migrate.yml
+
+# sv9-prepare: full package upgrade only when asked (-e upgrade_packages=true); a kernel update
+# without a reboot is harmless, but the reboot takes the cluster down.
+upgrade_packages: false
+
+# Checked after a restore / migration (must answer 200).
+public_urls:
+  - https://hien0ethan.com
+  - https://notes.hien0ethan.com
+  - https://ticketlite.hien0ethan.com
+  - https://ticketlite.hien0ethan.com/api/concerts

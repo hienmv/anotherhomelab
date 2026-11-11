@@ -1,0 +1,179 @@
+# Install or update k3s on every node of group `k3s`, settings from the inventory:
+# server = group k3s_servers, agents = group k3s_agents (inventory). Version pinned in group_vars (k3s_version).
+# Node name = inventory name, labels/taints/reserved resources per host.
+# Idempotent: re-running with the same settings changes nothing.
+#
+# Note: k3s applies node-label / node-taint only when a node registers. To change them on an
+# existing node use kubectl label/taint, then update the inventory to match.
+#
+#   cd ansible && ansible-playbook playbooks/k3s.yml
+
+- name: k3s prerequisites (all nodes)
+  hosts: k3s
+  become: true
+  tasks:
+    # k3s docs: NetworkManager must not manage the CNI interfaces.
+    - name: NetworkManager ignores CNI interfaces
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/conf.d/k3s-cni.conf
+        content: |
+          [keyfile]
+          unmanaged-devices=interface-name:cni0;interface-name:flannel*;interface-name:veth*
+        mode: "0644"
+      register: nm_cni
+
+    - name: Reload NetworkManager
+      ansible.builtin.systemd_service:
+        name: NetworkManager
+        state: reloaded
+      when: nm_cni.changed
+
+    - name: k3s installer (pinned to the k3s version)
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version | urlencode }}/install.sh"
+        dest: /usr/local/src/k3s-install-{{ k3s_version }}.sh
+        mode: "0755"
+
+    - name: Installed k3s version
+      ansible.builtin.command: /usr/local/bin/k3s --version
+      register: k3s_installed
+      changed_when: false
+      failed_when: false
+
+    - name: k3s config directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: "0755"
+
+- name: k3s server
+  hosts: k3s_servers
+  become: true
+  tasks:
+    - name: Server config
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml
+        mode: "0600"
+        content: |
+          # managed by ansible (playbooks/k3s.yml, values from inventory.yml)
+          write-kubeconfig-mode: "0600"
+          node-name: {{ inventory_hostname }}
+          node-ip: {{ static_ip }}
+          tls-san: [{{ inventory_hostname }}, {{ static_ip }}]
+          node-label: {{ k3s_labels | default([]) | to_json }}
+          node-taint: {{ k3s_taints | default([]) | to_json }}
+          kubelet-arg: ["system-reserved={{ k3s_reserved }}"]
+      register: server_config
+
+    - name: Install k3s server {{ k3s_version }}
+      ansible.builtin.command: /usr/local/src/k3s-install-{{ k3s_version }}.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: server
+      when: k3s_version not in k3s_installed.stdout
+
+    - name: Restart k3s after a config change
+      ansible.builtin.systemd_service:
+        name: k3s
+        state: restarted
+      when: server_config.changed and k3s_version in k3s_installed.stdout
+
+    - name: Server node Ready
+      ansible.builtin.command: k3s kubectl wait node/{{ inventory_hostname }} --for=condition=Ready --timeout=10s
+      register: ready
+      until: ready.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Join token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: node_token
+      no_log: true
+
+    - name: Remember the token for the agents
+      ansible.builtin.set_fact:
+        k3s_token: "{{ node_token.content | b64decode | trim }}"
+      no_log: true
+
+    - name: Read the admin kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: k3s_yaml
+      no_log: true
+
+- name: k3s agents
+  hosts: k3s_agents
+  become: true
+  vars:
+    server_ip: "{{ hostvars[k3s_server].static_ip }}"
+  tasks:
+    - name: Agent config
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml
+        mode: "0600"
+        content: |
+          # managed by ansible (playbooks/k3s.yml, values from inventory.yml)
+          server: https://{{ server_ip }}:6443
+          token: {{ hostvars[k3s_server].k3s_token }}
+          node-name: {{ inventory_hostname }}
+          node-ip: {{ static_ip }}
+          node-label: {{ k3s_labels | default([]) | to_json }}
+          node-taint: {{ k3s_taints | default([]) | to_json }}
+          kubelet-arg: ["system-reserved={{ k3s_reserved }}"]
+      register: agent_config
+      no_log: true   # contains the join token
+
+    - name: Install k3s agent {{ k3s_version }}
+      ansible.builtin.command: /usr/local/src/k3s-install-{{ k3s_version }}.sh
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        INSTALL_K3S_EXEC: agent
+      when: k3s_version not in k3s_installed.stdout
+
+    - name: Restart k3s-agent after a config change
+      ansible.builtin.systemd_service:
+        name: k3s-agent
+        state: restarted
+      when: agent_config.changed and k3s_version in k3s_installed.stdout
+
+    - name: Agent node Ready
+      ansible.builtin.command: k3s kubectl wait node/{{ inventory_hostname }} --for=condition=Ready --timeout=10s
+      delegate_to: "{{ k3s_server }}"
+      register: ready
+      until: ready.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+- name: Admin kubeconfig on sv9
+  hosts: sv9
+  tasks:
+    - name: ~/.kube
+      ansible.builtin.file:
+        path: /home/hien/.kube
+        state: directory
+        mode: "0700"
+
+    - name: ~/.kube/homelab.yaml (server IP instead of 127.0.0.1, context `homelab`)
+      ansible.builtin.copy:
+        dest: /home/hien/.kube/homelab.yaml
+        content: >-
+          {{ hostvars[k3s_server].k3s_yaml.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443')
+             | replace(': default', ': homelab') }}
+        mode: "0600"
+      no_log: true
+      diff: false
+
+    - name: Nodes
+      ansible.builtin.command: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /home/hien/.kube/homelab.yaml
+      register: nodes
+      changed_when: false
+
+    - name: Show nodes
+      ansible.builtin.debug:
+        var: nodes.stdout_lines

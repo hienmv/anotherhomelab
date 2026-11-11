@@ -1,0 +1,183 @@
+# Restore a fresh cluster from a backup made by backup.yml: Flux, the hand-made Secrets, PostgreSQL.
+# Runs kubectl on sv9 (KUBECONFIG ~/.kube/homelab.yaml must point at the NEW cluster).
+# Decrypted files live only in tmpfs and are deleted at the end, also on failure.
+#
+#   cd ansible && ansible-playbook playbooks/restore.yml                 # newest backup
+#   ... -e backup_file=/home/hien/homelab-backup/homelab-<date>.tar.gz.age
+#
+# Not restored on purpose: data/pg-app (CNPG creates a new one) and apps/app-env (rebuilt from the
+# new pg-app + the restored redis secret, the same way K3S-GUIDE section 5 builds it).
+
+- name: Restore secrets, Flux and PostgreSQL
+  hosts: sv9
+  gather_facts: false
+  environment:
+    KUBECONFIG: /home/hien/.kube/homelab.yaml
+  vars:
+    age_key: /home/hien/.config/sops/age/keys.txt
+    flux_dir: "{{ playbook_dir }}/../../clusters/homelab/flux-system"
+    skip_secrets: [data--pg-app.json, apps--app-env.json]
+  tasks:
+    - name: Newest backup unless backup_file is given
+      ansible.builtin.shell: ls -t /home/hien/homelab-backup/homelab-*.tar.gz.age | head -1
+      register: newest
+      changed_when: false
+      when: backup_file is not defined
+
+    - name: Backup to restore
+      ansible.builtin.set_fact:
+        restore_from: "{{ backup_file | default(newest.stdout) }}"
+
+    - name: Target cluster (must be the new one)
+      ansible.builtin.command: kubectl get nodes -o name
+      register: target_nodes
+      changed_when: false
+
+    - name: Show target
+      ansible.builtin.debug:
+        msg: "Restoring {{ restore_from }} into cluster with {{ target_nodes.stdout_lines | join(', ') }}"
+
+    - name: Work directory in tmpfs
+      ansible.builtin.shell: mktemp -d "${XDG_RUNTIME_DIR:-/dev/shm}/homelab-restore.XXXXXX"
+      register: work
+      changed_when: false
+
+    - name: Restore
+      block:
+        - name: Decrypt the backup
+          ansible.builtin.shell: >-
+            age -d -i {{ age_key }} {{ restore_from | quote }} | tar -xzf - -C {{ work.stdout }}
+          changed_when: false
+
+        - name: Flux manifests from this checkout
+          ansible.builtin.copy:
+            src: "{{ flux_dir }}/"
+            dest: "{{ work.stdout }}/flux-system/"
+            mode: "0600"
+
+        - name: Flux components (CRDs, controllers)
+          ansible.builtin.command: >-
+            kubectl apply --server-side --field-manager=homelab-restore
+            -f {{ work.stdout }}/flux-system/gotk-components.yaml
+
+        - name: Flux controllers running
+          ansible.builtin.command: kubectl -n flux-system wait deploy --all --for=condition=Available --timeout=300s
+          changed_when: false
+
+        - name: Secret files in the backup
+          ansible.builtin.find:
+            paths: "{{ work.stdout }}/secrets"
+            patterns: "*--*.json"
+          register: secret_files
+
+        - name: Namespaces for the secrets (Flux adopts them later)
+          ansible.builtin.shell: >-
+            kubectl create namespace {{ item }} --dry-run=client -o yaml
+            | kubectl apply --server-side --field-manager=homelab-restore -f -
+          loop: "{{ secret_files.files | map(attribute='path') | map('basename')
+                    | map('regex_replace', '--.*$', '') | unique | list }}"
+
+        - name: Hand-made secrets
+          ansible.builtin.command: >-
+            kubectl apply --server-side --field-manager=homelab-restore -f {{ item }}
+          loop: "{{ secret_files.files | map(attribute='path')
+                    | reject('search', skip_secrets | join('|')) | list }}"
+          loop_control: { label: "{{ item | basename }}" }
+
+        - name: Flux sync (GitRepository + root Kustomization); Flux builds everything else from git
+          ansible.builtin.command: >-
+            kubectl apply --server-side --field-manager=homelab-restore -k {{ work.stdout }}/flux-system
+
+        - name: Wait for the Postgres cluster object (CNPG operator comes from Flux)
+          ansible.builtin.command: kubectl -n data get cluster.postgresql.cnpg.io pg
+          register: pg_obj
+          until: pg_obj.rc == 0
+          retries: 60
+          delay: 20
+          changed_when: false
+
+        - name: Postgres ready
+          ansible.builtin.command: kubectl -n data wait cluster.postgresql.cnpg.io/pg --for=condition=Ready --timeout=900s
+          changed_when: false
+
+        - name: apps/app-env from the new pg-app and the restored redis secret
+          ansible.builtin.shell: |
+            set -euo pipefail
+            get() { kubectl -n data get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }
+            redis_pw="$(get redis password)"
+            kubectl -n apps create secret generic app-env \
+              --from-literal=DATABASE_URL="$(get pg-app fqdn-uri)" \
+              --from-literal=REDIS_PASSWORD="$redis_pw" \
+              --from-literal=REDIS_URL="redis://:${redis_pw}@redis.data.svc.cluster.local:6379/0" \
+              --dry-run=client -o yaml \
+            | kubectl apply --server-side --field-manager=homelab-restore --force-conflicts -f -
+          args:
+            executable: /bin/bash
+          no_log: true
+
+        - name: Database dumps in the backup
+          ansible.builtin.find:
+            paths: "{{ work.stdout }}/postgres"
+            patterns: "*.dump"
+          register: dumps
+
+        # --clean --if-exists: apps may already have run their migrations on the empty database.
+        - name: Restore each database (as its owner, single transaction)
+          ansible.builtin.shell: |
+            set -euo pipefail
+            db="$(basename {{ item | quote }} .dump)"
+            pod="$(kubectl -n data get pod -l cnpg.io/cluster=pg,cnpg.io/instanceRole=primary -o name | head -1)"
+            kubectl -n data exec -i "$pod" -c postgres -- \
+              pg_restore -U postgres -d "$db" --clean --if-exists --no-owner --role="$db" \
+              --single-transaction --exit-on-error < {{ item | quote }}
+          args:
+            executable: /bin/bash
+          loop: "{{ dumps.files | map(attribute='path') | list }}"
+          loop_control: { label: "{{ item | basename }}" }
+
+        - name: Row counts match the backup
+          ansible.builtin.shell: |
+            set -euo pipefail
+            dir={{ work.stdout | quote }}/postgres
+            db="$(basename {{ item | quote }} .dump)"
+            [ -f "$dir/$db.rows" ] || { echo "$db: no row counts in this backup, not checked"; exit 0; }
+            pod="$(kubectl -n data get pod -l cnpg.io/cluster=pg,cnpg.io/instanceRole=primary -o name | head -1)"
+            cut -d' ' -f1 "$dir/$db.rows" | while read -r t; do echo "select '$t', count(*) from $t;"; done \
+              | kubectl -n data exec -i "$pod" -c postgres -- psql -U postgres -d "$db" -At -F' ' > "$dir/$db.now"
+            diff "$dir/$db.rows" "$dir/$db.now" || { echo "$db: row counts differ (left: backup, right: now)" >&2; exit 1; }
+            sed "s/^/$db: /" "$dir/$db.rows"
+          args:
+            executable: /bin/bash
+          loop: "{{ dumps.files | map(attribute='path') | list }}"
+          loop_control: { label: "{{ item | basename }}" }
+          register: rowcheck
+          changed_when: false
+
+      always:
+        - name: Delete decrypted files
+          ansible.builtin.file:
+            path: "{{ work.stdout }}"
+            state: absent
+
+    - name: Restored rows
+      ansible.builtin.debug:
+        msg: "{{ rowcheck.results | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten }}"
+
+    - name: All Flux kustomizations Ready
+      ansible.builtin.command: kubectl -n flux-system wait kustomization --all --for=condition=Ready --timeout=900s
+      changed_when: false
+
+    - name: Restart apps (reconnect to the restored data, re-sync TicketLite's Redis gates)
+      ansible.builtin.shell: |
+        kubectl -n apps rollout restart deploy
+        for d in $(kubectl -n apps get deploy -o name); do kubectl -n apps rollout status "$d" --timeout=300s; done
+
+    - name: Public URLs answer
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        status_code: 200
+      loop: "{{ public_urls }}"
+      register: urls
+      until: urls.status == 200
+      retries: 10
+      delay: 15

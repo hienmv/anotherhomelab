@@ -330,6 +330,36 @@ cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.ym
 
 Multi-arch: `build-image.yml` builds `linux/amd64,linux/arm64`, so app pods can run on sv9 too.
 
+### 10.3 Rebuild with sv9 as server (phase 2, ready, not run yet)
+
+One command, about 1 h of downtime, run in a real terminal (prompts):
+
+```bash
+cd ansible && ansible-playbook playbooks/phase2-migrate.yml      # -e sd_swap=false: no SD swap
+```
+
+Prompts: sv9 sudo password, `REBUILD`, Enter after the SD swap. Steps (header of the playbook has the
+detail): fresh backup → uninstall k3s (agents, then the old server: its volumes are deleted) →
+Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
+
+- **Names**: inventory name = SSH name = OS hostname = Kubernetes node name (`sv9`, `pi4-8gb`,
+  `pi4-4gb`, `pi3`; before: `hien-pi-4b`, `hien-pi-4b-4gb`, `hien-pi-3b`).
+- **SD swap**: before power-off, each Pi 4 card is pre-set to the identity of the board it moves to
+  (hostname, static IP, SSH host keys), so after the swap the name, IP and host key still match;
+  `known_hosts` on sv9 and the Mac stays valid. Step 6 checks hostname, IP, RAM size and SD size
+  against `ram_gb` / `sd_gb` in the inventory and stops if a card is in the wrong Pi.
+- **cloud-init** (Raspberry Pi OS, NoCloud from `/boot/firmware/user-data`) re-applies the hostname at
+  every boot (`preserve_hostname: false`). The playbook disables it (`/etc/cloud/cloud-init.disabled`)
+  and updates `hostname:` in `user-data`.
+- **k3s settings** come from the inventory: groups `k3s_servers` / `k3s_agents`, per host
+  `k3s_labels`, `k3s_taints`, `k3s_reserved`; written to `/etc/rancher/k3s/config.yaml`; version
+  `k3s_version` in `group_vars/all.yml`, installer pinned to that tag.
+- **Restore**: Flux components, hand-made Secrets (not `pg-app`: CNPG makes a new one), Flux sync,
+  wait for Postgres, rebuild `apps/app-env` from the new `pg-app`, `pg_restore --clean` as the owner,
+  row counts compared with the backup, apps restarted, `public_urls` checked.
+- Partial run: each playbook also runs alone (`k3s.yml`, `restore.yml -e backup_file=...`).
+- Until phase 2 has run, `sv9-prepare.yml` cannot fetch the kubeconfig (`k3s_server` is already sv9).
+
 ## Uninstall / reset
 ```bash
 ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh
