@@ -12,37 +12,43 @@ under `k8s/`; this guide links to them instead of copying them.
 | Landing page (hien0ethan.com) | [apps/landing/README.md](apps/landing/README.md) |
 | Notes (notes.hien0ethan.com) | [apps/notes/README.md](apps/notes/README.md) |
 
-## 1. Hardware (audit 2026-11-07)
+## 1. Hardware (audit 2026-11-07, updated 2026-11-12)
 
-| | pi4-8gb (`hien-pi-4b`) | pi4-4gb (`hien-pi-4b-4gb`) | pi3 (`hien-pi-3b`) |
-|---|---|---|---|
-| IP (static) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
-| Board | Pi 4B rev 1.5 | Pi 4B rev 1.1 | Pi 3B+ |
-| CPU / RAM | 4x A72 / 7.6 GiB | 4x A72 / 3.7 GiB | 4x A53 / 905 MiB |
-| Disk | 32 GB SD | 64 GB SD | 32 GB SD |
-| OS | Debian 13 trixie arm64 (kernel 6.18 after upgrade) | same | same |
-| Power | OK | under-voltage at boot only | **under-voltage under load** (new PSU helped at idle) |
+| | node-workstation | node-8gb | node-4gb | node-1gb |
+|---|---|---|---|---|
+| Was | `sv9` (added 2026-11-10) | pi4-8gb (`hien-pi-4b`) | pi4-4gb (`hien-pi-4b-4gb`) | pi3 (`hien-pi-3b`) |
+| IP (static) | 192.168.40.249 (Wi-Fi) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
+| Board | Panasonic CF-SV9 (amd64) | Pi 4B rev 1.5 | Pi 4B rev 1.1 | Pi 3B+ |
+| CPU / RAM | 8 threads / 15 GiB | 4x A72 / 7.6 GiB | 4x A72 / 3.7 GiB | 4x A53 / 905 MiB |
+| Disk | NVMe SSD (Ubuntu partition 94 GB; Windows kept) | 64 GB SD (swapped in 2026-11-12) | 32 GB SD | 32 GB SD |
+| OS | Ubuntu 24.04.4 LTS | Debian 13 trixie arm64 | same | same |
+| Power | battery = UPS | OK | under-voltage at boot only | **under-voltage under load** |
 
-Open hardware issues: **pi3 power** (keep it to light pods), **no SSD** (Postgres, Redis, metrics and the
-k3s datastore all sit on pi4-8gb's SD card, ~12 GiB written per day; see section 8).
+Open hardware issues: **node-1gb power** (keep it to light pods); the Pis still run from SD cards (USB
+SSDs for node-8gb / node-4gb are the next buy, needed for an HA control plane).
 
 ## 2. Design decisions
 
 | Decision | Why |
 |---|---|
-| Single k3s server (pi4-8gb), SQLite datastore, no HA | HA needs 3 etcd servers; etcd on SD cards and 1 GB pi3 is a bad fit. Rebuild from git + Flux instead |
-| Node labels `role=data` (pi4-8gb), `role=apps` (pi4-4gb), `role=light` + taint (pi3) | Pin stateful pods to one node; keep the weak pi3 nearly empty |
-| Data pinned to pi4-8gb (`local-path` volumes) | Simple; move to an SSD when one is added |
+| Single k3s server (node-workstation since 2026-11-12, before pi4-8gb), SQLite datastore, no HA | HA needs 3 etcd servers with SSDs; until the Pi 4s get SSDs: rebuild from git + Flux + backups (`phase2-migrate.yml`) |
+| Node labels `role=data` (node-workstation), `role=apps` (node-8gb, node-4gb), `role=light` + taint (node-1gb) | Pin stateful pods to the SSD node; keep the weak node-1gb nearly empty. Set in `ansible/inventory.yml` |
+| Data pinned to the `role=data` node (`local-path` volumes on its NVMe SSD) | Simple and fast; HA comes from a CNPG replica later, not network storage |
 | Redis = cache + queue (streams) | Enough for a homelab; no extra broker |
 | Public access only through Cloudflare Tunnel | No open router ports, free TLS ([docs/domains.md](docs/domains.md)) |
-| Images built by GitHub Actions for arm64, stored in private GHCR | Reproducible; the Mac is not needed to deploy |
+| Images built by GitHub Actions for amd64 + arm64, stored in private GHCR | Reproducible; pods run on the laptop and the Pis |
 | GitOps with Flux, read-only deploy key | `git push` is the only deploy path |
-| Static IPs on the Pis (NetworkManager), not DHCP reservations | The HUMAX router has no reservations and a fixed pool `.2–.254`; statics use `.250–.252` |
+| Static IPs (NetworkManager), not DHCP reservations; all in `ansible/inventory.yml` | The HUMAX router has no reservations and a fixed pool `.2–.254`; statics use `.249–.252` |
 | One-level hostnames (`<app>.hien0ethan.com`) | Cloudflare's free certificate does not cover deeper names |
-| No dedicated admin server | See README → Admin workstation |
+| node-workstation = admin box + k3s server + data (2026-11-10) | See README → Admin workstation |
+| Ubuntu 24.04 LTS on node-workstation, not 26.04 (2026-11-11) | 26.04's AppArmor default breaks containers on k3s; no host AppArmor changes (section 10.3) |
+| Hosts managed by Ansible (`ansible/`), cluster contents by Flux | Repeatable rebuilds; one inventory for every IP and node setting |
 | Backups deferred (2026-11-08) | User decision; risk accepted until real data exists (section 8) |
 
-## 3. Prepare the Pis
+## 3. Prepare the Pis (initial build 2026-11-07; now `ansible/`)
+
+History of the first manual build. Names here are the old ones (pi4-8gb = node-8gb, pi4-4gb = node-4gb,
+pi3 = node-1gb). Today the inventory and playbooks do this; section 10 has the current procedure.
 
 ### 3.1 Access and static IPs
 - Mac `/etc/hosts` maps `pi3`, `pi4-8gb`, `pi4-4gb`; `~/.ssh/config` sets `User hien`,
@@ -89,6 +95,10 @@ Then move the `local-path` volumes (Postgres, Redis, VMSingle) and pass
 
 ## 4. Install k3s
 
+**Now:** `cd ansible && ansible-playbook playbooks/k3s.yml` installs or updates the whole cluster from
+the inventory (server = group `k3s_servers`, agents = `k3s_agents`, labels/taints/reserved per host,
+version `k3s_version`). The commands below are the original manual install (2026-11-08, old names).
+
 ```bash
 # server
 ssh pi4-8gb 'curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 600 \
@@ -117,9 +127,9 @@ Everything after this point is applied by Flux from git (section 6), not by hand
 |---|---|---|
 | Namespaces | `k8s/namespaces/` | `prune: false` |
 | CloudNativePG operator | `k8s/releases/cnpg.yaml` | HelmRelease |
-| PostgreSQL 17 `pg` | `k8s/data/postgres.yaml` | 10Gi on pi4-8gb; creates secret `data/pg-app`; host `pg-rw.data.svc:5432` |
-| Redis 8.2 | `k8s/data/redis.yaml` | AOF, `noeviction` (queue must never drop jobs), 2Gi on pi4-8gb |
-| cloudflared | `k8s/infra/cloudflared.yaml` | 1 replica on pi4-8gb; routing in [docs/domains.md](docs/domains.md) |
+| PostgreSQL 17 `pg` | `k8s/data/postgres.yaml` | 10Gi on the `role=data` node (node-workstation SSD); creates secret `data/pg-app`; host `pg-rw.data.svc:5432` |
+| Redis 8.2 | `k8s/data/redis.yaml` | AOF, `noeviction` (queue must never drop jobs), 2Gi on the `role=data` node |
+| cloudflared | `k8s/infra/cloudflared.yaml` | 1 replica on the `role=data` node; routing in [docs/domains.md](docs/domains.md) |
 | Traefik customisation | `k8s/infra/traefik-config.yaml` | trusts `X-Forwarded-*` from pods |
 | Monitoring stack | `k8s/releases/vm-stack.yaml` + `vm-stack-values.yaml` | section 7 |
 | Extra scrapes, Grafana HTTPS, dashboards | `k8s/monitoring/` | |
@@ -200,10 +210,10 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 
 | Part | Where | Notes |
 |---|---|---|
-| VictoriaMetrics single | pi4-8gb | 30d retention, 10Gi |
-| vmagent | pi4-8gb | scrapes every 30s; extra targets in `k8s/monitoring/scrapes.yaml` (CNPG, cloudflared, TicketLite) |
-| Grafana | pi4-4gb | https://grafana.hien0ethan.com (public, admin login; add Cloudflare Access, see docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
-| node-exporter | all 3 nodes | tolerates pi3's taint |
+| VictoriaMetrics single | node-workstation (`role=data`) | 30d retention, 10Gi |
+| vmagent | node-workstation (`role=data`) | scrapes every 30s; extra targets in `k8s/monitoring/scrapes.yaml` (CNPG, cloudflared, TicketLite) |
+| Grafana | a `role=apps` node | https://grafana.hien0ethan.com (behind Cloudflare Access, then admin login; docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
+| node-exporter | all 4 nodes | tolerates node-1gb's taint |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
 Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.
@@ -228,40 +238,43 @@ Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.
 - The Mac's System keychain also had an unrelated old mkcert CA (`NTQ-SOLUTION\sy.le@d-os3-sylt`,
   SHA-256 `DA130CC5…`); remove with `sudo security delete-certificate -Z <sha256> /Library/Keychains/System.keychain`.
 
-## 8. Backups (deferred, 2026-11-08)
+## 8. Backups (by hand since 2026-11-11; scheduled: todo)
 
-**No backups run.** Accepted risk: if pi4-8gb's SD card dies, Postgres, Redis, metrics and the k3s
-state are lost; everything in git survives. Revisit before storing real data.
+`ansible/playbooks/backup.yml` (details in 10.2): hand-made Secrets + Postgres (`pg_dump`, exact row
+counts), age-encrypted, on node-workstation and copied to the Mac. `restore.yml` restored the cluster
+on 2026-11-12 with matching row counts. **Not scheduled yet:** a dead NVMe between manual backups
+loses the changes since the last one.
 
-| Part | Recreatable? | Planned method |
+| Part | Today | Planned |
 |---|---|---|
-| Postgres data | **no** | CNPG backup to Cloudflare R2 (nightly base backup + WAL, 14 days), plus a restore test |
-| Secrets | by hand; **tunnel creds: no** | SOPS + age in git |
-| k3s `state.db` + token | mostly, via Flux | nightly copy to R2 |
-| Redis | yes, if jobs can be re-queued | AOF copy if needed |
-| Mac: `~/.ssh/id_homelab`, kubeconfig | SSH key lost = locked out of the Pis | password manager |
+| Postgres data | `backup.yml` by hand (dump + row counts) | CNPG backup to Cloudflare R2 (nightly base backup + WAL, 14 days), monthly restore drill |
+| Secrets | `backup.yml` by hand (encrypted) | SOPS + age in git (same age key) |
+| k3s state | rebuilt by `k3s.yml` + Flux | etcd snapshots to R2 once HA |
+| Redis | not backed up (TicketLite resyncs from Postgres) | AOF copy if needed |
+| age key, SSH keys | age key in the password manager; SSH keys recreated by `workstation-prepare.yml` | – |
 
 3-2-1 rule: 3 copies, 2 devices, 1 off-site (R2: S3-compatible, 10 GB free, free egress).
 
 ## 9. Status
 
 Done (details in git history):
-- Static IPs, cgroups, k3s on all 3 nodes, kubeconfig on the Mac
+- Static IPs, cgroups, k3s on all 4 nodes (server node-workstation since 2026-11-12), Ansible for every host
 - Postgres (CNPG) + Redis; Flux GitOps; cloudflared in-cluster; Traefik forwarded-header trust
-- VictoriaMetrics + Grafana (LAN, mkcert HTTPS), TicketLite dashboard
+- VictoriaMetrics + Grafana (public behind Cloudflare Access, plus LAN mkcert HTTPS), TicketLite dashboard
+- Encrypted backups + tested restore; `verify.yml` health checks ([docs/testing.md](docs/testing.md))
 - Apps: TicketLite, landing (hien0ethan.com), notes (notes.hien0ethan.com, migrated from hienmv.github.io)
 - CI: shared `build-image.yml` / `bump-tag.yml`, dependency layer cached, Node 24 actions
 
 Open:
 - [ ] vmagent memory limit (384Mi): OOMKilled once on the first full scrape after the 2026-11-12 rebuild
-- [ ] pi3 power supply; SSD on pi4-8gb (then move volumes)
-- [ ] Backups + restore test (section 8)
+- [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
+- [ ] Scheduled backups to R2 + monthly restore drill (section 8)
 - [ ] SOPS-encrypted secrets
 - [ ] Alerting (choose a channel: Telegram, Discord, Slack, email)
 - [ ] KEDA worker autoscaling; batch CronJobs
 - [ ] Archive hienmv.github.io once the notes site is confirmed (user)
 
-## 10. Migration: CF-SV9 as k3s server + data node (in progress, 2026-11-10)
+## 10. Migration: CF-SV9 as k3s server + data node (2026-11-10 to 2026-11-12, done)
 
 Names from phase 2 on (inventory = OS hostname = Kubernetes node): `node-workstation` (CF-SV9,
 was `sv9`), `node-8gb` (was `pi4-8gb`), `node-4gb` (was `pi4-4gb`), `node-1gb` (was `pi3`).
@@ -335,7 +348,7 @@ cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.ym
 
 Multi-arch: `build-image.yml` builds `linux/amd64,linux/arm64`, so app pods can run on node-workstation too.
 
-### 10.3 Rebuild with node-workstation as server (phase 2, ready, not run yet)
+### 10.3 Rebuild with node-workstation as server (phase 2, done 2026-11-12)
 
 One command, about 1 h of downtime, run in a real terminal (prompts):
 
@@ -400,8 +413,12 @@ Issues met on the way (all fixed in the playbooks): logind drop-in directory mis
 sudo-rs on 26.04 (gone with 24.04).
 
 ## Uninstall / reset
+
+Removes k3s from every node (agents first, then the server: **its volumes, i.e. Postgres, are
+deleted**). Take a backup first (`backup.yml`). Rebuild: `k3s.yml`, then `restore.yml`.
+
 ```bash
-ssh pi4-4gb /usr/local/bin/k3s-agent-uninstall.sh
-ssh pi3     /usr/local/bin/k3s-agent-uninstall.sh
-ssh pi4-8gb /usr/local/bin/k3s-uninstall.sh      # wipes the cluster state
+cd ansible
+ansible k3s_agents  -b -m command -a /usr/local/bin/k3s-agent-uninstall.sh
+ansible k3s_servers -b -m command -a /usr/local/bin/k3s-uninstall.sh    # wipes the cluster state
 ```
