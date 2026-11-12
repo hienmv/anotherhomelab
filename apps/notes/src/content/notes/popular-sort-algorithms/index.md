@@ -4,7 +4,6 @@ date: 2020-10-17
 category: tech
 featured: true
 lang: vi
-oldUrl: /tech/2020/10/17/popular-sort-algorithms.html
 ---
 >Bài viết gồm 4 phần
 >- Sort Algorithms Overview.

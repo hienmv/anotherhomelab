@@ -3,7 +3,6 @@ title: "Heap"
 date: 2020-10-10
 category: tech
 lang: vi
-oldUrl: /tech/2020/10/10/heap.html
 ---
 >Bài viết gồm 4 phần:
 >- Tổng quan về Heap

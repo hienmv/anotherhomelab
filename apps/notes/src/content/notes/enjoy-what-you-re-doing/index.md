@@ -4,7 +4,6 @@ date: 2021-07-03
 category: work-style
 featured: true
 lang: vi
-oldUrl: /work-style/2021/07/03/enjoy-what-you-re-doing.html
 ---
 >Bài viết gồm 3 phần:
 >- Tại sao nên yêu thích công việc mình đang làm?

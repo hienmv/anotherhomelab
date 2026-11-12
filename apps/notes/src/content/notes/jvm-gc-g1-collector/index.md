@@ -4,7 +4,6 @@ date: 2021-07-14
 category: tech
 featured: true
 lang: vi
-oldUrl: /tech/2021/07/14/jvm-gc-g1-collector.html
 ---
 >Bài viết gồm 4 phần:
 >- G1 Heap Layout and Regions.

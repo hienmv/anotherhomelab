@@ -50,9 +50,6 @@ Inside the cluster, traffic is plain HTTP (TLS ends at Cloudflare; Cloudflare â†
 
 | From | To | Where |
 |---|---|---|
-| `hien0ethan.com/notes/<slug>/`, `/rss.xml`, `/category/...` | `notes.hien0ethan.com/...` | `apps/landing/nginx.conf.template` |
-| old Jekyll `/tech/2020/10/10/heap.html` (on either host) | `notes.hien0ethan.com/heap/` | landing template + `apps/notes/nginx.conf` |
-| `notes.hien0ethan.com/about/` | `hien0ethan.com/about/` | `apps/notes/nginx.conf` |
 | `grafana.lan` over `http://` | `https://grafana.lan` | `k8s/monitoring/grafana-https.yaml` (Middleware `redirect-https`) |
 
 The landing also proxies `hien0ethan.com/featured.json` from the notes Service inside the cluster

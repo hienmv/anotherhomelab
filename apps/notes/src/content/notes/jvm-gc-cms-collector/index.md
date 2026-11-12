@@ -3,7 +3,6 @@ title: "[JVM][GC] Concurrent Mark and Sweep (CMS) collector"
 date: 2021-07-11
 category: tech
 lang: vi
-oldUrl: /tech/2021/07/11/jvm-gc-cms-collector.html
 ---
 >Bài viết gồm 2 phần:
 >- Concurrent GC Theory.

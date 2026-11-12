@@ -19,8 +19,8 @@ its "Browse all notes" fallback. Titles are inserted with `textContent` (no HTML
 
 ## Redirects
 
-Old apex URLs move to notes.hien0ethan.com: `/notes/<slug>/`, old Jekyll `/tech/.../<slug>.html`,
-`/rss.xml`, `/category/...` (301, see `nginx.conf.template`).
+None. The old-URL redirects from the 2026-11-09 move (apex `/notes/...`, Jekyll paths) were
+removed on 2026-11-13: no old links remain.
 
 ## Checks (in the Docker build)
 

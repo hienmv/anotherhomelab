@@ -3,7 +3,6 @@ title: "[JVM][GC] Parallel Collector"
 date: 2021-06-26
 category: tech
 lang: vi
-oldUrl: /tech/2021/06/26/jvm-gc-parallel-collector.html
 ---
 >Bài viết gồm 2 phần:
 >- Nhắc lại một số khái niệm liên quan.

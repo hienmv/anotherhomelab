@@ -11,8 +11,6 @@ COPY . .
 RUN npm run check && npm test && npm run build && npm run check:links
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
-ARG SITE_DOMAIN
-ENV SITE_DOMAIN=${SITE_DOMAIN}
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist /usr/share/nginx/html
 EXPOSE 8080

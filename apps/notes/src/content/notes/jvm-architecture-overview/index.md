@@ -3,7 +3,6 @@ title: "Java Virtual Machine Architecture Overview"
 date: 2021-01-20
 category: tech
 lang: vi
-oldUrl: /tech/2021/01/20/jvm-architecture-overview.html
 ---
 >Bài viết gồm 2 phần
 >- Định nghĩa về JVM

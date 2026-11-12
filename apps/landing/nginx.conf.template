@@ -1,6 +1,6 @@
-# Rendered by the nginx image entrypoint: envsubst fills ${NOTES_UPSTREAM}, ${SITE_DOMAIN} (set at
-# build time from site-settings) and ${NGINX_LOCAL_RESOLVERS} (NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1);
-# other $vars (nginx's own) are left alone: envsubst only fills variables that are defined.
+# Rendered by the nginx image entrypoint: envsubst fills ${NOTES_UPSTREAM} and
+# ${NGINX_LOCAL_RESOLVERS} (NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1); other $vars (nginx's own) are left
+# alone: envsubst only fills variables that are defined.
 server {
     listen 8080;
     server_name _;
@@ -9,11 +9,6 @@ server {
 
     # Resolve the notes Service per request, so nginx starts even if notes is not up yet.
     resolver ${NGINX_LOCAL_RESOLVERS} valid=30s ipv6=off;
-
-    # Content moved to the notes subdomain (old apex paths and old Jekyll URLs keep working).
-    rewrite "^/notes/(.*)$" https://notes.${SITE_DOMAIN}/$1 permanent;
-    rewrite "^/(tech|work-style)/\d{4}/\d{2}/\d{2}/([^/]+)\.html$" https://notes.${SITE_DOMAIN}/$2/ permanent;
-    rewrite "^/(rss\.xml|category/.*)$" https://notes.${SITE_DOMAIN}/$1 permanent;
 
     # Featured notes, fetched from the notes app inside the cluster (same origin for the browser).
     location = /featured.json {

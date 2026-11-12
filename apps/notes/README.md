@@ -22,8 +22,6 @@ Commit and push: CI builds and checks, Flux deploys (about 3 to 5 minutes).
 | `/category/<name>/` | notes in one category |
 | `/rss.xml` | feed |
 | `/featured.json` | notes with `featured: true` (or the 3 newest if none); read by the landing page |
-| `/about/` | 301 to https://hien0ethan.com/about/ |
-| `/tech/2020/10/10/heap.html` (old Jekyll) | 301 to `/heap/` |
 
 ## Checks (in the Docker build, so CI fails on any of them)
 

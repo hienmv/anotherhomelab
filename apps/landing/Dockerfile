@@ -10,9 +10,7 @@ COPY . .
 RUN npm run check && npm test && npm run build && npm run check:links
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
-ARG SITE_DOMAIN
-ENV SITE_DOMAIN=${SITE_DOMAIN} \
-    NOTES_UPSTREAM=http://notes.apps.svc.cluster.local \
+ENV NOTES_UPSTREAM=http://notes.apps.svc.cluster.local \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /src/dist /usr/share/nginx/html

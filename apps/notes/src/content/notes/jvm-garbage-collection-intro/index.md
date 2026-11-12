@@ -3,7 +3,6 @@ title: "[JVM] Garbage Collection Introduction"
 date: 2021-04-04
 category: tech
 lang: vi
-oldUrl: /tech/2021/04/04/jvm-garbage-collection-intro.html
 ---
 >Bài viết 4 gồm:
 >- Định nghĩa Garbage collection

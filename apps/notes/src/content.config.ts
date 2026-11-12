@@ -16,8 +16,6 @@ const notes = defineCollection({
     description: z.string().optional(),
     /** Shown on the landing page (site apex) via /featured.json. */
     featured: z.boolean().default(false),
-    /** Path on the old Jekyll site (hienmv.github.io); nginx redirects it here. */
-    oldUrl: z.string().optional(),
   }),
 })
 
