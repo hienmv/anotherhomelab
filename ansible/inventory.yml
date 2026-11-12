@@ -3,7 +3,7 @@
 # Host name here = OS hostname = Kubernetes node name. Ansible connects by IP (ansible_host), so
 # it needs no /etc/hosts or ~/.ssh/config entries on the machine running it.
 # Run on node-workstation (it detects itself and runs locally). Only its key opens the Pis; the Mac
-# can still run plays that touch the workstation alone (ssh with ~/.ssh/id_sv9).
+# can still run plays that touch the workstation alone (ssh with ~/.ssh/id_homelab_workstation).
 all:
   vars:
     ansible_user: hien
@@ -20,7 +20,7 @@ all:
           wifi_profile: JCOM_CKQY   # NetworkManager profile that gets static_ip when lan_link=wifi
           # Only while the workstation is not on its static_ip yet: -e workstation_ip=<current IP>.
           ansible_host: "{{ workstation_ip | default(static_ip) }}"
-          ansible_ssh_private_key_file: "{{ '~/.ssh/id_sv9' if not is_self else omit }}"
+          ansible_ssh_private_key_file: "{{ '~/.ssh/id_homelab_workstation' if not is_self else omit }}"
           ansible_connection: "{{ 'local' if is_self else 'ssh' }}"   # on itself: no SSH to self
           is_self: "{{ lookup('pipe', 'hostname -s') == 'node-workstation' }}"
           k3s_labels: [role=data]

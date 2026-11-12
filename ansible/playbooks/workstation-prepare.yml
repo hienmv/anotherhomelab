@@ -388,22 +388,22 @@
       changed_when: false
       when: gh_ok.rc == 0
 
-    # workstation key recreated -> the old sv9-admin entry no longer matches: stop instead of skipping.
-    - name: sv9-admin entry matches the workstation's current key
+    # workstation key recreated -> the old entry no longer matches: stop instead of skipping.
+    - name: Deploy key entry matches the workstation's current key
       ansible.builtin.assert:
         that: hostvars[admin_host].github_pubkey.split()[1] in deploy_keys.stdout
         fail_msg: >-
-          Deploy key sv9-admin exists but holds another key. Delete it
+          Deploy key {{ deploy_key_title }} exists but holds another key. Delete it
           (gh repo deploy-key list/delete -R {{ repo_slug }}) and re-run.
         quiet: true
-      when: gh_ok.rc == 0 and 'sv9-admin' in deploy_keys.stdout
+      when: gh_ok.rc == 0 and deploy_key_title in deploy_keys.stdout
 
-    - name: Add the workstation deploy key (title kept as sv9-admin)
+    - name: Add the workstation deploy key
       ansible.builtin.command: >-
-        gh repo deploy-key add - -R {{ repo_slug }} --title sv9-admin --allow-write
+        gh repo deploy-key add - -R {{ repo_slug }} --title {{ deploy_key_title }} --allow-write
       args:
         stdin: "{{ hostvars[admin_host].github_pubkey }}"
-      when: gh_ok.rc == 0 and 'sv9-admin' not in deploy_keys.stdout
+      when: gh_ok.rc == 0 and deploy_key_title not in deploy_keys.stdout
 
 - name: Kubeconfig and repo on the workstation
   hosts: workstation

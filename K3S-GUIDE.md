@@ -317,7 +317,7 @@ the router or switch to `ethernet`.
 Manual, once:
 1. At node-workstation: `sudo apt install -y openssh-server && hostname -I` (Ubuntu Desktop has no SSH server).
 2. Mac: give the Mac key a passphrase and keep it in the Keychain, then copy it:
-   `ssh-keygen -p -f ~/.ssh/id_sv9 && ssh-add --apple-use-keychain ~/.ssh/id_sv9 && ssh-copy-id -i ~/.ssh/id_sv9 hien@<that IP>`
+   `ssh-keygen -p -f ~/.ssh/id_homelab_workstation && ssh-add --apple-use-keychain ~/.ssh/id_homelab_workstation && ssh-copy-id -i ~/.ssh/id_homelab_workstation hien@<that IP>`
 3. Mac: `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<that IP>`
    (asks the node-workstation sudo password on every run, `become_ask_pass`; the first run also asks a passphrase
    for the new node-workstation keys).
@@ -327,7 +327,7 @@ targets), Wi-Fi power saving off, static IP on the `lan_link` link, kubectl/helm
 (pinned in `ansible/group_vars/all.yml`), passphrase-protected SSH keys node-workstation -> Pis (added to their
 `authorized_keys`) and node-workstation -> GitHub, cached 8 h in an ssh-agent (GNOME's on the desktop, a fixed
 `~/.ssh/agent.sock` one in SSH sessions),
-a GitHub deploy key `sv9-admin` (write, this repo only, added with `gh` from the Mac), kubeconfig
+a GitHub deploy key `homelab-workstation-admin` (write, this repo only, added with `gh` from the Mac), kubeconfig
 `~/.kube/homelab.yaml`, repo clone at `~/workspace/source/homelab`. Reboots once on first run.
 
 BIOS (F2 at boot), by hand: enable a battery charge limit / economy mode if present.
@@ -406,8 +406,8 @@ age key in the password manager.
 |---|---|---|---|
 | 1 | CF-SV9 | Install **Ubuntu 24.04 LTS** desktop from USB (F2 → Boot → USB first). User `hien`, computer name `node-workstation`, Wi-Fi | not 26.04: its AppArmor default breaks containers (10.3) |
 | 2 | CF-SV9 | `sudo apt install -y openssh-server tmux` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
-| 3 | Mac | `ssh-keygen -R 192.168.40.249` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_sv9 hien@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
-| 4 | Mac | `gh repo deploy-key delete <id> -R hienmv/anotherhomelab` for the old `sv9-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
+| 3 | Mac | `ssh-keygen -R 192.168.40.249` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_homelab_workstation hien@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
+| 4 | Mac | `gh repo deploy-key delete <id> -R hienmv/anotherhomelab` for the old `homelab-workstation-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
 | 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
 | 6 | workstation | paste the age key into `~/.config/sops/age/keys.txt`, `chmod 600`; `age-keygen -y` shows the public key | needed to decrypt backups (and SOPS later) |
 | 7 | Mac | `scp ~/homelab-backups/homelab-*.tar.gz.age node-workstation:homelab-backup/`, then decrypt-test each file | restore.yml reads them from the workstation |

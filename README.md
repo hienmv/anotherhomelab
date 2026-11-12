@@ -175,11 +175,11 @@ How changes reach the cluster.
 ### Admin workstation (node-workstation)
 
 node-workstation (CF-SV9, always on at home) is the admin box **and** the k3s server + data node.
-The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_sv9`).
+The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_homelab_workstation`).
 
 | Role | What lives there | If it is lost |
 |---|---|---|
-| Git source | this repo; `git push` = deploy (Flux); deploy key `sv9-admin` (this repo only) | clone again from GitHub |
+| Git source | this repo; `git push` = deploy (Flux); deploy key `homelab-workstation-admin` (this repo only) | clone again from GitHub |
 | Automation | `ansible/` playbooks; inventory = every IP and node setting | re-run them from any machine with the keys |
 | Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux | written again by `k3s.yml` |
 | Pi access | `~/.ssh/id_homelab` (passphrase, ssh-agent 8 h) | add a new key on each Pi by hand (console) |

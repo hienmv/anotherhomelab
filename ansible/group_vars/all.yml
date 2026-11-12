@@ -9,6 +9,7 @@ sops_version: v3.13.3
 
 repo_ssh_url: git@github.com:hienmv/anotherhomelab.git
 repo_slug: hienmv/anotherhomelab
+deploy_key_title: homelab-workstation-admin   # GitHub deploy key of the workstation (read/write)
 repo_dest: /home/hien/workspace/source/homelab
 k3s_version: v1.37.2+k3s1
 k3s_server: "{{ groups['k3s_servers'] | first }}"   # set in inventory.yml (group k3s_servers)
