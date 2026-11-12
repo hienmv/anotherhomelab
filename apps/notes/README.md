@@ -1,7 +1,7 @@
-# Notes (notes.hien0ethan.com)
+# Notes (`notes.<domain>`)
 
 Notes migrated from hienmv.github.io (Jekyll). Astro static build served by nginx in the k3s cluster.
-The landing page (hien0ethan.com, `apps/landing`) shows featured notes, the homelab apps and About.
+The landing page (site apex, `apps/landing`) shows featured notes, the homelab apps and About.
 Hostnames and redirects: [docs/domains.md](../../docs/domains.md).
 
 ## Edit content

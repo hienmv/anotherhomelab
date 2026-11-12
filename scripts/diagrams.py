@@ -15,7 +15,26 @@ import pathlib
 import re
 import sys
 
-README = pathlib.Path(__file__).resolve().parent.parent / "README.md"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+README = ROOT / "README.md"
+
+
+def _site():
+    """Site values from clusters/homelab/site-settings.yaml (simple `  KEY: value` lines, no yaml lib)."""
+    text = (ROOT / "clusters/homelab/site-settings.yaml").read_text()
+    return dict(re.findall(r"^  ([A-Z_]+): (\S+)", text, re.M))
+
+
+def _lan():
+    """LAN prefix from the inventory: gateway + prefix length, e.g. 192.168.40.0/24."""
+    text = (ROOT / "ansible/inventory.yml").read_text()
+    gw = re.search(r"lan_gateway: (\S+)", text).group(1)
+    prefix = re.search(r"lan_prefix: (\d+)", text).group(1)
+    return gw.rsplit(".", 1)[0] + ".0/" + prefix
+
+
+SITE = _site()
+LAN = _lan()
 
 
 class Canvas:
@@ -65,7 +84,7 @@ def draw_flow():
     c.box(31, 0, 15, 3, lines=["Client"], center=True)
     c.put(cx, 2, "┬")
     c.vline(cx, 3, 3)
-    c.put(cx + 2, 3, "HTTPS  hien0ethan.com, *.hien0ethan.com")
+    c.put(cx + 2, 3, f"HTTPS  {SITE['DOMAIN']}, *.{SITE['DOMAIN']}")
     c.put(cx, 4, "▼")
 
     c.box(23, 5, 31, 4, lines=["Cloudflare Edge", "TLS, DNS: @ and * -> tunnel"], center=True)
@@ -74,7 +93,7 @@ def draw_flow():
     c.put(cx + 2, 9, "Cloudflare Tunnel (outbound only, no open ports)")
 
     # LAN frame + k3s frame
-    c.box(0, 10, 96, 34, title="Home LAN 192.168.40.0/24")
+    c.box(0, 10, 96, 34, title=f"Home LAN {LAN}")
     c.box(2, 11, 92, 32, title="k3s v1.37.2  (4 nodes)")
     c.vline(cx, 10, 11)
     c.put(cx, 12, "▼")
@@ -208,7 +227,7 @@ def draw_ops():
         "Mac / laptop: ssh in, nothing else",
     ])
     c.box(56, 0, 36, 5, title="GitHub", lines=[
-        "hienmv/anotherhomelab (private)",
+        f"{SITE['GIT_REPO_SLUG']} (private)",
         "Actions: amd64+arm64 -> GHCR",
         "  then bump tag in k8s/ (commit)",
     ])

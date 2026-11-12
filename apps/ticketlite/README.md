@@ -1,7 +1,7 @@
 # TicketLite
 
 A small distributed ticket-selling system (a "light Ticketmaster") running on the homelab k3s cluster.
-Public URL: **https://ticketlite.hien0ethan.com** (only this host; `hien0ethan.com` is the separate landing page)
+Public URL: **`https://ticketlite.<domain>`** (only this host; the apex is the separate landing page; live: README URL table)
 
 - Browse concerts, with a **Hot tickets** section (high demand, small inventory, max 2 per person)
 - The Buy button is disabled with the reason shown when you can't buy: sold out, or you already hold
@@ -107,7 +107,7 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 
 `.github/workflows/ticketlite.yml`:
 1. On PR: build both images. The backend build runs `gradle test`; the web build runs `vitest` (22 tests), `tsc` and `vite build`. A failing test fails the image build.
-2. On push to `main`: build `linux/arm64` images and push to `ghcr.io/hienmv/ticketlite-{backend,web}`
+2. On push to `main`: build `linux/amd64` + `linux/arm64` images and push to `ghcr.io/<repo owner>/ticketlite-{backend,web}`
    tagged `sha-<7>` and `main`.
 3. Commit the new tag into `k8s/apps/ticketlite/kustomization.yaml` (`[skip ci]`).
 4. Flux applies that commit within ~1 minute.

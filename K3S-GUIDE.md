@@ -9,10 +9,12 @@ under `k8s/`; this guide links to them instead of copying them.
 | Overview, diagrams, components, admin workstation | [README.md](README.md) |
 | Hostnames, Cloudflare, tunnel, Ingress, redirects | [docs/domains.md](docs/domains.md) |
 | TicketLite (Ktor/React, CI, metrics) | [apps/ticketlite/README.md](apps/ticketlite/README.md) |
-| Landing page (hien0ethan.com) | [apps/landing/README.md](apps/landing/README.md) |
-| Notes (notes.hien0ethan.com) | [apps/notes/README.md](apps/notes/README.md) |
+| Landing page (site apex) | [apps/landing/README.md](apps/landing/README.md) |
+| Notes (`notes.<domain>`) | [apps/notes/README.md](apps/notes/README.md) |
 
 ## 1. Hardware (audit 2026-11-07, updated 2026-11-12)
+
+IPs and per-node settings: `ansible/inventory.yml` (source of truth); the table describes this site.
 
 | | node-workstation | node-8gb | node-4gb | node-1gb |
 |---|---|---|---|---|
@@ -38,13 +40,15 @@ SSDs for node-8gb / node-4gb are the next buy, needed for an HA control plane).
 | Images built by GitHub Actions for amd64 + arm64, stored in private GHCR | Reproducible; pods run on the laptop and the Pis |
 | GitOps with Flux, read-only deploy key | `git push` is the only deploy path |
 | Static IPs (NetworkManager), not DHCP reservations; all in `ansible/inventory.yml` | The HUMAX router has no reservations and a fixed pool `.2–.254`; statics use `.249–.252` |
-| One-level hostnames (`<app>.hien0ethan.com`) | Cloudflare's free certificate does not cover deeper names |
+| One-level hostnames (`<app>.<domain>`) | Cloudflare's free certificate does not cover deeper names |
 | node-workstation = admin box + k3s server + data (2026-11-10) | See README → Admin workstation |
 | Ubuntu 24.04 LTS on node-workstation, not 26.04 (2026-11-11) | 26.04's AppArmor default breaks containers on k3s; no host AppArmor changes (section 10.3) |
 | Hosts managed by Ansible (`ansible/`), cluster contents by Flux | Repeatable rebuilds; one inventory for every IP and node setting |
 | Backups deferred (2026-11-08) | User decision; risk accepted until real data exists (section 8) |
 
 ## 3. Prepare the Pis (initial build 2026-11-07; now `ansible/`)
+
+> History, with this site's values at the time. Do not copy these commands: use the playbooks.
 
 History of the first manual build. Today the inventory and playbooks do this; section 10 has the
 current procedure.
@@ -226,7 +230,7 @@ Fine-grained tokens log in but get `403 Forbidden` on the image (seen 2026-11-09
 terminal so the token stays out of logs and chats:
 ```bash
 read -s GHCR_TOKEN && kubectl -n apps create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io --docker-username=hienmv --docker-password="$GHCR_TOKEN"; unset GHCR_TOKEN
+  --docker-server=ghcr.io --docker-username=<github-owner> --docker-password="$GHCR_TOKEN"; unset GHCR_TOKEN
 ```
 The current token expires **2027-02**; when pulls fail with 401/403, create a new one and recreate the secret.
 
@@ -238,7 +242,7 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 |---|---|---|
 | VictoriaMetrics single | node-workstation (`role=data`) | 30d retention, 10Gi |
 | vmagent | node-workstation (`role=data`) | scrapes every 30s; extra targets in `k8s/monitoring/scrapes.yaml` (CNPG, cloudflared, TicketLite) |
-| Grafana | a `role=apps` node | https://grafana.hien0ethan.com (behind Cloudflare Access, then admin login; docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
+| Grafana | a `role=apps` node | `https://grafana.<domain>` (behind Cloudflare Access, then admin login; docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
 | node-exporter | all 4 nodes | tolerates node-1gb's taint |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
@@ -433,8 +437,8 @@ age key in the password manager.
 |---|---|---|---|
 | 1 | CF-SV9 | Install **Ubuntu 24.04 LTS** desktop from USB (F2 → Boot → USB first). User `hien`, computer name `node-workstation`, Wi-Fi | not 26.04: its AppArmor default breaks containers (10.3) |
 | 2 | CF-SV9 | `sudo apt install -y openssh-server tmux` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
-| 3 | Mac | `ssh-keygen -R 192.168.40.249` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_homelab_workstation hien@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
-| 4 | Mac | `gh repo deploy-key delete <id> -R hienmv/anotherhomelab` for the old `homelab-workstation-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
+| 3 | Mac | `ssh-keygen -R <workstation static_ip>` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_homelab_workstation <admin_user>@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
+| 4 | Mac | `gh repo deploy-key delete <id> -R <GIT_REPO_SLUG>` for the old `homelab-workstation-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
 | 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
 | 6 | workstation | paste the age key into `~/.config/sops/age/keys.txt`, `chmod 600`; `age-keygen -y` shows the public key | needed to decrypt backups (and SOPS later) |
 | 7 | Mac | `scp ~/homelab-backups/homelab-*.tar.gz.age node-workstation:homelab-backup/`, then decrypt-test each file | restore.yml reads them from the workstation |

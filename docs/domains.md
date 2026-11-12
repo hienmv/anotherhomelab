@@ -1,7 +1,10 @@
 # Domains and routing
 
-How a hostname like `notes.hien0ethan.com` reaches its app, where each piece is configured, and
-how to add a new one. Live state verified 2026-11-10.
+How a hostname like `notes.<domain>` reaches its app, where each piece is configured, and how to
+add a new one. Live state verified 2026-11-10.
+
+The tables describe this site: the domain and Cloudflare IDs come from `clusters/homelab/site-settings.yaml`,
+IPs and node settings from `ansible/inventory.yml`. Change them there, not here.
 
 ## Hostnames
 
@@ -57,9 +60,9 @@ The landing also proxies `hien0ethan.com/featured.json` from the notes Service i
 
 ## Add a public subdomain for a new app
 
-1. Pick `<app>.hien0ethan.com` (one level; not already in the table above).
-2. Add an Ingress with that `host` in `k8s/apps/<app>/`, `ingressClassName: traefik`, pointing at the
-   app's Service. Copy `k8s/apps/notes/ingress.yaml`.
+1. Pick `<app>.<domain>` (one level; not already in the table above).
+2. Add an Ingress with `host: <app>.${DOMAIN}` (Flux fills in the domain) in `k8s/apps/<app>/`,
+   `ingressClassName: traefik`, pointing at the app's Service. Copy `k8s/apps/notes/ingress.yaml`.
 3. Commit and push. Flux applies it within about a minute; the name works immediately.
 
 Nothing to change in Cloudflare DNS, the tunnel, or cloudflared. The new host leaves the fallback
@@ -100,9 +103,9 @@ the public URL without a browser get the Cloudflare login page too: use an Acces
 
 ## LAN-only names
 
-`grafana.lan` is not in Cloudflare DNS at all (the public name is `grafana.hien0ethan.com`). It works only on devices that map it to a node IP:
-the Mac has `192.168.40.250 grafana.lan` in `/etc/hosts`, and trusts its certificate through the mkcert
-CA (K3S-GUIDE.md section 10). Tunnel traffic can never reach it: cloudflared only forwards
+`grafana.lan` is not in Cloudflare DNS at all (the public name is `grafana.<domain>`). It works only on
+node-workstation: `workstation-prepare.yml` maps it to the k3s server in `/etc/hosts` and installs the
+private CA's public cert (K3S-GUIDE.md section 7). Tunnel traffic can never reach it: cloudflared only forwards
 `*.hien0ethan.com`, and the fallback Ingress does not match because Traefik sees the real Host header.
 
 ## Change things in Cloudflare

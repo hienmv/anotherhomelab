@@ -8,7 +8,10 @@ queue workers, batch jobs. Public via Cloudflare Tunnel:
 | https://hien0ethan.com | landing: intro, featured notes, homelab apps, about ([apps/landing](apps/landing/README.md)) |
 | https://notes.hien0ethan.com | notes ([apps/notes](apps/notes/README.md)) |
 | https://ticketlite.hien0ethan.com | TicketLite ([apps/ticketlite](apps/ticketlite/README.md)) |
-| https://grafana.hien0ethan.com | Grafana (Cloudflare Access email PIN, then Grafana login; also `https://grafana.lan` on the LAN) |
+| https://grafana.hien0ethan.com | Grafana (Cloudflare Access email PIN, then Grafana login; also `https://grafana.lan` from node-workstation) |
+
+Values are this site's: the domain and Cloudflare IDs come from `clusters/homelab/site-settings.yaml`,
+IPs and node settings from `ansible/inventory.yml`. Change them there, not here.
 
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
 **[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting) ·

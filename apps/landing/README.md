@@ -1,4 +1,4 @@
-# Landing (hien0ethan.com)
+# Landing (site apex)
 
 Home page: short intro, featured notes, the homelab apps, and About. Astro static build on nginx.
 
