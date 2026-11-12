@@ -53,7 +53,7 @@ Times are JST and approximate.
 | 1 | **Canary before moving data**: `verify.yml --tags containers` (Postgres pod + signals on every schedulable node) | done ([docs/testing.md](../testing.md)) |
 | 2 | Container AppArmor denials checked on every node | done (`verify.yml --tags nodes`) |
 | 3 | Server OS = previous LTS (Ubuntu 24.04), not the newest release | done |
-| 4 | Backups copied off the machine automatically | open: `backup.yml` copies to the controller only when run from another machine; scheduled R2 backups (roadmap stage 1) |
+| 4 | Backups copied off the machine automatically | open, **higher risk now**: the Mac copy was deleted (2026-11-12), all backups sit on node-workstation's disk; scheduled R2 backups (roadmap stage 1) |
 | 5 | Remove the single point of failure: USB SSDs for the Pi 4s, 3 control-plane nodes, Postgres replica | open (roadmap stage 2) |
 | 6 | Re-test on 26.04 when k3s ships a containerd with [PR #14487](https://github.com/containerd/containerd/pull/14487) | open: bump `k3s_version`, canary first |
 | 7 | vmagent memory limit (OOMKilled once on the first full scrape) | done (768Mi) |

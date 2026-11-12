@@ -125,7 +125,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Grafana (built-in + TicketLite dashboards) | monitoring | node-8gb | `https://grafana.hien0ethan.com` (public, login), `https://grafana.lan` (LAN, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Flux v2.10 (GitOps) | flux-system | any node | pulls this repo every 1m (read-only deploy key) | running |
-| Backups (Secrets + PG, age-encrypted) | - | node-workstation + Mac copy | `ansible/playbooks/backup.yml` | by hand; scheduled: todo |
+| Backups (Secrets + PG, age-encrypted) | - | node-workstation only (no off-machine copy) | `ansible/playbooks/backup.yml` | by hand; off-site + scheduled: todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
@@ -184,7 +184,7 @@ The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_sv9`).
 | Automation | `ansible/` playbooks; inventory = every IP and node setting | re-run them from any machine with the keys |
 | Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux | written again by `k3s.yml` |
 | Pi access | `~/.ssh/id_homelab` (passphrase, ssh-agent 8 h) | add a new key on each Pi by hand (console) |
-| Backups | `~/homelab-backup/*.tar.gz.age` (copy on the Mac: `~/homelab-backups/`), age key `~/.config/sops/age/keys.txt` | **age key is also in the password manager**; without it no backup decrypts |
+| Backups | `~/homelab-backup/*.tar.gz.age` (**the only copies**, same disk as the database), age key `~/.config/sops/age/keys.txt` | **data and backups are lost together**; the age key is also in the password manager |
 | `grafana.lan` (LAN) | trusts the private CA's public cert (`ansible/files/grafana-lan-ca.pem`); CA key deleted 2026-11-12, cert valid until 2029-02-08 | new CA + cert; the public Grafana URL does not need it |
 
 Rebuild from scratch: [K3S-GUIDE.md → 10.4 runbook](K3S-GUIDE.md). Health check:

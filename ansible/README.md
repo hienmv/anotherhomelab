@@ -7,7 +7,7 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `inventory.yml` | hosts (`node-workstation`, `node-8gb`, `node-4gb`, `node-1gb`), static IPs, k3s roles and per-node settings |
 | `group_vars/all.yml` | pinned tool versions, repo, current k3s server IP |
 | `playbooks/workstation-prepare.yml` | phase 0: node-workstation base system + admin workstation (no cluster change) |
-| `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on node-workstation + a copy on the Mac |
+| `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on node-workstation (+ a copy on the controller if that is another machine) |
 | `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
 | `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
 | `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |

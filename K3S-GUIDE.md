@@ -248,7 +248,8 @@ certificates with it. The `grafana.lan` cert (secret `monitoring/grafana-lan-tls
 ## 8. Backups (by hand since 2026-11-11; scheduled: todo)
 
 `ansible/playbooks/backup.yml` (details in 10.2): hand-made Secrets + Postgres (`pg_dump`, exact row
-counts), age-encrypted, on node-workstation and copied to the Mac. `restore.yml` restored the cluster
+counts), age-encrypted, on node-workstation only (the Mac copy was deleted 2026-11-12, owner's decision:
+**backups and live data share one disk**). `restore.yml` restored the cluster
 on 2026-11-12 with matching row counts. **Not scheduled yet:** a dead NVMe between manual backups
 loses the changes since the last one.
 
@@ -345,7 +346,8 @@ cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.ym
   `apps/app-env`'s `DATABASE_URL`) one file each, and every other Secret as `all-secrets.json`.
 - `pg_dumpall --globals-only` + `pg_dump -Fc` per database (today: `app`).
 - Plaintext only in `$XDG_RUNTIME_DIR` (tmpfs); the bundle is encrypted with **age** to
-  `~/homelab-backup/homelab-<date>.tar.gz.age` on node-workstation and copied to `~/homelab-backups/` on the Mac.
+  `~/homelab-backup/homelab-<date>.tar.gz.age` on node-workstation (a copy goes to `~/homelab-backups/` on the
+  machine running Ansible when that is another machine; none since 2026-11-12).
 - Key: `~/.config/sops/age/keys.txt` on node-workstation (also the future SOPS key). **Copy it to the password
   manager**: without it no backup can be decrypted.
 - Restore: `age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>`.
