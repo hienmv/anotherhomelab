@@ -24,3 +24,7 @@ public_urls:
   - https://notes.hien0ethan.com
   - https://ticketlite.hien0ethan.com
   - https://ticketlite.hien0ethan.com/api/concerts
+
+# LAN-only names served by Traefik (ServiceLB answers on every node IP); written to the workstation's
+# /etc/hosts, pointing at the k3s server. TLS: private CA, public cert in files/grafana-lan-ca.pem.
+lan_names: [grafana.lan]

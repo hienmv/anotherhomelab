@@ -38,3 +38,6 @@ dist/
 # Exception: database migrations are source code, not dumps
 !**/db/migration/*.sql
 .astro/
+
+# public CA certificate for grafana.lan (no private key; see K3S-GUIDE section 7)
+!ansible/files/grafana-lan-ca.pem

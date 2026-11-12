@@ -185,7 +185,7 @@ The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_sv9`).
 | Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux | written again by `k3s.yml` |
 | Pi access | `~/.ssh/id_homelab` (passphrase, ssh-agent 8 h) | add a new key on each Pi by hand (console) |
 | Backups | `~/homelab-backup/*.tar.gz.age` (copy on the Mac: `~/homelab-backups/`), age key `~/.config/sops/age/keys.txt` | **age key is also in the password manager**; without it no backup decrypts |
-| Private CA (Mac) | mkcert CA on the Mac signs `grafana.lan` (expires 2029-02-08) | new CA + cert; the public Grafana URL does not need it |
+| `grafana.lan` (LAN) | trusts the private CA's public cert (`ansible/files/grafana-lan-ca.pem`); CA key deleted 2026-11-12, cert valid until 2029-02-08 | new CA + cert; the public Grafana URL does not need it |
 
 Rebuild from scratch: [K3S-GUIDE.md → 10.4 runbook](K3S-GUIDE.md). Health check:
 `ansible-playbook playbooks/verify.yml` ([docs/testing.md](docs/testing.md)).

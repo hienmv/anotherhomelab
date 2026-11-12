@@ -37,6 +37,7 @@
           {% for h in groups['all'] %}
           {{ hostvars[h].static_ip }} {{ h }}
           {% endfor %}
+          {{ hostvars[k3s_server].static_ip }} {{ lan_names | join(' ') }}
 
     - name: Upgrade packages (only with -e upgrade_packages=true)
       ansible.builtin.apt:
@@ -54,6 +55,46 @@
       ansible.builtin.apt:
         name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography, python3-bcrypt]
         state: present
+
+    # grafana.lan uses a certificate from a private CA (mkcert, made on the Mac in 2026-11; CA key
+    # deleted 2026-11-12, cert valid until 2029-02-08). Only the CA's PUBLIC cert is installed here:
+    # enough to trust grafana.lan, useless for signing anything.
+    - name: Trust the grafana.lan CA (system store; curl, Chrome-like tools)
+      ansible.builtin.copy:
+        src: ../files/grafana-lan-ca.pem
+        dest: /usr/local/share/ca-certificates/homelab-grafana-lan-ca.crt
+        mode: "0644"
+      register: lan_ca
+
+    - name: Update the system CA store
+      ansible.builtin.command: update-ca-certificates
+      when: lan_ca is changed
+
+    - name: Firefox policy directory
+      ansible.builtin.file:
+        path: /etc/firefox/policies
+        state: directory
+        mode: "0755"
+
+    - name: CA cert where the Firefox snap can read it
+      ansible.builtin.copy:
+        src: ../files/grafana-lan-ca.pem
+        dest: /etc/firefox/policies/homelab-grafana-lan-ca.pem
+        mode: "0644"
+
+    # Firefox has its own certificate store on Linux; this policy imports the CA at start.
+    - name: Firefox policy - trust the grafana.lan CA
+      ansible.builtin.copy:
+        dest: /etc/firefox/policies/policies.json
+        content: |
+          {
+            "policies": {
+              "Certificates": {
+                "Install": ["/etc/firefox/policies/homelab-grafana-lan-ca.pem"]
+              }
+            }
+          }
+        mode: "0644"
 
     - name: SSH server - keys only, no root login (LAN password brute force)
       ansible.builtin.copy:

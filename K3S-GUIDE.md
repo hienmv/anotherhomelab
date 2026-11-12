@@ -218,13 +218,20 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
 Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.
 
-### Grafana on the Mac (LAN name)
-1. `echo "192.168.40.250 grafana.lan" | sudo tee -a /etc/hosts`
-2. Open https://grafana.lan, user `admin`, password:
-   `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`
-3. The certificate comes from a private **mkcert** CA trusted only by this Mac
-   (`mkcert -install`; key in `~/Library/Application Support/mkcert/rootCA-key.pem`, never copy it).
-   The certificate expires **2029-02-08**; reissue with the commands in `k8s/monitoring/grafana-https.yaml`.
+### Grafana on node-workstation (LAN name)
+Since 2026-11-12 `https://grafana.lan` is used from node-workstation only (the public URL with
+Cloudflare Access works everywhere). `workstation-prepare.yml` sets it up:
+1. `/etc/hosts`: `grafana.lan` → the k3s server IP (`lan_names` in `ansible/group_vars/all.yml`).
+2. Trust: the private CA's **public** cert `ansible/files/grafana-lan-ca.pem` goes into the system
+   store (`update-ca-certificates`) and into Firefox via `/etc/firefox/policies/policies.json`
+   (Firefox on Linux has its own store). Restart Firefox after the first run.
+3. Login: user `admin`, password
+   `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d`.
+
+The CA (mkcert, made on the Mac) had its **private key deleted on 2026-11-12**: nothing can sign new
+certificates with it. The `grafana.lan` cert (secret `monitoring/grafana-lan-tls`) is valid until
+**2029-02-08**; before then, make a new CA + cert (`mkcert`, commands in
+`k8s/monitoring/grafana-https.yaml`), replace `grafana-lan-ca.pem`, and re-run `workstation-prepare.yml`.
 
 ### Troubleshooting: `curl` works, the browser does not
 - Browser silently upgrades to `https://`: solved since Grafana now has HTTPS.
