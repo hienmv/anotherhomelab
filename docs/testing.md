@@ -72,6 +72,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Test | Proves | How | When | Status |
 |---|---|---|---|---|
 | Deployments fully available | desired replicas = available replicas in `apps` | `verify.yml --tags apps` | always | ✅ |
+| `grafana.lan` (LAN) | answers `302` with a certificate the workstation trusts (private CA, valid to 2029-02-08) | `verify.yml --tags apps` | always | ✅ |
 | Public URLs | all sites answer `200` through Cloudflare (`public_urls` in `group_vars/all.yml`) | `verify.yml --tags public`; also at the end of `restore.yml` | always | ✅ |
 
 ## 7. Edge and security

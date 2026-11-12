@@ -180,6 +180,13 @@
       changed_when: false
       failed_when: deploys.stdout | length > 0
 
+    - name: grafana.lan answers with a trusted certificate (LAN name, private CA)
+      tags: [apps]
+      ansible.builtin.command: curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result}' https://grafana.lan
+      register: lan_grafana
+      changed_when: false
+      failed_when: lan_grafana.stdout != '302 0'
+
     - name: Newest backup age (hours) and decryptable
       tags: [backup]
       ansible.builtin.shell: |
