@@ -1,6 +1,6 @@
 # CI/CD for TicketLite (apps/ticketlite).
 #   PR:   build + test both images (no push).
-#   main: build + test, push arm64 images to GHCR, then bump the image tags in
+#   main: build + test, push amd64 + arm64 images to <IMAGE_REGISTRY>, then bump the image tags in
 #         k8s/apps/ticketlite/kustomization.yaml. Flux deploys that commit to the cluster.
 # Shared steps: build-image.yml, bump-tag.yml.
 name: ticketlite
@@ -13,6 +13,7 @@ on:
       - "!apps/ticketlite/**/*.md"
       - ".github/workflows/ticketlite.yml"
       - ".github/workflows/build-image.yml"
+      - "clusters/*/site-settings.yaml"
       - ".github/workflows/bump-tag.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "!apps/ticketlite/**/*.md"
       - ".github/workflows/ticketlite.yml"
       - ".github/workflows/build-image.yml"
+      - "clusters/*/site-settings.yaml"
   workflow_dispatch:
 
 concurrency:
