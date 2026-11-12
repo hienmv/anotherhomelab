@@ -179,6 +179,33 @@ Order: `namespaces → releases → data → apps`, `namespaces → infra`, `rel
 **Flux CLI:** runs from its container (alias in README → Usage). `brew install fluxcd/tap/flux` failed
 on GitHub 504s, and `brew install flux` is an **unrelated tool**. The container needs `--network host`.
 
+### Site variables in manifests (since 2026-11-13)
+
+Manifests contain no domain, registry or tunnel ID: they use `${DOMAIN}`, `${IMAGE_REGISTRY}`,
+`${CLOUDFLARE_TUNNEL_ID}`, filled in by Flux from the ConfigMap `site-settings`
+(`clusters/homelab/site-settings.yaml`) via `postBuild.substituteFrom` on every Kustomization in
+`platform.yaml`. Rules (all learned the hard way):
+
+- **Strict mode is on**: an unknown `${x}` fails the whole Kustomization (it keeps the last applied
+  state; nothing breaks, but nothing deploys). Escape a literal as `$${x}` (e.g. Traefik's `$${1}`).
+- Resources whose content belongs to another tool (Grafana dashboards: `${datasource}`) carry the
+  annotation `kustomize.toolkit.fluxcd.io/substitute: disabled`.
+- Plain `$VAR` (no braces) is left alone.
+- **Images**: Deployments use a plain name (`image: landing`); `kustomization.yaml` maps it
+  (`newName: ${IMAGE_REGISTRY}/landing`, `newTag`). Kustomize does not match an image name that
+  contains `${...}`, so writing `image: ${IMAGE_REGISTRY}/landing` silently drops the tag.
+- A value used inside a ConfigMap built from a file (e.g. `vm-stack-values.yaml`) is substituted
+  too, comments included: a comment-only change there changes the ConfigMap.
+- **Roll out in two commits** when introducing substitution in a Kustomization: first
+  `substituteFrom`, then the variables. Otherwise a Kustomization may build the new manifests with
+  its old spec and apply a raw `${VAR}`.
+- `clusters/<cluster>/flux-system/gotk-sync.yaml` (the Git URL) stays literal: it is the bootstrap,
+  read before any variable exists; it is per-cluster config by nature.
+
+Prove a refactor before pushing: render every `k8s/` folder with `kubectl kustomize`, substitute
+with `flux envsubst --strict` per resource (skipping `substitute: disabled`), and diff against the
+render from before; for step C the 36 resources were byte-identical and no pod restarted.
+
 ### Secrets kept out of git (create once per cluster)
 
 | Secret | Namespace | How |
