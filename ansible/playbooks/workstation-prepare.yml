@@ -369,10 +369,24 @@
   connection: local
   gather_facts: false
   tasks:
+    # gh (logged in) exists on the Mac, not on node-workstation. Without it this check is skipped;
+    # the key only has to be added once (fresh install, run from the Mac).
+    - name: Is gh available here?
+      ansible.builtin.command: gh auth status
+      register: gh_ok
+      changed_when: false
+      failed_when: false
+
+    - name: Deploy key check skipped
+      ansible.builtin.debug:
+        msg: "gh not available or not logged in here: GitHub deploy key not checked (fine if it exists already)."
+      when: gh_ok.rc != 0
+
     - name: Existing deploy keys
       ansible.builtin.command: gh repo deploy-key list -R {{ repo_slug }}
       register: deploy_keys
       changed_when: false
+      when: gh_ok.rc == 0
 
     # workstation key recreated -> the old sv9-admin entry no longer matches: stop instead of skipping.
     - name: sv9-admin entry matches the workstation's current key
@@ -382,14 +396,14 @@
           Deploy key sv9-admin exists but holds another key. Delete it
           (gh repo deploy-key list/delete -R {{ repo_slug }}) and re-run.
         quiet: true
-      when: "'sv9-admin' in deploy_keys.stdout"
+      when: gh_ok.rc == 0 and 'sv9-admin' in deploy_keys.stdout
 
     - name: Add the workstation deploy key (title kept as sv9-admin)
       ansible.builtin.command: >-
         gh repo deploy-key add - -R {{ repo_slug }} --title sv9-admin --allow-write
       args:
         stdin: "{{ hostvars[admin_host].github_pubkey }}"
-      when: "'sv9-admin' not in deploy_keys.stdout"
+      when: gh_ok.rc == 0 and 'sv9-admin' not in deploy_keys.stdout
 
 - name: Kubeconfig and repo on the workstation
   hosts: workstation
