@@ -9,7 +9,7 @@
 #
 # Grafana: https://grafana.lan (LAN only; add "192.168.40.250 grafana.lan" to /etc/hosts).
 
-# Metrics storage: pinned to pi4-8gb (role=data)
+# Metrics storage: pinned to the role=data node (node-workstation, SSD)
 vmsingle:
   enabled: true
   spec:
@@ -31,7 +31,8 @@ vmagent:
     scrapeInterval: 30s
     resources:
       requests: { cpu: 50m, memory: 128Mi }
-      limits: { memory: 384Mi }
+      # 384Mi was OOMKilled on the first full scrape after the 2026-11-12 rebuild (4 nodes)
+      limits: { memory: 768Mi }
 
 # Alerting: off for now (no notification channel yet)
 alertmanager:
@@ -39,7 +40,7 @@ alertmanager:
 vmalert:
   enabled: false
 
-# Grafana on pi4-4gb (role=apps): public via the tunnel + LAN-only grafana.lan
+# Grafana on a role=apps node: public via the tunnel (behind Cloudflare Access) + LAN-only grafana.lan
 grafana:
   enabled: true
   nodeSelector: { role: apps }
@@ -84,7 +85,7 @@ grafana:
       reporting_enabled: false
       check_for_updates: false
 
-# Node metrics on every node, including tainted pi3
+# Node metrics on every node, including tainted node-1gb
 prometheus-node-exporter:
   tolerations:
     - operator: Exists

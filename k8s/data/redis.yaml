@@ -1,4 +1,4 @@
-# Redis for queue (+ light cache), pinned to pi4-8gb (role=data).
+# Redis for queue (+ light cache), pinned to the role=data node (node-workstation).
 # noeviction: never silently drop queued jobs. Use a separate allkeys-lru
 # instance if you need a pure cache.
 # Password lives in secret `redis` (key: password), created out-of-band:

@@ -1,5 +1,5 @@
-# PostgreSQL via CloudNativePG, pinned to pi4-8gb (role=data).
-# Storage: local-path on SD card for now -> move to SSD before real data.
+# PostgreSQL via CloudNativePG, pinned to the role=data node (node-workstation).
+# Storage: local-path on its NVMe SSD (since 2026-11-12). HA later: a second instance on another node.
 # Creates secret `pg-app` (username/password/uri) for database `app`, owner `app`.
 # In-cluster host: pg-rw.data.svc:5432 (read-write), pg-ro / pg-r for replicas.
 apiVersion: postgresql.cnpg.io/v1

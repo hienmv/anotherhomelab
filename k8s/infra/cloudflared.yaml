@@ -1,6 +1,6 @@
-# Cloudflare Tunnel connector in k3s, pinned to pi4-8gb (role=data).
-# Single replica: pi4-8gb also runs Traefik/Postgres/Redis, so a second replica
-# elsewhere would not keep the site up if that node fails.
+# Cloudflare Tunnel connector in k3s, pinned to the role=data node (node-workstation).
+# Single replica: that node also runs Postgres/Redis, so a second replica elsewhere
+# would not keep the data-backed sites up if it fails (revisit with HA).
 # Tunnel: test-cloudflared-tunnel (ab958f58-ce09-42de-a826-bd8a8779bdbd)
 # DNS (Cloudflare dashboard): CNAME @ and * -> <tunnel-id>.cfargotunnel.com, proxied.
 #
@@ -40,7 +40,7 @@ spec:
         config-rev: "1"   # bump to restart pod after editing the ConfigMap
     spec:
       nodeSelector:
-        role: data          # pi4-8gb
+        role: data          # node-workstation
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
