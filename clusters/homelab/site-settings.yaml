@@ -1,0 +1,22 @@
+# Site settings: the ONE place for values that identify this homelab (domain, repo, registry,
+# Cloudflare IDs). No secrets here: those live in Kubernetes Secrets (later SOPS).
+#
+# Read by:
+#   - Ansible: ansible/group_vars/all.yml (`site`), picked by `cluster_name`
+#   - Flux (step C): postBuild.substituteFrom -> ${DOMAIN}, ${IMAGE_REGISTRY}, ... in k8s/
+#   - CI (step B): yq '.data.DOMAIN' clusters/<cluster>/site-settings.yaml
+# Host-level values (users, IPs, devices) live in ansible/inventory.yml instead.
+# A second site/cluster: copy clusters/<name>/, edit this file and the inventory.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: site-settings
+  namespace: flux-system
+data:
+  CLUSTER_NAME: homelab
+  DOMAIN: hien0ethan.com
+  GIT_REPO_SLUG: hienmv/anotherhomelab
+  GIT_REPO_SSH: git@github.com:hienmv/anotherhomelab.git
+  IMAGE_REGISTRY: ghcr.io/hienmv
+  CLOUDFLARE_TUNNEL_ID: ab958f58-ce09-42de-a826-bd8a8779bdbd
+  TIMEZONE: Asia/Tokyo

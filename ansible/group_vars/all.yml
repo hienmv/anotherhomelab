@@ -1,3 +1,21 @@
+# Which cluster folder (clusters/<name>/) this Ansible tree manages. Everything site-specific
+# comes from that folder's site-settings.yaml (domain, repo, registry, ...); see that file.
+cluster_name: homelab
+# repo root = the folder above ansible/ (implicit localhost has no inventory_dir: use the playbook's)
+repo_root: "{{ (inventory_dir | default(playbook_dir ~ '/..')) ~ '/..' }}"
+site_settings_file: "{{ repo_root }}/clusters/{{ cluster_name }}/site-settings.yaml"
+site: "{{ (lookup('ansible.builtin.file', site_settings_file) | from_yaml).data }}"
+
+repo_ssh_url: "{{ site.GIT_REPO_SSH }}"
+repo_slug: "{{ site.GIT_REPO_SLUG }}"
+
+# Paths on the admin workstation, all derived from the admin user (inventory) and cluster name.
+admin_home: "/home/{{ admin_user }}"
+repo_dest: "{{ admin_home }}/workspace/source/{{ cluster_name }}"
+kubeconfig: "{{ admin_home }}/.kube/{{ cluster_name }}.yaml"
+backup_dir: "{{ admin_home }}/{{ cluster_name }}-backup"
+age_key: "{{ admin_home }}/.config/sops/age/keys.txt"
+
 admin_host: "{{ groups['workstation'] | first }}"   # admin workstation (kubectl, backups, keys)
 
 # Pinned tool versions (checked 2026-11-11). kubectl matches the k3s server.
@@ -7,10 +25,7 @@ k9s_version: v0.51.0
 flux_version: 2.10.0
 sops_version: v3.13.3
 
-repo_ssh_url: git@github.com:hienmv/anotherhomelab.git
-repo_slug: hienmv/anotherhomelab
 deploy_key_title: homelab-workstation-admin   # GitHub deploy key of the workstation (read/write)
-repo_dest: /home/hien/workspace/source/homelab
 k3s_version: v1.37.2+k3s1
 k3s_server: "{{ groups['k3s_servers'] | first }}"   # set in inventory.yml (group k3s_servers)
 k3s_old_server: node-8gb   # server before phase 2; used only by phase2-migrate.yml
@@ -19,12 +34,9 @@ k3s_old_server: node-8gb   # server before phase 2; used only by phase2-migrate.
 # without a reboot is harmless, but the reboot takes the cluster down.
 upgrade_packages: false
 
-# Checked after a restore / migration (must answer 200).
-public_urls:
-  - https://hien0ethan.com
-  - https://notes.hien0ethan.com
-  - https://ticketlite.hien0ethan.com
-  - https://ticketlite.hien0ethan.com/api/concerts
+# Checked after a restore / migration (must answer 200). Paths per subdomain; '' = apex.
+public_paths: ["", "notes.", "ticketlite.", "ticketlite./api/concerts"]
+public_urls: "{{ public_paths | map('regex_replace', '^([^/]*)(.*)$', 'https://\\1' ~ site.DOMAIN ~ '\\2') | list }}"
 
 # LAN-only names served by Traefik (ServiceLB answers on every node IP); written to the workstation's
 # /etc/hosts, pointing at the k3s server. TLS: private CA, public cert in files/grafana-lan-ca.pem.

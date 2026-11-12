@@ -6,7 +6,10 @@
 # can still run plays that touch the workstation alone (ssh with ~/.ssh/id_homelab_workstation).
 all:
   vars:
-    ansible_user: hien
+    # Interactive admin account on every host (login, sudo). Automation connects as this user too
+    # (a separate automation user is step G).
+    admin_user: hien
+    ansible_user: "{{ admin_user }}"
     lan_prefix: 24
     lan_gateway: 192.168.40.1
     lan_dns: 192.168.40.1

@@ -74,7 +74,7 @@
   hosts: workstation
   gather_facts: false
   environment:
-    KUBECONFIG: /home/hien/.kube/homelab.yaml
+    KUBECONFIG: "{{ kubeconfig }}"
   tasks:
     - name: All nodes Ready, names = inventory
       tags: [cluster]
@@ -191,8 +191,8 @@
       tags: [backup]
       ansible.builtin.shell: |
         set -e
-        f=$(ls -t /home/hien/homelab-backup/homelab-*.tar.gz.age | head -1)
-        age -d -i /home/hien/.config/sops/age/keys.txt "$f" | tar -tzf - >/dev/null
+        f=$(ls -t {{ backup_dir }}/{{ cluster_name }}-*.tar.gz.age | head -1)
+        age -d -i {{ age_key }} "$f" | tar -tzf - >/dev/null
         echo "$(( ($(date +%s) - $(stat -c %Y "$f")) / 3600 )) $(basename "$f")"
       register: backup_age
       changed_when: false
@@ -217,7 +217,7 @@
 
     - name: Grafana is behind Cloudflare Access (redirect to the Access login)
       ansible.builtin.uri:
-        url: https://grafana.hien0ethan.com
+        url: https://grafana.{{ site.DOMAIN }}
         follow_redirects: none
         status_code: 302
       register: grafana
@@ -225,7 +225,7 @@
 
     - name: Unknown subdomain redirects to the landing page
       ansible.builtin.uri:
-        url: https://does-not-exist.hien0ethan.com
+        url: https://does-not-exist.{{ site.DOMAIN }}
         follow_redirects: none
         status_code: [301, 302, 308]
 

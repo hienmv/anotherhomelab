@@ -2,13 +2,13 @@
 # Homelab backup: Kubernetes Secrets + PostgreSQL, encrypted with age. Runs on the admin
 # workstation (node-workstation). Plaintext only ever lives in $XDG_RUNTIME_DIR (tmpfs, mode 700, this user).
 #
-# Usage: backup.sh <out-dir> <age-recipient> <secret> [<secret> ...]   (secret = namespace/name)
+# Usage: backup.sh <out-dir> <prefix> <kubeconfig> <age-key> <age-recipient> <secret> [<secret> ...]
+#        (prefix = cluster name, file name prefix; secret = namespace/name)
 set -euo pipefail
 
-out_dir=$1; recipient=$2; shift 2
-export KUBECONFIG=${KUBECONFIG:-$HOME/.kube/homelab.yaml}
+out_dir=$1; prefix=$2; export KUBECONFIG=$3; age_key=$4; recipient=$5; shift 5
 stamp=$(date +%Y%m%d-%H%M%S)
-work=$(mktemp -d "${XDG_RUNTIME_DIR:-/dev/shm}/homelab-backup.XXXXXX")
+work=$(mktemp -d "${XDG_RUNTIME_DIR:-/dev/shm}/${prefix}-backup.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/secrets" "$work/postgres"
 
@@ -53,11 +53,11 @@ done
 
 # 5. Encrypt, then prove it decrypts with the local key.
 mkdir -p "$out_dir"; chmod 700 "$out_dir"
-file="$out_dir/homelab-$stamp.tar.gz.age"
+file="$out_dir/${prefix}-$stamp.tar.gz.age"
 # write to .partial, rename only after the decrypt check: restore.yml picks the newest *.tar.gz.age
 tar -C "$work" -czf - . | age -r "$recipient" -o "$file.partial"
 chmod 600 "$file.partial"
-count=$(age -d -i "$HOME/.config/sops/age/keys.txt" "$file.partial" | tar -tzf - | grep -c -v '/$')
+count=$(age -d -i "$age_key" "$file.partial" | tar -tzf - | grep -c -v '/$')
 mv "$file.partial" "$file"
 
 cat "$work/MANIFEST"

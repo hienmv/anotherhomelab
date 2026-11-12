@@ -3,16 +3,14 @@
 #
 #   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml
 #
-# Result: ~/homelab-backup/homelab-<date>.tar.gz.age on node-workstation, plus a copy on the machine
-# running Ansible (~/homelab-backups/) when that is not the workstation.
-# Restore: age -d -i ~/.config/sops/age/keys.txt <file> | tar -xzf - -C <dir>
+# Result: <backup_dir>/<cluster_name>-<date>.tar.gz.age on the workstation (paths: group_vars/all.yml),
+# plus a copy in ~/<cluster_name>-backups/ on the machine running Ansible when that is another machine.
+# Restore: age -d -i <age_key> <file> | tar -xzf - -C <dir>
 
 - name: Backup secrets and PostgreSQL
   hosts: workstation
   gather_facts: false
   vars:
-    backup_dir: /home/hien/homelab-backup
-    age_key: /home/hien/.config/sops/age/keys.txt
     # Secrets created by hand (K3S-GUIDE → Secrets) + pg-app, whose password app-env's DATABASE_URL uses.
     hand_secrets:
       - flux-system/flux-system
@@ -47,7 +45,7 @@
     - name: Run backup
       ansible.builtin.script:
         cmd: >-
-          ../files/backup.sh {{ backup_dir }} {{ age_pub.stdout }}
+          ../files/backup.sh {{ backup_dir }} {{ cluster_name }} {{ kubeconfig }} {{ age_key }} {{ age_pub.stdout }}
           {{ hand_secrets | join(' ') }}
       register: backup
       changed_when: true
@@ -59,7 +57,7 @@
     - name: Copy the encrypted backup to the machine running Ansible (second copy)
       ansible.builtin.fetch:
         src: "{{ backup.stdout_lines | select('match', '^BACKUP_FILE=') | first | regex_replace('^BACKUP_FILE=', '') }}"
-        dest: ~/homelab-backups/
+        dest: "~/{{ cluster_name }}-backups/"
         flat: true
       when: ansible_connection != 'local'
 

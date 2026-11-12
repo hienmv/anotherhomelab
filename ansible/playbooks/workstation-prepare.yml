@@ -15,7 +15,7 @@
     # become_ask_pass in ansible.cfg). Passwordless sudo stays on the Pis only.
     - name: No passwordless sudo on the workstation
       ansible.builtin.file:
-        path: /etc/sudoers.d/hien
+        path: "/etc/sudoers.d/{{ admin_user }}"
         state: absent
 
     - name: Hostname {{ inventory_hostname }}
@@ -239,7 +239,7 @@
         reboot_timeout: 600
       when: ansible_connection != 'local'
 
-- name: Admin workstation keys and config (as hien)
+- name: Admin workstation keys and config (as the admin user)
   hosts: workstation
   # Asked every run (vars_prompt cannot be conditional); once keys and repo exist, press Enter.
   vars_prompt:
@@ -250,7 +250,7 @@
   tasks:
     - name: Which SSH keys exist
       ansible.builtin.stat:
-        path: /home/hien/.ssh/id_{{ item }}
+        path: "{{ admin_home }}/.ssh/id_{{ item }}"
       loop: [homelab, github]
       register: key_stat
 
@@ -275,7 +275,7 @@
     # openssh_keypair encrypts in Python: the passphrase never appears in a process list.
     - name: Create passphrase-protected SSH keys (Pis, GitHub)
       community.crypto.openssh_keypair:
-        path: /home/hien/.ssh/id_{{ item }}
+        path: "{{ admin_home }}/.ssh/id_{{ item }}"
         type: ed25519
         comment: "{{ inventory_hostname }}->{{ item }}"
         passphrase: "{{ key_passphrase }}"
@@ -286,7 +286,7 @@
 
     - name: Read public keys
       ansible.builtin.slurp:
-        src: /home/hien/.ssh/id_{{ item }}.pub
+        src: "{{ admin_home }}/.ssh/id_{{ item }}.pub"
       loop: [homelab, github]
       register: pubkeys
 
@@ -297,13 +297,13 @@
 
     - name: SSH client config
       ansible.builtin.blockinfile:
-        path: /home/hien/.ssh/config
+        path: "{{ admin_home }}/.ssh/config"
         create: true
         mode: "0600"
         marker: "# {mark} homelab (ansible)"
         block: |
           Host {{ groups['pis'] | join(' ') }}
-            User hien
+            User {{ admin_user }}
             IdentityFile ~/.ssh/id_homelab
             IdentitiesOnly yes
           Host github.com
@@ -318,7 +318,7 @@
     # fixed socket and reuse it, so the passphrase is typed once per 8 h, not per command.
     - name: ssh-agent for SSH sessions
       ansible.builtin.blockinfile:
-        path: /home/hien/.bashrc
+        path: "{{ admin_home }}/.bashrc"
         marker: "# {mark} ssh-agent (ansible)"
         block: |
           if [ -z "$SSH_AUTH_SOCK" ]; then
@@ -332,8 +332,8 @@
 
     - name: KUBECONFIG in ~/.bashrc
       ansible.builtin.lineinfile:
-        path: /home/hien/.bashrc
-        line: export KUBECONFIG=~/.kube/homelab.yaml
+        path: "{{ admin_home }}/.bashrc"
+        line: "export KUBECONFIG={{ kubeconfig }}"
 
     - name: Git identity of the machine running Ansible is known
       ansible.builtin.assert:
@@ -361,7 +361,7 @@
   tasks:
     - name: workstation -> Pi SSH key
       ansible.posix.authorized_key:
-        user: hien
+        user: "{{ admin_user }}"
         key: "{{ hostvars[admin_host].homelab_pubkey }}"
 
 - name: GitHub deploy key for the workstation (read/write, this repo only)
@@ -428,19 +428,19 @@
     - name: Kubeconfig must not leak into output (--diff, -v)
       when: k3s_yaml_stat.stat.exists
       ansible.builtin.set_fact:
-        kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443') | replace(': default', ': homelab') }}"
+        kubeconfig_text: "{{ k3s_yaml.content | b64decode | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443') | replace(': default', ': ' ~ cluster_name) }}"
       no_log: true
 
     - name: ~/.kube
       ansible.builtin.file:
-        path: /home/hien/.kube
+        path: "{{ kubeconfig | dirname }}"
         state: directory
         mode: "0700"
 
-    - name: ~/.kube/homelab.yaml (server address instead of 127.0.0.1)
+    - name: Admin kubeconfig (server address instead of 127.0.0.1)
       when: k3s_yaml_stat.stat.exists
       ansible.builtin.copy:
-        dest: /home/hien/.kube/homelab.yaml
+        dest: "{{ kubeconfig }}"
         content: "{{ kubeconfig_text }}"
         mode: "0600"
       no_log: true
@@ -467,7 +467,7 @@
       when: k3s_yaml_stat.stat.exists
       ansible.builtin.command: kubectl get nodes -o wide
       environment:
-        KUBECONFIG: /home/hien/.kube/homelab.yaml
+        KUBECONFIG: "{{ kubeconfig }}"
       register: nodes
       changed_when: false
 

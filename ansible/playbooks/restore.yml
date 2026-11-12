@@ -1,9 +1,9 @@
 # Restore a fresh cluster from a backup made by backup.yml: Flux, the hand-made Secrets, PostgreSQL.
-# Runs kubectl on node-workstation (KUBECONFIG ~/.kube/homelab.yaml must point at the NEW cluster).
+# Runs kubectl on the workstation (`kubeconfig` in group_vars must point at the NEW cluster).
 # Decrypted files live only in tmpfs and are deleted at the end, also on failure.
 #
 #   cd ansible && ansible-playbook playbooks/restore.yml                 # newest backup
-#   ... -e backup_file=/home/hien/homelab-backup/homelab-<date>.tar.gz.age
+#   ... -e backup_file=<backup_dir>/<cluster_name>-<date>.tar.gz.age   (paths: group_vars/all.yml)
 #
 # Not restored on purpose: data/pg-app (CNPG creates a new one) and apps/app-env (rebuilt from the
 # new pg-app + the restored redis secret, the same way K3S-GUIDE section 5 builds it).
@@ -12,14 +12,13 @@
   hosts: workstation
   gather_facts: false
   environment:
-    KUBECONFIG: /home/hien/.kube/homelab.yaml
+    KUBECONFIG: "{{ kubeconfig }}"
   vars:
-    age_key: /home/hien/.config/sops/age/keys.txt
-    flux_dir: "{{ playbook_dir }}/../../clusters/homelab/flux-system"
+    flux_dir: "{{ repo_root }}/clusters/{{ cluster_name }}/flux-system"
     skip_secrets: [data--pg-app.json, apps--app-env.json]
   tasks:
     - name: Newest backup unless backup_file is given
-      ansible.builtin.shell: ls -t /home/hien/homelab-backup/homelab-*.tar.gz.age | head -1
+      ansible.builtin.shell: ls -t {{ backup_dir }}/{{ cluster_name }}-*.tar.gz.age | head -1
       register: newest
       changed_when: false
       when: backup_file is not defined

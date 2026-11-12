@@ -152,17 +152,17 @@
   tasks:
     - name: ~/.kube
       ansible.builtin.file:
-        path: /home/hien/.kube
+        path: "{{ kubeconfig | dirname }}"
         state: directory
         mode: "0700"
 
-    - name: ~/.kube/homelab.yaml (server IP instead of 127.0.0.1, context `homelab`)
+    - name: Admin kubeconfig (server IP instead of 127.0.0.1, context = cluster_name)
       ansible.builtin.copy:
-        dest: /home/hien/.kube/homelab.yaml
+        dest: "{{ kubeconfig }}"
         content: >-
           {{ hostvars[k3s_server].k3s_yaml.content | b64decode
              | replace('https://127.0.0.1:6443', 'https://' ~ hostvars[k3s_server].static_ip ~ ':6443')
-             | replace(': default', ': homelab') }}
+             | replace(': default', ': ' ~ cluster_name) }}
         mode: "0600"
       no_log: true
       diff: false
@@ -170,7 +170,7 @@
     - name: Nodes
       ansible.builtin.command: kubectl get nodes -o wide
       environment:
-        KUBECONFIG: /home/hien/.kube/homelab.yaml
+        KUBECONFIG: "{{ kubeconfig }}"
       register: nodes
       changed_when: false
 
