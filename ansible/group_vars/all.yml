@@ -15,6 +15,8 @@ repo_dest: "{{ admin_home }}/workspace/source/{{ cluster_name }}"
 kubeconfig: "{{ admin_home }}/.kube/{{ cluster_name }}.yaml"
 backup_dir: "{{ admin_home }}/{{ cluster_name }}-backup"
 age_key: "{{ admin_home }}/.config/sops/age/keys.txt"
+admin_key: "~/.ssh/id_homelab"            # admin_user's key to the Pis (passphrase, ssh-agent)
+automation_key: "~/.ssh/id_ops"            # automation_user's key (no passphrase, IP-restricted)
 
 admin_host: "{{ groups['workstation'] | first }}"   # admin workstation (kubectl, backups, keys)
 

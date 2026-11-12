@@ -62,17 +62,26 @@
     - name: Start with no problems (when run alone)
       ansible.builtin.set_fact: { problems: "{{ problems | default([]) }}" }
 
-    - name: Ping peers and gateway
-      ansible.builtin.command: ping -c1 -W2 {{ item }}
+    # 10 pings per target: a single ping turns Wi-Fi packet loss (seen 5-10 % on the workstation,
+    # 2026-11-13) into a false "unreachable". >= 50 % loss = problem; any loss is reported.
+    - name: Ping peers and gateway (packet loss %)
+      ansible.builtin.shell: >-
+        ping -c 10 -i 0.2 -W 2 -q {{ item }} | sed -nE 's/.* ([0-9.]+)% packet loss.*/\1/p'
       loop: "{{ (groups['k3s'] | map('extract', hostvars, 'static_ip') | list) + [lan_gateway] }}"
       register: pings
       changed_when: false
       failed_when: false
 
+    - name: Packet loss seen
+      ansible.builtin.set_fact:
+        packet_loss: "{{ pings.results | selectattr('stdout', 'ne', '0') | map(attribute='item') | zip(pings.results | selectattr('stdout', 'ne', '0') | map(attribute='stdout')) | map('join', ' ') | map('regex_replace', '$', '% loss') | list }}"
+
     - name: Ping result
       ansible.builtin.set_fact:
-        problems: "{{ problems + ['network: no ping reply from ' ~ (pings.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', '))] }}"
-      when: pings.results | rejectattr('rc', 'equalto', 0) | list | length > 0
+        problems: "{{ problems + ['network: ' ~ item.item ~ ' ' ~ (item.stdout or '100') ~ '% packet loss'] }}"
+      loop: "{{ pings.results }}"
+      loop_control: { label: "{{ item.item }}" }
+      when: (item.stdout or '100') | float >= 50
 
     - name: DNS and HTTPS to the internet
       ansible.builtin.command: curl -sS -o /dev/null -w '%{http_code}' https://github.com
@@ -373,6 +382,11 @@
           - "postgres rows: {{ pg_rows.stdout_lines | default(['not run']) }}"
           - "backup: {{ backup_age.stdout | default('not run') }}"
       when: inventory_hostname in groups['workstation']
+
+    - name: Packet loss (reported, not a failure below 50 %)
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ packet_loss | join(', ') }}"
+      when: packet_loss | default([]) | length > 0
 
     - name: All checks passed
       ansible.builtin.assert:

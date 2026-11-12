@@ -12,6 +12,7 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
 | `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
 | `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |
+| `playbooks/access.yml` | accounts on the Pis: automation user `ops` (IP-restricted key, passwordless sudo), SSH keys only |
 | `playbooks/verify.yml` | read-only health checks per layer (catalog: [docs/testing.md](../docs/testing.md)) |
 | `files/net-static.sh` | static IP on the `lan_link` link (used by workstation-prepare) |
 

@@ -6,9 +6,11 @@
 # can still run plays that touch the workstation alone (ssh with ~/.ssh/id_homelab_workstation).
 all:
   vars:
-    # Interactive admin account on every host (login, sudo). Automation connects as this user too
-    # (a separate automation user is step G).
+    # Interactive admin account on every host (your login; key id_homelab, with passphrase).
     admin_user: hien
+    # Automation account on the Pis (playbooks/access.yml): key only, passwordless sudo, key accepted
+    # only from the workstation's IP. The workstation itself runs Ansible locally as admin_user.
+    automation_user: ops
     ansible_user: "{{ admin_user }}"
     lan_prefix: 24
     lan_gateway: 192.168.40.1
@@ -34,7 +36,8 @@ all:
       # nm_profile: NetworkManager profile that holds static_ip.
       vars:
         ansible_host: "{{ static_ip }}"
-        ansible_ssh_private_key_file: ~/.ssh/id_homelab   # node-workstation's key (the Mac's was removed 2026-11-12)
+        ansible_user: "{{ automation_user }}"
+        ansible_ssh_private_key_file: "{{ automation_key }}"
       hosts:
         node-8gb:   # Raspberry Pi 4B 8 GB
           static_ip: 192.168.40.250

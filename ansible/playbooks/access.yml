@@ -1,0 +1,96 @@
+# Access model for the Pis (K3S-GUIDE section 10.5):
+#   - `automation_user` (ops): what Ansible uses. Key only (no password), passwordless sudo, and its
+#     key is accepted ONLY from the workstation's IP (authorized_keys from="..."). The key has no
+#     passphrase so scheduled jobs can run unattended; it lives only on the workstation.
+#   - `admin_user` (hien): your interactive login (key id_homelab, with passphrase). Unchanged.
+#   - SSH server: keys only, no root login (Raspberry Pi OS's cloud-init file turned passwords on).
+#
+# Bootstrap (first run) connects to the Pis as admin_user; after that the inventory uses ops.
+# Idempotent. Run on the workstation:
+#   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/access.yml
+
+- name: Automation key on the workstation
+  hosts: workstation
+  gather_facts: false
+  tasks:
+    - name: Key for the automation user (no passphrase, used only from this host)
+      community.crypto.openssh_keypair:
+        path: "{{ automation_key }}"
+        type: ed25519
+        comment: "{{ inventory_hostname }}->{{ automation_user }}"
+        mode: "0600"
+
+    - name: Read the public key
+      ansible.builtin.slurp:
+        src: "{{ automation_key }}.pub"
+      register: ops_pub
+
+    - name: Remember it
+      ansible.builtin.set_fact:
+        automation_pubkey: "{{ ops_pub.content | b64decode | trim }}"
+
+- name: Automation user and SSH hardening on the Pis (connects as the admin user)
+  hosts: pis
+  become: true
+  vars:
+    # bootstrap: use the admin account, whatever the inventory says
+    ansible_user: "{{ admin_user }}"
+    ansible_ssh_private_key_file: "{{ admin_key }}"
+    workstation_ip: "{{ hostvars[admin_host].static_ip }}"
+  tasks:
+    - name: Automation user (no password, key login only)
+      ansible.builtin.user:
+        name: "{{ automation_user }}"
+        comment: homelab automation (Ansible)
+        shell: /bin/bash
+        password: "!"
+        create_home: true
+
+    - name: Its only key, accepted only from the workstation, no forwarding
+      ansible.posix.authorized_key:
+        user: "{{ automation_user }}"
+        key: "{{ hostvars[admin_host].automation_pubkey }}"
+        key_options: 'from="{{ workstation_ip }}",no-agent-forwarding,no-port-forwarding,no-X11-forwarding'
+        exclusive: true
+
+    - name: Passwordless sudo for the automation user
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ automation_user }}"
+        content: "{{ automation_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
+    # sshd uses the FIRST value it reads: 10-* wins over cloud-init's 50-cloud-init.conf.
+    - name: SSH server - keys only, no root login
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-homelab.conf
+        content: |
+          # managed by ansible (playbooks/access.yml)
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        mode: "0644"
+        validate: sshd -t -f %s
+      register: sshd_conf
+
+    - name: Reload sshd
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+      when: sshd_conf is changed
+
+- name: Check the automation user (connects as ops)
+  hosts: pis
+  gather_facts: false
+  tasks:
+    - name: Login and passwordless sudo as the automation user
+      ansible.builtin.command: sudo -n whoami
+      register: ops_sudo
+      changed_when: false
+
+    - name: Result
+      ansible.builtin.assert:
+        that:
+          - ops_sudo.stdout == 'root'
+        success_msg: "{{ inventory_hostname }}: {{ ansible_user }} can log in and sudo"
+        fail_msg: "{{ inventory_hostname }}: sudo as {{ ansible_user }} gave {{ ops_sudo.stdout }}"

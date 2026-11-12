@@ -307,7 +307,6 @@ Open:
 - [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
 - [ ] Scheduled backups to R2 + monthly restore drill (section 8)
 - [ ] SOPS-encrypted secrets
-- [ ] Pis: SSH keys only (they still accept passwords: cloud-init `ssh_pwauth: true`), like node-workstation
 - [ ] Alerting (choose a channel: Telegram, Discord, Slack, email)
 - [ ] KEDA worker autoscaling; batch CronJobs
 - [ ] Archive hienmv.github.io once the notes site is confirmed (user)
@@ -449,6 +448,23 @@ cluster), canary test (below), `--tags restore`.
 Issues met on the way (all fixed in the playbooks): logind drop-in directory missing; `pause` vs
 `vars_prompt` for the passphrase; `python3-bcrypt` not preinstalled on 24.04 (needed to encrypt keys);
 sudo-rs on 26.04 (gone with 24.04).
+
+### 10.5 Access model (since 2026-11-13)
+
+| Account | Where | Login | sudo | Used by |
+|---|---|---|---|---|
+| `admin_user` (hien) | all hosts | key `~/.ssh/id_homelab` on node-workstation (passphrase, ssh-agent 8 h); on node-workstation itself also the desktop password | Pis: passwordless (owner's choice); node-workstation: password | you, interactively |
+| `automation_user` (ops) | Pis | key `~/.ssh/id_ops` on node-workstation, **no passphrase**, accepted **only from node-workstation's IP** (`from="..."`, no agent/port/X11 forwarding); password locked | passwordless | Ansible (inventory `ansible_user` for the Pis) |
+
+- Set up by `ansible/playbooks/access.yml` (idempotent; its bootstrap play connects as `admin_user`).
+- Why no passphrase on the ops key: scheduled jobs (verify, alerts) must run unattended, and whoever
+  controls node-workstation already controls the Pis through the cluster-admin kubeconfig, so a
+  passphrase would add little. The IP restriction makes a leaked copy useless elsewhere.
+- SSH servers: keys only, no root login (`/etc/ssh/sshd_config.d/10-homelab.conf`; it must sort
+  before Raspberry Pi OS's `50-cloud-init.conf`, which turns passwords on: sshd uses the first value).
+- node-workstation runs Ansible locally as `admin_user` (sudo with password); it has no ops user.
+- Wi-Fi: node-workstation sees 5-10 % packet loss and latency spikes to ~570 ms (2026-11-13), the
+  Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Ethernet would fix it.
 
 ## Uninstall / reset
 
