@@ -266,7 +266,6 @@ Done (details in git history):
 - CI: shared `build-image.yml` / `bump-tag.yml`, dependency layer cached, Node 24 actions
 
 Open:
-- [ ] vmagent memory limit (384Mi): OOMKilled once on the first full scrape after the 2026-11-12 rebuild
 - [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
 - [ ] Scheduled backups to R2 + monthly restore drill (section 8)
 - [ ] SOPS-encrypted secrets

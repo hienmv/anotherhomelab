@@ -212,6 +212,7 @@ On node-workstation (`ssh node-workstation`; KUBECONFIG is set in `~/.bashrc`, f
 flux get kustomizations          # sync status
 flux get helmreleases -A
 flux reconcile source git flux-system   # pull now instead of waiting
+flux reconcile helmrelease vm -n flux-system   # Helm values (k8s/releases/*-values.yaml): interval is 1h
 ```
 
 - Layout: `clusters/homelab/` (Flux entry), `k8s/<folder>/` (what gets applied)
