@@ -11,7 +11,8 @@ queue workers, batch jobs. Public via Cloudflare Tunnel:
 | https://grafana.hien0ethan.com | Grafana (login; also `https://grafana.lan` on the LAN) |
 
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
-**[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting).
+**[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting) ·
+**[docs/testing.md](docs/testing.md)** (every test per part, `verify.yml` health check).
 
 ## System design
 

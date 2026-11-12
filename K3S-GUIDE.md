@@ -253,6 +253,7 @@ Done (details in git history):
 - CI: shared `build-image.yml` / `bump-tag.yml`, dependency layer cached, Node 24 actions
 
 Open:
+- [ ] vmagent memory limit (384Mi): OOMKilled once on the first full scrape after the 2026-11-12 rebuild
 - [ ] pi3 power supply; SSD on pi4-8gb (then move volumes)
 - [ ] Backups + restore test (section 8)
 - [ ] SOPS-encrypted secrets

@@ -1,0 +1,236 @@
+# Read-only health checks for the whole homelab, one tag per layer (catalog: docs/testing.md).
+# No sudo, no changes, except the `containers` canary pods, which are created and deleted again.
+# Safe any time; run it after every rebuild, migration, k3s/OS upgrade, and when something looks off.
+#
+#   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/verify.yml
+#   ... --tags nodes,cluster        only some layers
+#
+# Tags: nodes network cluster containers data apps public backup
+# A failed check fails the run; the summary at the end lists every check that ran.
+
+- name: Nodes (OS, identity, resources)
+  hosts: k3s
+  gather_facts: true
+  tags: [nodes]
+  tasks:
+    - name: Hostname and IP match the inventory
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.hostname == inventory_hostname
+          - static_ip in ansible_facts.all_ipv4_addresses
+        fail_msg: "{{ inventory_hostname }}: hostname {{ ansible_facts.hostname }}, IPs {{ ansible_facts.all_ipv4_addresses }}"
+        quiet: true
+
+    - name: Root disk has at least 15% free
+      ansible.builtin.assert:
+        that: (item.size_available / item.size_total) > 0.15
+        fail_msg: "{{ inventory_hostname }} {{ item.mount }}: {{ (100 * item.size_available / item.size_total) | round }}% free"
+        quiet: true
+      loop: "{{ ansible_facts.mounts | selectattr('mount', 'equalto', '/') | list }}"
+      loop_control: { label: "{{ item.mount }}" }
+
+    - name: Pi power (no under-voltage now; bit 0 of get_throttled)
+      ansible.builtin.command: vcgencmd get_throttled
+      register: throttled
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname in groups['pis']
+
+    - name: Under-voltage report
+      ansible.builtin.assert:
+        that: (throttled.stdout | regex_replace('^throttled=', '') | int(base=16)) % 2 == 0
+        fail_msg: "{{ inventory_hostname }}: {{ throttled.stdout }} (under-voltage NOW, check the power supply)"
+        quiet: true
+      when: inventory_hostname in groups['pis'] and throttled.rc | default(1) == 0
+
+    - name: Container AppArmor denials since boot (Ubuntu 26.04 bug, K3S-GUIDE 10.3)
+      ansible.builtin.shell: journalctl -k -b --no-pager 2>/dev/null | grep 'apparmor="DENIED"' | grep -c cri-containerd || true
+      register: aa_denied
+      changed_when: false
+
+    - name: No container AppArmor denials
+      ansible.builtin.assert:
+        that: aa_denied.stdout | int == 0
+        fail_msg: "{{ inventory_hostname }}: {{ aa_denied.stdout }} container AppArmor denials (journalctl -k -b | grep DENIED)"
+        quiet: true
+
+- name: Network (every node reaches every node, the gateway and the internet)
+  hosts: k3s
+  gather_facts: false
+  tags: [network]
+  tasks:
+    - name: Ping peers and gateway
+      ansible.builtin.command: ping -c1 -W2 {{ item }}
+      loop: "{{ (groups['k3s'] | map('extract', hostvars, 'static_ip') | list) + [lan_gateway] }}"
+      changed_when: false
+
+    - name: DNS and HTTPS to the internet
+      ansible.builtin.command: curl -sS -o /dev/null -w '%{http_code}' https://github.com
+      register: inet
+      changed_when: false
+      failed_when: inet.stdout != '200'
+
+- name: Cluster, containers, data, apps (kubectl on the workstation)
+  hosts: workstation
+  gather_facts: false
+  environment:
+    KUBECONFIG: /home/hien/.kube/homelab.yaml
+  tasks:
+    - name: All nodes Ready, names = inventory
+      tags: [cluster]
+      ansible.builtin.shell: kubectl get nodes --no-headers | awk '{print $1, $2}' | sort
+      register: nodes
+      changed_when: false
+      failed_when: >-
+        nodes.stdout_lines | length != groups['k3s'] | length
+        or nodes.stdout_lines | reject('search', ' Ready$') | list | length > 0
+        or (nodes.stdout_lines | map('split') | map('first') | sort) != (groups['k3s'] | sort)
+
+    - name: Flux kustomizations and Helm releases Ready
+      tags: [cluster]
+      ansible.builtin.shell: |
+        kubectl -n flux-system wait kustomization --all --for=condition=Ready --timeout=60s
+        kubectl wait helmrelease -A --all --for=condition=Ready --timeout=60s
+      changed_when: false
+
+    - name: No pod crash-looping or stuck (Running/Succeeded only)
+      tags: [cluster]
+      ansible.builtin.shell: >-
+        kubectl get pods -A --no-headers
+        -o custom-columns=NS:.metadata.namespace,N:.metadata.name,P:.status.phase
+        | awk '$3!="Running" && $3!="Succeeded"'
+      register: bad_pods
+      changed_when: false
+      failed_when: bad_pods.stdout | length > 0
+
+    - name: Data pods on the role=data node
+      tags: [cluster, data]
+      ansible.builtin.shell: |
+        want=$(kubectl get nodes -l role=data -o name | sed 's#node/##')
+        kubectl get pods -A -o wide --no-headers | awk '/^data /{print $8}' | sort -u | grep -vx "$want" || true
+      register: misplaced
+      changed_when: false
+      failed_when: misplaced.stdout | length > 0
+
+    # Canary: Postgres start + signals inside a container, on every node that may run data or apps.
+    - name: Container canary
+      tags: [containers]
+      block:
+        - name: Canary pods (Postgres + signal test) on every node without a NoSchedule taint
+          tags: [containers]
+          ansible.builtin.shell: |
+            set -e
+            for n in $(kubectl get nodes -o json | jq -r '.items[] | select([.spec.taints[]? | select(.effect=="NoSchedule")] | length == 0) | .metadata.name'); do
+              cat <<EOF | kubectl apply -f - >/dev/null
+            apiVersion: v1
+            kind: Pod
+            metadata: { name: canary-pg-$n, namespace: default, labels: { app: verify-canary } }
+            spec:
+              nodeSelector: { kubernetes.io/hostname: $n }
+              containers:
+              - name: pg
+                image: postgres:17
+                env: [{ name: POSTGRES_PASSWORD, value: canary }]
+                resources: { limits: { memory: 256Mi } }
+                readinessProbe:
+                  exec: { command: [pg_isready, -U, postgres, -h, 127.0.0.1] }
+                  periodSeconds: 3
+            EOF
+            done
+            kubectl -n default wait pod -l app=verify-canary --for=condition=Ready --timeout=240s
+            for p in $(kubectl -n default get pod -l app=verify-canary -o name); do
+              kubectl -n default exec "$p" -- psql -U postgres -Atc "checkpoint; select pg_reload_conf();" >/dev/null
+              echo "$p OK"
+            done
+          register: canary
+          changed_when: false
+      always:
+        - name: Delete canary pods
+          tags: [containers]
+          ansible.builtin.command: kubectl -n default delete pod -l app=verify-canary --wait=false
+          changed_when: false
+
+    - name: Postgres healthy and answering
+      tags: [data]
+      ansible.builtin.shell: |
+        set -e
+        kubectl -n data get cluster.postgresql.cnpg.io pg -o jsonpath='{.status.phase}' | grep -qx 'Cluster in healthy state'
+        pod=$(kubectl -n data get pod -l cnpg.io/cluster=pg,cnpg.io/instanceRole=primary -o name | head -1)
+        kubectl -n data exec "$pod" -c postgres -- psql -U postgres -d app -Atc \
+          "select relname || ' ' || n_live_tup from pg_stat_user_tables order by 1"
+      register: pg_rows
+      changed_when: false
+
+    - name: Redis answers PING
+      tags: [data]
+      ansible.builtin.shell: |
+        pw=$(kubectl -n data get secret redis -o jsonpath='{.data.password}' | base64 -d)
+        kubectl -n data exec redis-0 -- sh -c "REDISCLI_AUTH='$pw' redis-cli ping"
+      register: redis_ping
+      changed_when: false
+      failed_when: redis_ping.stdout != 'PONG'
+      no_log: true
+
+    - name: App deployments fully available
+      tags: [apps]
+      ansible.builtin.shell: |
+        kubectl -n apps get deploy --no-headers -o custom-columns=N:.metadata.name,W:.spec.replicas,A:.status.availableReplicas \
+          | awk '$2!=$3 {print}'
+      register: deploys
+      changed_when: false
+      failed_when: deploys.stdout | length > 0
+
+    - name: Newest backup age (hours) and decryptable
+      tags: [backup]
+      ansible.builtin.shell: |
+        set -e
+        f=$(ls -t /home/hien/homelab-backup/homelab-*.tar.gz.age | head -1)
+        age -d -i /home/hien/.config/sops/age/keys.txt "$f" | tar -tzf - >/dev/null
+        echo "$(( ($(date +%s) - $(stat -c %Y "$f")) / 3600 )) $(basename "$f")"
+      register: backup_age
+      changed_when: false
+
+    - name: Backup warning (no scheduled backups yet; roadmap stage 1)
+      tags: [backup]
+      ansible.builtin.debug:
+        msg: "Newest backup is {{ backup_age.stdout.split()[0] }} h old ({{ backup_age.stdout.split()[1] }}). Run backup.yml after data changes."
+      when: (backup_age.stdout.split()[0] | int) > 168
+
+- name: Public entry points (Cloudflare, from the machine running Ansible)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [public]
+  tasks:
+    - name: Public URLs answer 200
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        status_code: 200
+      loop: "{{ public_urls }}"
+
+    - name: Grafana is behind Cloudflare Access (redirect to the Access login)
+      ansible.builtin.uri:
+        url: https://grafana.hien0ethan.com
+        follow_redirects: none
+        status_code: 302
+      register: grafana
+      failed_when: "'cloudflareaccess.com' not in (grafana.location | default(''))"
+
+    - name: Unknown subdomain redirects to the landing page
+      ansible.builtin.uri:
+        url: https://does-not-exist.hien0ethan.com
+        follow_redirects: none
+        status_code: [301, 302, 308]
+
+- name: Summary
+  hosts: workstation
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Results
+      ansible.builtin.debug:
+        msg:
+          - "nodes: {{ hostvars[inventory_hostname].nodes.stdout_lines | default(['not run']) }}"
+          - "canary: {{ hostvars[inventory_hostname].canary.stdout_lines | default(['not run']) }}"
+          - "postgres rows: {{ hostvars[inventory_hostname].pg_rows.stdout_lines | default(['not run']) }}"
+          - "backup: {{ hostvars[inventory_hostname].backup_age.stdout | default('not run') }}"

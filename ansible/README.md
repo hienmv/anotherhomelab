@@ -11,6 +11,7 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
 | `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
 | `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |
+| `playbooks/verify.yml` | read-only health checks per layer (catalog: [docs/testing.md](../docs/testing.md)) |
 | `files/net-static.sh` | static IP on the `lan_link` link (used by workstation-prepare) |
 
 Run from the `ansible/` folder, on the Mac (today) or on node-workstation (afterwards; it detects itself and runs
