@@ -34,8 +34,13 @@ Commit and push: CI builds and checks, Flux deploys (about 3 to 5 minutes).
 
 ## Run locally
 
+`SITE_DOMAIN` and `SITE_TIMEZONE` are required at build time (CI passes `DOMAIN` / `TIMEZONE` from
+`clusters/<cluster>/site-settings.yaml`); a missing value fails the build. Dev server:
+`SITE_DOMAIN=example.test SITE_TIMEZONE=UTC npm run dev`.
+
 ```bash
-docker buildx build --load -t notes:dev apps/notes && docker run --rm -p 8091:8080 notes:dev
+docker buildx build --load -t notes:dev --build-arg SITE_DOMAIN=example.test --build-arg SITE_TIMEZONE=UTC apps/notes
+docker run --rm -p 8091:8080 notes:dev
 ```
 
 ## Migration (2026-11-09)

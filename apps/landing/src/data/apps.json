@@ -1,13 +1,13 @@
 [
   {
     "name": "TicketLite",
-    "url": "https://ticketlite.hien0ethan.com",
+    "subdomain": "ticketlite",
     "description": "Concert tickets with hot-ticket rush handling (Ktor, React, Redis, Postgres)",
     "status": "live"
   },
   {
     "name": "Grafana",
-    "url": "https://grafana.hien0ethan.com",
+    "subdomain": "grafana",
     "description": "Cluster monitoring: Pi nodes, Postgres, the tunnel and TicketLite orders (VictoriaMetrics). Login required.",
     "status": "live, login required"
   }

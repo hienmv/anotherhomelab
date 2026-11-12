@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro'
 import apps from '../data/apps.json'
 import intro from '../data/profile.json'
+import { siteUrl } from '../site'
 ---
 <Base>
   <section class="hero">
@@ -12,11 +13,11 @@ import intro from '../data/profile.json'
   <section class="section" aria-labelledby="featured-title">
     <div class="section__head">
       <h2 id="featured-title">Featured notes</h2>
-      <a href={intro.notesUrl}>All notes →</a>
+      <a href={siteUrl('notes')}>All notes →</a>
     </div>
     <ul class="features" data-featured>
       <li class="feature feature--fallback">
-        <a class="feature__title" href={intro.notesUrl}>Browse all notes</a>
+        <a class="feature__title" href={siteUrl('notes')}>Browse all notes</a>
         <p class="muted">JVM internals, algorithms, ways of working.</p>
       </li>
     </ul>
@@ -28,7 +29,7 @@ import intro from '../data/profile.json'
     <ul class="app-list">
       {apps.map((app) => (
         <li class="app-card">
-          <h3><a href={app.url}>{app.name}</a></h3>
+          <h3><a href={siteUrl(app.subdomain)}>{app.name}</a></h3>
           <p>{app.description}</p>
           <p class="meta">{app.status}</p>
         </li>

@@ -1,3 +1,5 @@
+# Rendered by the nginx image entrypoint (envsubst fills ${SITE_DOMAIN}, set at build time from
+# site-settings); nginx's own $vars are left alone (envsubst only fills defined variables).
 server {
     listen 8080;
     server_name _;
@@ -8,7 +10,7 @@ server {
     rewrite "^/(tech|work-style)/\d{4}/\d{2}/\d{2}/([^/]+)\.html$" /$2/ permanent;
 
     # About lives on the landing site
-    rewrite ^/about/?$ https://hien0ethan.com/about/ permanent;
+    rewrite ^/about/?$ https://${SITE_DOMAIN}/about/ permanent;
 
     # Hashed build assets never change
     location /_astro/ {

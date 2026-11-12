@@ -86,7 +86,7 @@ web/src/pages/ ConcertsPage, LoginPage, OrdersPage
 
 ```bash
 cd apps/ticketlite
-docker compose up --build        # http://localhost:8080 (api also on :8081)
+docker compose up --build        # http://localhost:8080 (api also on :8081); SITE_TIMEZONE=... to override UTC
 docker compose down -v
 ```
 Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDirs` in `~/.docker/config.json`).

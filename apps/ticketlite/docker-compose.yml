@@ -47,7 +47,10 @@ services:
       api: { condition: service_started }
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        SITE_TIMEZONE: ${SITE_TIMEZONE:-UTC}   # cluster builds: TIMEZONE from site-settings
     image: ticketlite-web:dev
     environment:
       API_UPSTREAM: http://api:8080

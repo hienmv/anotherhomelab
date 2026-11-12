@@ -1,14 +1,15 @@
 ---
 import profile from '../data/site.json'
+import { siteUrl } from '../site'
 interface Props { current: 'notes' | null }
 const { current } = Astro.props
 const cls = (name: string) => `nav-link${current === name ? ' nav-link--active' : ''}`
 ---
 <header class="header">
-  <a href="https://hien0ethan.com" class="brand">{profile.siteTitle}</a>
+  <a href={siteUrl()} class="brand">{profile.siteTitle}</a>
   <nav class="nav" aria-label="Main">
     <a href="/" class={cls('notes')} aria-current={current === 'notes' ? 'page' : undefined}>Notes</a>
-    <a href="https://hien0ethan.com/#homelab" class="nav-link">Homelab</a>
-    <a href="https://hien0ethan.com/about/" class="nav-link">About</a>
+    <a href={siteUrl('', '/#homelab')} class="nav-link">Homelab</a>
+    <a href={siteUrl('', '/about/')} class="nav-link">About</a>
   </nav>
 </header>

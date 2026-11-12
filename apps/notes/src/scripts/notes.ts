@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from 'astro:content'
+import { TIMEZONE } from '../site'
 
 export type Note = CollectionEntry<'notes'>
 
@@ -16,4 +17,4 @@ export function readingMinutes(markdown: string | undefined): number {
 }
 
 export const formatDate = (d: Date) =>
-  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'Asia/Tokyo' })
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: TIMEZONE })

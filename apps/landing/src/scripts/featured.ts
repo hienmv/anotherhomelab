@@ -1,4 +1,4 @@
-/** Renders featured notes (from /featured.json, proxied from notes.hien0ethan.com) into a list. */
+/** Renders featured notes (from /featured.json, proxied from the notes app) into a list. */
 export interface FeaturedNote {
   title: string
   url: string

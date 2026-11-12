@@ -5,12 +5,12 @@ const note = (id: string, date: string, featured = false): FeaturedInput => ({
   id,
   data: { title: id.toUpperCase(), date: new Date(date), category: 'tech', lang: 'vi', featured },
 })
-const SITE = 'https://notes.hien0ethan.com'
+const SITE = 'https://notes.example.test'
 
 describe('pickFeatured', () => {
   it('returns flagged notes newest first with absolute URLs', () => {
     const out = pickFeatured([note('a', '2020-01-01', true), note('b', '2021-01-01'), note('c', '2022-01-01', true)], SITE)
-    expect(out.map((n) => n.url)).toEqual(['https://notes.hien0ethan.com/c/', 'https://notes.hien0ethan.com/a/'])
+    expect(out.map((n) => n.url)).toEqual(['https://notes.example.test/c/', 'https://notes.example.test/a/'])
     expect(out[0]).toMatchObject({ title: 'C', date: '2022-01-01', category: 'tech', lang: 'vi', description: null })
   })
 

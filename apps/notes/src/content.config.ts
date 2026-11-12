@@ -14,7 +14,7 @@ const notes = defineCollection({
     category: z.string(),
     lang: z.enum(['vi', 'en']).default('en'),
     description: z.string().optional(),
-    /** Shown on the landing page (hien0ethan.com) via /featured.json. */
+    /** Shown on the landing page (site apex) via /featured.json. */
     featured: z.boolean().default(false),
     /** Path on the old Jekyll site (hienmv.github.io); nginx redirects it here. */
     oldUrl: z.string().optional(),

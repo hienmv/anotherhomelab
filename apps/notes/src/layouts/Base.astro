@@ -1,6 +1,7 @@
 ---
 import Header from '../components/Header.astro'
 import profile from '../data/site.json'
+import { DOMAIN, siteUrl } from '../site'
 import '../styles/global.css'
 interface Props {
   title?: string
@@ -26,7 +27,7 @@ const fullTitle = title ? `${title} · ${profile.siteTitle}` : profile.siteTitle
     <Header current={current} />
     <main id="main" class="main"><slot /></main>
     <footer class="footer muted">
-      © {new Date().getFullYear()} {profile.name} · <a href="https://hien0ethan.com">hien0ethan.com</a> · Served from a Raspberry Pi k3s cluster
+      © {new Date().getFullYear()} {profile.name} · <a href={siteUrl()}>{DOMAIN}</a> · Served from a Raspberry Pi k3s cluster
     </footer>
   </body>
 </html>

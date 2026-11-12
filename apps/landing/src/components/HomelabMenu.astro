@@ -1,5 +1,6 @@
 ---
 import apps from '../data/apps.json'
+import { siteUrl } from '../site'
 ---
 <div class="menu" data-menu>
   <a href="#homelab" class="nav-link menu__button" data-menu-button aria-controls="homelab-menu">
@@ -8,7 +9,7 @@ import apps from '../data/apps.json'
   <ul id="homelab-menu" class="menu__list" data-menu-list hidden>
     {apps.map((app) => (
       <li>
-        <a href={app.url} class="menu__item">
+        <a href={siteUrl(app.subdomain)} class="menu__item">
           <span class="menu__name">{app.name}</span>
           <span class="menu__desc">{app.description}</span>
         </a>

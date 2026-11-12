@@ -27,6 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Site values baked into static sites (links, time zone): one source, site-settings.yaml.
+      - name: Site settings
+        id: site
+        run: |
+          f=clusters/homelab/site-settings.yaml
+          echo "domain=$(yq '.data.DOMAIN' "$f")" >> "$GITHUB_OUTPUT"
+          echo "timezone=$(yq '.data.TIMEZONE' "$f")" >> "$GITHUB_OUTPUT"
+
       # Build stages run natively on amd64 (--platform=$BUILDPLATFORM), once for both platforms;
       # QEMU only covers the arm64 runtime stage, which has no RUN steps.
       - uses: docker/setup-qemu-action@v4
@@ -52,6 +60,9 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ${{ inputs.context }}
+          build-args: |
+            SITE_DOMAIN=${{ steps.site.outputs.domain }}
+            SITE_TIMEZONE=${{ steps.site.outputs.timezone }}
           platforms: linux/amd64,linux/arm64
           push: ${{ inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}

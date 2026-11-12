@@ -3,7 +3,7 @@ import { loadFeatured, renderFeatured, type FeaturedNote } from './featured'
 
 const note: FeaturedNote = {
   title: 'Popular Sort Algorithms',
-  url: 'https://notes.hien0ethan.com/popular-sort-algorithms/',
+  url: 'https://notes.example.test/popular-sort-algorithms/',
   date: '2020-10-17',
   category: 'tech',
   lang: 'vi',

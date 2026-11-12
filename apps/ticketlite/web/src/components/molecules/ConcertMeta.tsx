@@ -1,3 +1,5 @@
+declare const __SITE_TIMEZONE__: string // vite.config.ts
+
 const dateFmt = new Intl.DateTimeFormat('en-GB', {
   weekday: 'short',
   day: 'numeric',
@@ -5,7 +7,7 @@ const dateFmt = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
-  timeZone: 'Asia/Tokyo',
+  timeZone: __SITE_TIMEZONE__,
 })
 
 export function ConcertMeta({ venue, startsAt }: { venue: string; startsAt: string }) {

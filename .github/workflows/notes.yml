@@ -12,6 +12,7 @@ on:
       - "!apps/notes/README.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
+      - "clusters/homelab/site-settings.yaml"   # domain / time zone are baked into the build
       - ".github/workflows/bump-tag.yml"
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - "!apps/notes/README.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
+      - "clusters/homelab/site-settings.yaml"   # domain / time zone are baked into the build
   workflow_dispatch:
 
 concurrency:
