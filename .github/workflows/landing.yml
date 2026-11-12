@@ -1,6 +1,6 @@
 # CI/CD for the landing page (apps/landing, Astro) on the site's apex domain (DOMAIN in site-settings).
 #   PR:   astro check, unit tests, build, link check (inside the Docker build), no push.
-#   main: same, push <IMAGE_REGISTRY>/landing (amd64 + arm64), bump the tag in k8s/apps/landing/. Flux deploys.
+#   main: same, push ghcr.io/<repo owner>/landing (amd64 + arm64), bump the tag in k8s/apps/landing/. Flux deploys.
 name: landing
 
 on:
@@ -11,7 +11,6 @@ on:
       - "!apps/landing/README.md"
       - ".github/workflows/landing.yml"
       - ".github/workflows/build-image.yml"
-      - "clusters/*/site-settings.yaml"
       - ".github/workflows/bump-tag.yml"
   pull_request:
     paths:
@@ -19,7 +18,6 @@ on:
       - "!apps/landing/README.md"
       - ".github/workflows/landing.yml"
       - ".github/workflows/build-image.yml"
-      - "clusters/*/site-settings.yaml"
   workflow_dispatch:
 
 concurrency:

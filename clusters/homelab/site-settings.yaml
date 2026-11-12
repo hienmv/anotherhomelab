@@ -4,7 +4,7 @@
 # Read by:
 #   - Ansible: ansible/group_vars/all.yml (`site`), picked by `cluster_name`
 #   - Flux (step C): postBuild.substituteFrom -> ${DOMAIN}, ${IMAGE_REGISTRY}, ... in k8s/
-#   - CI (step B): yq '.data.DOMAIN' clusters/<cluster>/site-settings.yaml
+#   - CI: app builds read DOMAIN/TIMEZONE (step D); the validation job checks this file (step H)
 # Host-level values (users, IPs, devices) live in ansible/inventory.yml instead.
 # A second site/cluster: copy clusters/<name>/, edit this file and the inventory.
 apiVersion: v1
@@ -17,6 +17,6 @@ data:
   DOMAIN: hien0ethan.com
   GIT_REPO_SLUG: hienmv/anotherhomelab
   GIT_REPO_SSH: git@github.com:hienmv/anotherhomelab.git
-  IMAGE_REGISTRY: ghcr.io/hienmv
+  IMAGE_REGISTRY: ghcr.io/hienmv   # must be ghcr.io/<GitHub repo owner>: CI pushes there (checked in CI)
   CLOUDFLARE_TUNNEL_ID: ab958f58-ce09-42de-a826-bd8a8779bdbd
   TIMEZONE: Asia/Tokyo

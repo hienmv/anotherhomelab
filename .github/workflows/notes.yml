@@ -1,7 +1,7 @@
 # CI/CD for the notes app (apps/notes, Astro) on notes.<DOMAIN> (DOMAIN in site-settings).
 # Notes are content: Markdown changes DO trigger a build (only README/DESIGN are ignored).
 #   PR:   astro check, unit tests, build, link check (inside the Docker build), no push.
-#   main: same, push <IMAGE_REGISTRY>/notes (amd64 + arm64), bump the tag in k8s/apps/notes/. Flux deploys.
+#   main: same, push ghcr.io/<repo owner>/notes (amd64 + arm64), bump the tag in k8s/apps/notes/. Flux deploys.
 name: notes
 
 on:
@@ -12,7 +12,6 @@ on:
       - "!apps/notes/README.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
-      - "clusters/*/site-settings.yaml"
       - ".github/workflows/bump-tag.yml"
   pull_request:
     paths:
@@ -20,7 +19,6 @@ on:
       - "!apps/notes/README.md"
       - ".github/workflows/notes.yml"
       - ".github/workflows/build-image.yml"
-      - "clusters/*/site-settings.yaml"
   workflow_dispatch:
 
 concurrency:

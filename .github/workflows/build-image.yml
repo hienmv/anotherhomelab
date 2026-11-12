@@ -1,21 +1,16 @@
 # Reusable: build one app image for linux/arm64 (the Pis) and linux/amd64 (node-workstation), run the
 # tests inside the Docker build, and push it as sha-<7> and main. Called by the per-app workflows.
-# The registry comes from IMAGE_REGISTRY in clusters/<cluster>/site-settings.yaml (the same value the
-# Kubernetes manifests use), so CI and the cluster can never disagree about where images live.
+# Registry: ghcr.io/<repo owner>, the only place GITHUB_TOKEN can push to. IMAGE_REGISTRY in
+# clusters/<cluster>/site-settings.yaml (what the cluster pulls) must match; CI validation checks it.
 name: build-image
 
 on:
   workflow_call:
     inputs:
       image:
-        description: Image name under IMAGE_REGISTRY (e.g. ticketlite-backend)
+        description: Image name under ghcr.io/<repo owner> (e.g. ticketlite-backend)
         required: true
         type: string
-      cluster:
-        description: Cluster folder whose site-settings.yaml to read (clusters/<cluster>/)
-        required: false
-        type: string
-        default: homelab
       context:
         description: Docker build context (folder with the Dockerfile)
         required: true
@@ -32,26 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Inputs go through env, never straight into the script (no shell injection).
-      - name: Site settings
-        id: site
-        env:
-          CLUSTER: ${{ inputs.cluster }}
-          IMAGE: ${{ inputs.image }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          f="clusters/${CLUSTER}/site-settings.yaml"
-          reg="$(yq -r '.data.IMAGE_REGISTRY // ""' "$f")"
-          [ -n "$reg" ] || { echo "::error file=$f::IMAGE_REGISTRY is missing"; exit 1; }
-          host="${reg%%/*}"
-          # GITHUB_TOKEN can only push to ghcr.io/<repo owner>
-          if [ "$host" = ghcr.io ] && [ "${reg#ghcr.io/}" != "${OWNER,,}" ]; then
-            echo "::error file=$f::IMAGE_REGISTRY=$reg, but this repo can only push to ghcr.io/${OWNER,,}"; exit 1
-          fi
-          echo "registry=$reg" >> "$GITHUB_OUTPUT"
-          echo "host=$host" >> "$GITHUB_OUTPUT"
-          echo "image: $reg/$IMAGE"
-
       # Build stages run natively on amd64 (--platform=$BUILDPLATFORM), once for both platforms;
       # QEMU only covers the arm64 runtime stage, which has no RUN steps.
       - uses: docker/setup-qemu-action@v4
@@ -61,14 +36,14 @@ jobs:
         if: inputs.push
         uses: docker/login-action@v4
         with:
-          registry: ${{ steps.site.outputs.host }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ steps.site.outputs.registry }}/${{ inputs.image }}
+          images: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
           tags: |
             type=sha,format=short,prefix=sha-
             type=raw,value=main,enable={{is_default_branch}}
