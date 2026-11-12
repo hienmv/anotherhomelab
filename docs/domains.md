@@ -37,7 +37,7 @@ Browser ──HTTPS──> Cloudflare edge ──Cloudflare Tunnel──> cloudf
 2. **Cloudflare Tunnel** `test-cloudflared-tunnel` (id `ab958f58-…`): the cluster dials out to Cloudflare, so
    no router port is open. Credentials: secret `infra/tunnel-creds` only (no other copy exists; losing it
    means creating a new tunnel and repointing both CNAMEs).
-3. **cloudflared** (`k8s/infra/cloudflared.yaml`, 1 replica on pi4-8gb). Its ConfigMap sends
+3. **cloudflared** (`k8s/infra/cloudflared.yaml`, 1 replica on node-8gb). Its ConfigMap sends
    `hien0ethan.com` and `*.hien0ethan.com` to `http://traefik.kube-system.svc.cluster.local:80`, anything
    else to 404. Hostname-agnostic: new subdomains need no change here either.
 4. **Traefik** (bundled with k3s; customised by `k8s/infra/traefik-config.yaml`, which trusts

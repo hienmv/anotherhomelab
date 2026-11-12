@@ -144,7 +144,7 @@
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: '^127\.0\.1\.1\s'
-        line: "127.0.1.1 {{ inventory_hostname }} sv9"
+        line: "127.0.1.1 {{ inventory_hostname }}"
 
     - name: Hostname
       ansible.builtin.hostname:

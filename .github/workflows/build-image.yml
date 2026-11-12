@@ -1,4 +1,4 @@
-# Reusable: build one app image for linux/arm64 (the Pis) and linux/amd64 (sv9), run the tests
+# Reusable: build one app image for linux/arm64 (the Pis) and linux/amd64 (node-workstation), run the tests
 # inside the Docker build,
 # and push it to GHCR as sha-<7> and main. Called by the per-app workflows.
 name: build-image

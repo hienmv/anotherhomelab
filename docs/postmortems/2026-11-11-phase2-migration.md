@@ -4,7 +4,7 @@
 |---|---|
 | Impact | All public sites down (landing, notes, TicketLite; Grafana) for **about 21 h** |
 | Data loss | none: every row restored, counts checked (concerts 7, flyway 2, orders 24, users 3) |
-| Trigger | planned rebuild: k3s server + data moved from pi4-8gb (SD card) to the CF-SV9 laptop |
+| Trigger | planned rebuild: k3s server + data moved from node-8gb (SD card) to the CF-SV9 laptop |
 | Root cause | Ubuntu 26.04's AppArmor default `kernel.apparmor_restrict_unprivileged_unconfined = 1` stacks the container label (`cri-containerd.apparmor.d//&unconfined`); containerd's built-in profile then denies every signal inside a container ([containerd#14485](https://github.com/containerd/containerd/issues/14485), no fixed release) |
 | Resolution | node-workstation reinstalled with **Ubuntu 24.04 LTS** (does not set that sysctl), no host AppArmor change |
 

@@ -145,7 +145,6 @@ Grafana access and browser troubleshooting: [K3S-GUIDE.md → Observability](K3S
 | node-1gb | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | Debian 13 | k3s agent, `role=light` (taint); weak PSU |
 
 All addresses and per-node settings live in [ansible/inventory.yml](ansible/inventory.yml).
-Names before 2026-11-12: `sv9`, `pi4-8gb` (`hien-pi-4b`), `pi4-4gb` (`hien-pi-4b-4gb`), `pi3` (`hien-pi-3b`).
 
 ## Operations
 

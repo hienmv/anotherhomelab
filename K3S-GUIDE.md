@@ -16,7 +16,6 @@ under `k8s/`; this guide links to them instead of copying them.
 
 | | node-workstation | node-8gb | node-4gb | node-1gb |
 |---|---|---|---|---|
-| Was | `sv9` (added 2026-11-10) | pi4-8gb (`hien-pi-4b`) | pi4-4gb (`hien-pi-4b-4gb`) | pi3 (`hien-pi-3b`) |
 | IP (static) | 192.168.40.249 (Wi-Fi) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
 | Board | Panasonic CF-SV9 (amd64) | Pi 4B rev 1.5 | Pi 4B rev 1.1 | Pi 3B+ |
 | CPU / RAM | 8 threads / 15 GiB | 4x A72 / 7.6 GiB | 4x A72 / 3.7 GiB | 4x A53 / 905 MiB |
@@ -31,7 +30,7 @@ SSDs for node-8gb / node-4gb are the next buy, needed for an HA control plane).
 
 | Decision | Why |
 |---|---|
-| Single k3s server (node-workstation since 2026-11-12, before pi4-8gb), SQLite datastore, no HA | HA needs 3 etcd servers with SSDs; until the Pi 4s get SSDs: rebuild from git + Flux + backups (`phase2-migrate.yml`) |
+| Single k3s server (node-workstation since 2026-11-12, before node-8gb), SQLite datastore, no HA | HA needs 3 etcd servers with SSDs; until the Pi 4s get SSDs: rebuild from git + Flux + backups (`phase2-migrate.yml`) |
 | Node labels `role=data` (node-workstation), `role=apps` (node-8gb, node-4gb), `role=light` + taint (node-1gb) | Pin stateful pods to the SSD node; keep the weak node-1gb nearly empty. Set in `ansible/inventory.yml` |
 | Data pinned to the `role=data` node (`local-path` volumes on its NVMe SSD) | Simple and fast; HA comes from a CNPG replica later, not network storage |
 | Redis = cache + queue (streams) | Enough for a homelab; no extra broker |
@@ -47,13 +46,13 @@ SSDs for node-8gb / node-4gb are the next buy, needed for an HA control plane).
 
 ## 3. Prepare the Pis (initial build 2026-11-07; now `ansible/`)
 
-History of the first manual build. Names here are the old ones (pi4-8gb = node-8gb, pi4-4gb = node-4gb,
-pi3 = node-1gb). Today the inventory and playbooks do this; section 10 has the current procedure.
+History of the first manual build. Today the inventory and playbooks do this; section 10 has the
+current procedure.
 
 ### 3.1 Access and static IPs
-- Mac `/etc/hosts` maps `pi3`, `pi4-8gb`, `pi4-4gb`; `~/.ssh/config` sets `User hien`,
+- Mac `/etc/hosts` maps `node-1gb`, `node-8gb`, `node-4gb`; `~/.ssh/config` sets `User hien`,
   `IdentityFile ~/.ssh/id_homelab`. Passwordless sudo via `/etc/sudoers.d/hien`.
-- Static IP per Pi (connection name differs: `netplan-eth0` on the Pi 4s, `Wired connection 1` on pi3):
+- Static IP per Pi (connection name differs: `netplan-eth0` on the Pi 4s, `Wired connection 1` on node-1gb):
   ```bash
   sudo nmcli con mod netplan-eth0 ipv4.method manual ipv4.addresses 192.168.40.250/24 \
     ipv4.gateway 192.168.40.1 ipv4.dns 192.168.40.1
@@ -63,28 +62,28 @@ pi3 = node-1gb). Today the inventory and playbooks do this; section 10 has the c
 
 ### 3.2 Memory cgroup, upgrade, prerequisites
 ```bash
-for h in pi3 pi4-8gb pi4-4gb; do
+for h in node-1gb node-8gb node-4gb; do
   ssh $h 'sudo sed -i "1 s/\$/ cgroup_enable=memory/" /boot/firmware/cmdline.txt &&
           sudo apt-get update && sudo apt-get -y full-upgrade &&
           sudo apt-get -y install curl nfs-common open-iscsi jq && sudo reboot'
 done
-for h in pi3 pi4-8gb pi4-4gb; do ssh $h 'echo $(hostname): $(cat /sys/fs/cgroup/cgroup.controllers)'; done  # must list memory
+for h in node-1gb node-8gb node-4gb; do ssh $h 'echo $(hostname): $(cat /sys/fs/cgroup/cgroup.controllers)'; done  # must list memory
 ```
-pi4-8gb had **509 locales** enabled: the `locales` upgrade compiled all of them (~40 min). Never reboot
+node-8gb had **509 locales** enabled: the `locales` upgrade compiled all of them (~40 min). Never reboot
 while `dpkg --audit` reports unconfigured packages.
 
 ### 3.3 Free ports 80/443
 Traefik's ServiceLB needs 80/443 on every node. Host nginx/php-fpm were removed (backups in
-`~/web-backup-2026-11-07.tgz` on pi3 and pi4-8gb), and the host cloudflared on pi3 was replaced by the
+`~/web-backup-2026-11-07.tgz` on node-1gb and node-8gb), and the host cloudflared on node-1gb was replaced by the
 in-cluster one.
 
-### 3.4 pi3 firewall
-pi3 runs ufw. k3s needs node-to-node and pod traffic allowed:
+### 3.4 node-1gb firewall
+node-1gb runs ufw. k3s needs node-to-node and pod traffic allowed:
 ```bash
 sudo ufw allow from 192.168.40.0/24; sudo ufw allow from 10.42.0.0/16; sudo ufw allow from 10.43.0.0/16
 ```
 
-### 3.5 (Todo) SSD on pi4-8gb
+### 3.5 (Todo) SSD on node-8gb
 ```bash
 sudo mkfs.ext4 -L ssd /dev/sda          # DESTROYS data on /dev/sda
 echo 'LABEL=ssd /mnt/ssd ext4 defaults,noatime 0 2' | sudo tee -a /etc/fstab
@@ -97,24 +96,24 @@ Then move the `local-path` volumes (Postgres, Redis, VMSingle) and pass
 
 **Now:** `cd ansible && ansible-playbook playbooks/k3s.yml` installs or updates the whole cluster from
 the inventory (server = group `k3s_servers`, agents = `k3s_agents`, labels/taints/reserved per host,
-version `k3s_version`). The commands below are the original manual install (2026-11-08, old names).
+version `k3s_version`). The commands below are the original manual install (2026-11-08).
 
 ```bash
 # server
-ssh pi4-8gb 'curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 600 \
-  --tls-san pi4-8gb --tls-san 192.168.40.250 --node-ip 192.168.40.250 --node-label role=data \
+ssh node-8gb 'curl -sfL https://get.k3s.io | sh -s - server --write-kubeconfig-mode 600 \
+  --tls-san node-8gb --tls-san 192.168.40.250 --node-ip 192.168.40.250 --node-label role=data \
   --kubelet-arg=system-reserved=cpu=250m,memory=512Mi'
 
 # agents
-TOKEN=$(ssh pi4-8gb 'sudo cat /var/lib/rancher/k3s/server/node-token')
-ssh pi4-4gb "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
+TOKEN=$(ssh node-8gb 'sudo cat /var/lib/rancher/k3s/server/node-token')
+ssh node-4gb "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
   --node-ip 192.168.40.251 --node-label role=apps --kubelet-arg=system-reserved=memory=256Mi"
-ssh pi3 "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
+ssh node-1gb "curl -sfL https://get.k3s.io | K3S_URL=https://192.168.40.250:6443 K3S_TOKEN=$TOKEN sh -s - agent \
   --node-ip 192.168.40.252 --node-label role=light --node-taint role=light:NoSchedule \
   --kubelet-arg=system-reserved=memory=128Mi"
 
 # kubectl on the Mac
-ssh pi4-8gb 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's/127.0.0.1/192.168.40.250/; s/: default/: homelab/' \
+ssh node-8gb 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's/127.0.0.1/192.168.40.250/; s/: default/: homelab/' \
   > ~/.kube/homelab.yaml && chmod 600 ~/.kube/homelab.yaml
 echo 'export KUBECONFIG=~/.kube/homelab.yaml' >> ~/.zshrc     # otherwise every kubectl needs it
 brew install kubectl helm k9s
@@ -284,9 +283,8 @@ Open:
 
 ## 10. Migration: CF-SV9 as k3s server + data node (2026-11-10 to 2026-11-12, done)
 
-Names from phase 2 on (inventory = OS hostname = Kubernetes node): `node-workstation` (CF-SV9,
-was `sv9`), `node-8gb` (was `pi4-8gb`), `node-4gb` (was `pi4-4gb`), `node-1gb` (was `pi3`).
-Ansible connects by IP from the inventory.
+Names (inventory = OS hostname = Kubernetes node): `node-workstation` (CF-SV9), `node-8gb`,
+`node-4gb`, `node-1gb`. Ansible connects by IP from the inventory.
 
 Decision: a Panasonic CF-SV9 (amd64, 16 GB RAM, SSD ~80 GB usable, Ubuntu 26.04 LTS) stays always on at
 home as **k3s server**, **`role=data` node** and **admin workstation**. The Mac only SSHes into it.
@@ -370,7 +368,7 @@ detail): fresh backup → uninstall k3s (agents, then the old server: its volume
 Pi identities → SD swap by hand → verify → `k3s.yml` → `restore.yml`.
 
 - **Names**: inventory name = SSH name = OS hostname = Kubernetes node name (`node-workstation`, `node-8gb`,
-  `node-4gb`, `node-1gb`; before: `sv9`/`pi4-8gb`/`pi4-4gb`/`pi3`, OS `hien-pi-4b`, `hien-pi-4b-4gb`, `hien-pi-3b`).
+  `node-4gb`, `node-1gb`).
 - **SD swap**: before power-off, each Pi 4 card is pre-set to the identity of the board it moves to
   (hostname, static IP, SSH host keys), so after the swap the name, IP and host key still match;
   `known_hosts` on node-workstation and the Mac stays valid. Step 6 checks hostname, IP, RAM size and SD size
