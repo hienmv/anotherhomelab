@@ -53,7 +53,7 @@
 
     - name: Base packages
       ansible.builtin.apt:
-        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography, python3-bcrypt]
+        name: [openssh-server, curl, git, jq, age, ansible, ca-certificates, python3-cryptography, python3-bcrypt, tmux]
         state: present
 
     # grafana.lan uses a certificate from a private CA (mkcert, made on the Mac in 2026-11; CA key

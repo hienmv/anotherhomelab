@@ -407,7 +407,7 @@ age key in the password manager.
 | # | Where | Step | Why |
 |---|---|---|---|
 | 1 | CF-SV9 | Install **Ubuntu 24.04 LTS** desktop from USB (F2 → Boot → USB first). User `hien`, computer name `node-workstation`, Wi-Fi | not 26.04: its AppArmor default breaks containers (10.3) |
-| 2 | CF-SV9 | `sudo apt install -y openssh-server` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
+| 2 | CF-SV9 | `sudo apt install -y openssh-server tmux` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
 | 3 | Mac | `ssh-keygen -R 192.168.40.249` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_sv9 hien@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
 | 4 | Mac | `gh repo deploy-key delete <id> -R hienmv/anotherhomelab` for the old `sv9-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
 | 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
