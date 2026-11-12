@@ -270,6 +270,7 @@ Open:
 - [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
 - [ ] Scheduled backups to R2 + monthly restore drill (section 8)
 - [ ] SOPS-encrypted secrets
+- [ ] Pis: SSH keys only (they still accept passwords: cloud-init `ssh_pwauth: true`), like node-workstation
 - [ ] Alerting (choose a channel: Telegram, Discord, Slack, email)
 - [ ] KEDA worker autoscaling; batch CronJobs
 - [ ] Archive hienmv.github.io once the notes site is confirmed (user)

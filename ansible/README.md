@@ -14,8 +14,9 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `playbooks/verify.yml` | read-only health checks per layer (catalog: [docs/testing.md](../docs/testing.md)) |
 | `files/net-static.sh` | static IP on the `lan_link` link (used by workstation-prepare) |
 
-Run from the `ansible/` folder, on the Mac (today) or on node-workstation (afterwards; it detects itself and runs
-locally). Ansible connects by IP with `~/.ssh/id_homelab` (Pis) and `~/.ssh/id_sv9` (workstation, from the Mac).
+Run from the `ansible/` folder **on node-workstation** (it detects itself and runs locally), in `tmux`
+for long runs. Unlock the Pi key once per 8 h: `ssh-add ~/.ssh/id_homelab`. Since 2026-11-12 only
+node-workstation's key opens the Pis. Ansible connects by IP with `~/.ssh/id_homelab` (Pis) and `~/.ssh/id_sv9` (workstation, from the Mac).
 
 ```bash
 brew install ansible                     # Mac; on node-workstation the playbook installs it with apt
