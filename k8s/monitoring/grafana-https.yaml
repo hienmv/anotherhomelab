@@ -1,11 +1,14 @@
 # HTTPS for Grafana on the LAN (https://grafana.lan).
 #
-# TLS secret `monitoring/grafana-lan-tls` is issued by the Mac's mkcert private CA
-# and created out-of-band (key never stored in git):
+# TLS secret `monitoring/grafana-lan-tls`: issued by a private CA (mkcert, made 2026-11; its private
+# key was DELETED 2026-11-12, so this cert cannot be re-issued). Only node-workstation trusts the CA
+# (public cert ansible/files/grafana-lan-ca.pem, installed by workstation-prepare.yml).
+# Cert expires 2029-02-08 -> before then, make a NEW CA + cert (key never in git):
+#   mkcert -install   # new CA on a trusted machine; copy its rootCA.pem to ansible/files/grafana-lan-ca.pem
 #   D=$(mktemp -d); mkcert -cert-file $D/tls.crt -key-file $D/tls.key grafana.lan
-#   kubectl -n monitoring create secret tls grafana-lan-tls --cert=$D/tls.crt --key=$D/tls.key
-#   rm -rf $D
-# Cert expires 2029-02-08 -> re-issue with the same commands.
+#   kubectl -n monitoring create secret tls grafana-lan-tls --cert=$D/tls.crt --key=$D/tls.key \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#   rm -rf $D   # then re-run workstation-prepare.yml
 #
 # Middleware: redirect http -> https. Referenced from the Grafana Ingress annotation
 # in vm-stack-values.yaml. Traefik skips the redirect when the request is already https.

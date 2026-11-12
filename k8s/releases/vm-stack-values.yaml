@@ -7,7 +7,8 @@
 #     --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -base64 18)"
 #   TLS secret grafana-lan-tls: see k8s/monitoring/grafana-https.yaml
 #
-# Grafana: https://grafana.lan (LAN only; add "192.168.40.250 grafana.lan" to /etc/hosts).
+# Grafana: https://grafana.lan (LAN only, used from node-workstation: /etc/hosts entry + CA trust
+# by workstation-prepare.yml) and https://grafana.${DOMAIN} (public, Cloudflare Access).
 
 # Metrics storage: pinned to the role=data node (node-workstation, SSD)
 vmsingle:
@@ -62,13 +63,13 @@ grafana:
     annotations:
       # http -> https (Middleware in k8s/monitoring/grafana-https.yaml)
       traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
-    # LAN only (TLS from the Mac's mkcert CA). The public host grafana.${DOMAIN} has its own
+    # LAN only (TLS from a private CA, see grafana-https.yaml). The public host grafana.${DOMAIN} has its own
     # Ingress without the redirect middleware: k8s/monitoring/grafana-public.yaml
     hosts: [grafana.lan]
     path: /
     pathType: Prefix
     tls:
-      - secretName: grafana-lan-tls   # mkcert private CA, see grafana-https.yaml
+      - secretName: grafana-lan-tls   # private CA, see grafana-https.yaml
         hosts: [grafana.lan]
   grafana.ini:
     server:
