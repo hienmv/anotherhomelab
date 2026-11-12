@@ -1,6 +1,6 @@
 # anotherhomelab
 
-On-prem distributed system on 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
+On-prem distributed system on a CF-SV9 laptop (k3s server + data, SSD) and 3 Raspberry Pis: k3s, PostgreSQL, Redis, web apps,
 queue workers, batch jobs. Public via Cloudflare Tunnel:
 
 | URL | App |
@@ -8,7 +8,7 @@ queue workers, batch jobs. Public via Cloudflare Tunnel:
 | https://hien0ethan.com | landing: intro, featured notes, homelab apps, about ([apps/landing](apps/landing/README.md)) |
 | https://notes.hien0ethan.com | notes ([apps/notes](apps/notes/README.md)) |
 | https://ticketlite.hien0ethan.com | TicketLite ([apps/ticketlite](apps/ticketlite/README.md)) |
-| https://grafana.hien0ethan.com | Grafana (login; also `https://grafana.lan` on the LAN) |
+| https://grafana.hien0ethan.com | Grafana (Cloudflare Access email PIN, then Grafana login; also `https://grafana.lan` on the LAN) |
 
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
 **[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting) ·
@@ -31,13 +31,13 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
                        └──────────────┬──────────────┘
                                       │ Cloudflare Tunnel (outbound only, no open ports)
 ┌─ Home LAN 192.168.40.0/24 ──────────┼────────────────────────────────────────────────────────┐
-│ ┌─ k3s v1.37.2  (3 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
+│ ┌─ k3s v1.37.2  (4 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
 │ │                                   ▼                   ┌─ ns monitoring ────────────────┐ │ │
 │ │                    ┌─────────────────────────────┐    │ vmagent --scrape--> all pods   │ │ │
-│ │                    │ cloudflared  (pod, pi4-8gb) │    │   & node-exporter (3 nodes)    │ │ │
+│ │                    │  cloudflared (workstation)  │    │   & node-exporter (4 nodes)    │ │ │
 │ │                    └──────────────┬──────────────┘    │ VMSingle: 30d, PVC 10Gi        │ │ │
-│ │                                   │ svc traefik:80    │ Grafana: https://grafana.lan   │ │ │
-│ │                                   ▼                   │ (LAN only, not public)         │ │ │
+│ │                                   │ svc traefik:80    │ Grafana: grafana.<domain>      │ │ │
+│ │                                   ▼                   │ (Cloudflare Access login)      │ │ │
 │ │                    ┌─────────────────────────────┐    └────────────────────────────────┘ │ │
 │ │                    │       Traefik ingress       │                                       │ │
 │ │                    └──────────────┬──────────────┘                                       │ │
@@ -54,7 +54,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │                       ┌──────────────────────────┐    ┌──────────────────────────┐       │ │
 │ │                       │   PostgreSQL 17 (CNPG)   │    │ Redis 8.2 (queue/cache)  │       │ │
 │ │                       │   pg-rw.data.svc:5432    │    │   redis.data.svc:6379    │       │ │
-│ │                       │    PVC 10Gi, pi4-8gb     │    │  PVC 2Gi, AOF, pi4-8gb   │       │ │
+│ │                       │  10Gi SSD, workstation   │    │ 2Gi SSD AOF, workstation │       │ │
 │ │                       └──────────────────────────┘    └──────────────────────────┘       │ │
 │ │                         ▲           ▲                               ▲                    │ │
 │ │                         │           │                               │ consume            │ │
@@ -71,23 +71,35 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 
 <!-- diagram:nodes:start -->
 ```text
-┌─ pi4-8gb  .250 ────────────────┐  ┌─ pi4-4gb  .251 ────────────┐  ┌─ pi3  .252 ──────────────┐
-│ Pi 4B, 8 GB RAM, SD 32 GB      │  │ Pi 4B, 4 GB RAM, SD 64 GB  │  │ Pi 3B+, 1 GB, SD 32 GB   │
-│ k3s server (control plane)     │  │ k3s agent                  │  │ k3s agent                │
-│ label role=data                │  │ label role=apps            │  │ label role=light         │
-│                                │  │                            │  │ taint role=light:NoSched │
-│ * traefik, coredns             │  │ * cnpg operator            │  │                          │
-│ * metrics-server, local-path   │  │ * grafana, vm-operator     │  │ * node-exporter          │
-│ * postgres pg-1                │  │ * node-exporter            │  │ * ufw firewall           │
-│ * redis-0                      │  │ * app pods (k8s spreads)   │  │ - light pods only        │
-│ * cloudflared (tunnel)         │  │ - KEDA autoscale (planned) │  │ ! under-voltage on load  │
-│ * vmsingle, vmagent, ksm       │  │ - batch CronJobs (planned) │  │                          │
-│ * node-exporter                │  │                            │  │                          │
-│ * app pods (k8s spreads)       │  │                            │  │                          │
-│ - SSD for PG/Redis (todo)      │  │                            │  │                          │
-└────────────────────────────────┘  └────────────────────────────┘  └──────────────────────────┘
+┌─ node-workstation  .249 ────────────────────┐  ┌─ node-8gb  .250 ────────────────────────────┐
+│ CF-SV9, 8 CPU, 16 GB, NVMe SSD              │  │ Pi 4B, 8 GB RAM, SD 64 GB                   │
+│ Ubuntu 24.04 LTS, Wi-Fi (static IP)         │  │ Debian 13, Ethernet                         │
+│ k3s SERVER (control plane)                  │  │ k3s agent                                   │
+│ label role=data                             │  │ label role=apps                             │
+│                                             │  │                                             │
+│ * postgres pg-1, redis-0 (SSD)              │  │ * traefik ingress, svclb                    │
+│ * vmsingle, vmagent (metrics)               │  │ * grafana                                   │
+│ * cloudflared (tunnel), coredns             │  │ * flux source + kustomize controllers       │
+│ * cnpg operator, local-path, svclb          │  │ * app pods (k8s spreads)                    │
+│ * app pods (k8s spreads)                    │  │ - USB SSD + control plane (todo)            │
+│ * also the admin desktop (Ansible)          │  │                                             │
+│ ! single point of failure (HA: todo)        │  │                                             │
+│                                             │  │                                             │
+└─────────────────────────────────────────────┘  └─────────────────────────────────────────────┘
+┌─ node-4gb  .251 ────────────────────────────┐  ┌─ node-1gb  .252 ────────────────────────────┐
+│ Pi 4B, 4 GB RAM, SD 32 GB                   │  │ Pi 3B+, 1 GB RAM, SD 32 GB                  │
+│ Debian 13, Ethernet                         │  │ Debian 13, Ethernet, ufw                    │
+│ k3s agent                                   │  │ k3s agent                                   │
+│ label role=apps                             │  │ label role=light                            │
+│                                             │  │ taint role=light:NoSchedule                 │
+│ * ticketlite api / web / worker             │  │                                             │
+│ * vm-operator, kube-state-metrics           │  │ * node-exporter only                        │
+│ * app pods (k8s spreads)                    │  │ ! under-voltage on load                     │
+│ - USB SSD + control plane (todo)            │  │ - later: outside uptime probe               │
+│                                             │  │                                             │
+└─────────────────────────────────────────────┘  └─────────────────────────────────────────────┘
 
-  * running    - planned / todo
+  * running    - planned / todo    ! risk
 ```
 <!-- diagram:nodes:end -->
 
@@ -95,24 +107,24 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 
 | Component | Namespace | Runs on | Address (in-cluster) | Status |
 |---|---|---|---|---|
-| k3s v1.37.2 server | - | pi4-8gb | `https://192.168.40.250:6443` | running |
-| k3s agent | - | pi4-4gb, pi3 (tainted `role=light`) | - | running |
-| Traefik ingress | kube-system | pi4-8gb | `:80` on node IPs (ServiceLB) | running |
-| cloudflared tunnel 2026.10.7 | infra | pi4-8gb (`role=data`), 1 replica | -> `traefik.kube-system.svc:80` | running |
+| k3s v1.37.2 server | - | node-workstation | `https://192.168.40.249:6443` | running |
+| k3s agent | - | node-8gb, node-4gb, node-1gb (tainted `role=light`) | - | running |
+| Traefik ingress | kube-system | node-8gb | `:80` on node IPs (ServiceLB) | running |
+| cloudflared tunnel 2026.10.7 | infra | node-workstation (`role=data`), 1 replica | -> `traefik.kube-system.svc:80` | running |
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
-| PostgreSQL 17 (`pg`) | data | pi4-8gb (`role=data`) | `pg-rw.data.svc:5432` | running, SD card |
-| Redis 8.2 | data | pi4-8gb (`role=data`) | `redis.data.svc:6379` | running, SD card |
-| TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | Pi 4s (spread) | `https://ticketlite.hien0ethan.com` | running |
-| Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | Pi 4 | `https://hien0ethan.com`; unknown subdomains 301 here | running |
-| Notes (Astro, migrated from hienmv.github.io) | apps | Pi 4 | `https://notes.hien0ethan.com` | running |
-| TicketLite worker x2 | apps | Pi 4s (spread) | Redis stream `orders`, group `workers` | running |
+| PostgreSQL 17 (`pg`) | data | node-workstation (`role=data`) | `pg-rw.data.svc:5432` | running, NVMe SSD |
+| Redis 8.2 | data | node-workstation (`role=data`) | `redis.data.svc:6379` | running, NVMe SSD |
+| TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | spread (any node except node-1gb) | `https://ticketlite.hien0ethan.com` | running |
+| Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | any node | `https://hien0ethan.com`; unknown subdomains 301 here | running |
+| Notes (Astro, migrated from hienmv.github.io) | apps | any node | `https://notes.hien0ethan.com` | running |
+| TicketLite worker x2 | apps | spread | Redis stream `orders`, group `workers` | running |
 | KEDA worker autoscaling | apps | - | - | planned |
-| Batch CronJobs | apps | pi4-4gb | - | planned |
-| VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | pi4-8gb | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
-| Grafana (built-in + TicketLite dashboards) | monitoring | pi4-4gb | `https://grafana.hien0ethan.com` (public, login), `https://grafana.lan` (LAN, mkcert CA) | running |
+| Batch CronJobs | apps | node-4gb | - | planned |
+| VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | node-workstation | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
+| Grafana (built-in + TicketLite dashboards) | monitoring | node-8gb | `https://grafana.hien0ethan.com` (public, login), `https://grafana.lan` (LAN, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
-| Flux v2.10 (GitOps) | flux-system | Pi 4s | pulls this repo every 1m (read-only deploy key) | running |
-| Backups (PG, Redis, k3s DB) | - | - | - | todo |
+| Flux v2.10 (GitOps) | flux-system | any node | pulls this repo every 1m (read-only deploy key) | running |
+| Backups (Secrets + PG, age-encrypted) | - | node-workstation + Mac copy | `ansible/playbooks/backup.yml` | by hand; scheduled: todo |
 
 App config: secret `apps/app-env` provides `DATABASE_URL`, `REDIS_URL`, `REDIS_PASSWORD`.
 
@@ -124,11 +136,15 @@ Grafana access and browser troubleshooting: [K3S-GUIDE.md → Observability](K3S
 
 ## Nodes
 
-| Node | IP (static) | Hardware | Role |
-|---|---|---|---|
-| pi4-8gb | 192.168.40.250 | Pi 4B, 8 GB, SD 32 GB | k3s server, data |
-| pi4-4gb | 192.168.40.251 | Pi 4B, 4 GB, SD 64 GB | k3s agent, apps |
-| pi3 | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | k3s agent, light pods only (taint); weak PSU |
+| Node (= hostname = k8s node) | IP (static) | Hardware | OS | Role |
+|---|---|---|---|---|
+| node-workstation | 192.168.40.249 (Wi-Fi) | Panasonic CF-SV9, 8 CPU, 16 GB, NVMe SSD | Ubuntu 24.04 LTS | k3s server, `role=data`, admin workstation |
+| node-8gb | 192.168.40.250 | Pi 4B, 8 GB, SD 64 GB | Debian 13 | k3s agent, `role=apps` |
+| node-4gb | 192.168.40.251 | Pi 4B, 4 GB, SD 32 GB | Debian 13 | k3s agent, `role=apps` |
+| node-1gb | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | Debian 13 | k3s agent, `role=light` (taint); weak PSU |
+
+All addresses and per-node settings live in [ansible/inventory.yml](ansible/inventory.yml).
+Names before 2026-11-12: `sv9`, `pi4-8gb` (`hien-pi-4b`), `pi4-4gb` (`hien-pi-4b-4gb`), `pi3` (`hien-pi-3b`).
 
 ## Operations
 
@@ -136,54 +152,50 @@ How changes reach the cluster.
 
 <!-- diagram:ops:start -->
 ```text
-┌─ Mac (admin workstation) ──────────┐                  ┌─ GitHub ─────────────────────────┐
+┌─ node-workstation (admin) ─────────┐                  ┌─ GitHub ─────────────────────────┐
 │ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab (private)  │
-│ kubectl, helm, k9s, flux (docker)  ├─────────────────►│ Actions: images -> GHCR (arm64)  │
-│ kubeconfig ~/.kube/homelab.yaml    │                  │   then bump tag in k8s/ (commit) │
-│ mkcert CA: signs grafana.lan       │                  └─────────────────┬────────────────┘
-│ /etc/hosts: Pis + grafana.lan      │               pull every 1m (SSH)  │
-│ ssh key id_homelab -> Pis          │              read-only deploy key  │
-│ browser -> https://grafana.lan     │                                    │
+│ Ansible: inventory = all IPs       ├─────────────────►│ Actions: amd64+arm64 -> GHCR     │
+│ kubectl helm k9s flux sops age     │                  │   then bump tag in k8s/ (commit) │
+│ kubeconfig ~/.kube/homelab.yaml    │                  └─────────────────┬────────────────┘
+│ ssh id_homelab -> Pis (passphr.)   │               pull every 1m (SSH)  │
+│ age key: backups (+ SOPS later)    │              read-only deploy key  │
+│ Mac / laptop: ssh in, nothing else │                                    │
 └───────┬─────────────────┬──────────┘                                    │
-        │ admin           │ OS, k3s                                       │
+        │ kubectl         │ Ansible                                       │
         │                 │                                               ▼
         ▼                 ▼                             ┌─ k3s: ns flux-system ────────────┐
-  k3s API            Pis .250-.252                      │ source, kustomize, helm ctrls    │
-  pi4-8gb .250       (hien@, sudo)                      │ apply clusters/homelab ->        │
+  k3s API :6443      Pis .250-.252                      │ source, kustomize, helm ctrls    │
+  itself (.249)      (hien@, sudo)                      │ apply clusters/homelab ->        │
                                                         │ k8s/* in dependency order        │
                                                         │ (secrets stay out of git)        │
                                                         └──────────────────────────────────┘
 ```
 <!-- diagram:ops:end -->
 
-### Admin workstation (Mac)
+### Admin workstation (node-workstation)
 
-The Mac is part of the system, not just a laptop:
+node-workstation (CF-SV9, always on at home) is the admin box **and** the k3s server + data node.
+The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_sv9`).
 
-| Role | What lives there | If the Mac is lost |
+| Role | What lives there | If it is lost |
 |---|---|---|
-| Git source | this repo; `git push` = deploy (Flux) | clone again from GitHub |
-| Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux (docker) | re-copy `/etc/rancher/k3s/k3s.yaml` from pi4-8gb |
-| Pi access | SSH key `~/.ssh/id_homelab`, ssh config, `/etc/hosts` names | **locked out** unless key is backed up |
-| Private CA | mkcert CA key (signs `grafana.lan` cert, expires 2029-02-08) | new CA + new cert; old cert keeps working until expiry |
-| LAN browser | trusts mkcert CA; Chrome needs Local Network permission | - |
+| Git source | this repo; `git push` = deploy (Flux); deploy key `sv9-admin` (this repo only) | clone again from GitHub |
+| Automation | `ansible/` playbooks; inventory = every IP and node setting | re-run them from any machine with the keys |
+| Cluster admin | `~/.kube/homelab.yaml`, kubectl, helm, k9s, flux | written again by `k3s.yml` |
+| Pi access | `~/.ssh/id_homelab` (passphrase, ssh-agent 8 h) | add a new key on each Pi by hand (console) |
+| Backups | `~/homelab-backup/*.tar.gz.age` (copy on the Mac: `~/homelab-backups/`), age key `~/.config/sops/age/keys.txt` | **age key is also in the password manager**; without it no backup decrypts |
+| Private CA (Mac) | mkcert CA on the Mac signs `grafana.lan` (expires 2029-02-08) | new CA + cert; the public Grafana URL does not need it |
 
-Back up `~/.ssh/id_homelab` and the kubeconfig in a password manager. Never copy the mkcert CA
-key to an always-on server: it can mint certificates this Mac trusts for any site.
+Rebuild from scratch: [K3S-GUIDE.md → 10.4 runbook](K3S-GUIDE.md). Health check:
+`ansible-playbook playbooks/verify.yml` ([docs/testing.md](docs/testing.md)).
 
-With Flux, routine changes need only `git push` from any machine. The Mac is the
-**break-glass** box: debugging, secrets, OS-level work on the Pis. Production setups use a
-bastion host reached over VPN/SSO with audit logs; the homelab equivalent would be Tailscale
-or Cloudflare Access for SSH (not set up).
-
-**Decision (2026-11-08): no dedicated admin server.** Admin tasks (git, kubectl, ssh) need almost
-no resources; the only heavy job is building arm64 app images, which an Apple Silicon Mac does
-natively. A separate always-on admin box would add patching work and concentrate every key in one
-target, while Flux already lets any machine deploy via `git push`. Scheduled ops (backups, cert
-renewal) run in-cluster as CronJobs. Revisit if: several admins need audited access (bastion), or
-remote admin is needed while the Mac is off (first try Tailscale). If added: small spec is fine,
-keep it outside the cluster, not pi3. Hardware priority instead: SSD for pi4-8gb, pi3 PSU,
-then a backup target (NAS/mini PC).
+**Decision (2026-11-10, replaces 2026-11-08 "no admin box in the cluster"):** the CF-SV9 is admin
+workstation, k3s server and data node in one. Why: data and control plane leave the SD cards, and the
+battery acts as a UPS. Cost: one machine holds every key and the whole control plane (single point of
+failure, and a browser on the same box), mitigated by a sudo password, passphrase keys, keys-only
+SSH, AppArmor left stock. **Ubuntu 24.04 LTS, not 26.04:** 26.04's AppArmor default breaks every
+container on k3s today (K3S-GUIDE 10.3). Next steps toward HA: USB SSDs for the Pi 4s, 3 control-plane
+nodes, a Postgres replica (roadmap in K3S-GUIDE).
 
 ## Usage (GitOps)
 
@@ -192,16 +204,18 @@ then a backup target (NAS/mini PC).
 3. Flux applies it within ~1 minute, in order:
    `namespaces → releases → data → apps`, `namespaces → infra`, `releases → monitoring`.
 
+On node-workstation (`ssh node-workstation`; KUBECONFIG is set in `~/.bashrc`, flux CLI installed by
+`workstation-prepare.yml`):
+
 ```bash
-export KUBECONFIG=~/.kube/homelab.yaml   # put this in ~/.zshrc, or every kubectl needs it
-alias flux='docker run --rm -i --network host -v ~/.kube:/kube:ro -e KUBECONFIG=/kube/homelab.yaml ghcr.io/fluxcd/flux-cli:v2.10.0'
 flux get kustomizations          # sync status
 flux get helmreleases -A
 flux reconcile source git flux-system   # pull now instead of waiting
 ```
 
 - Layout: `clusters/homelab/` (Flux entry), `k8s/<folder>/` (what gets applied)
-- Secrets are **not** in git; created once with `kubectl create secret` (list in [K3S-GUIDE.md → Secrets](K3S-GUIDE.md#secrets-kept-out-of-git-create-once-per-cluster)).
+- Secrets are **not** in git; created once with `kubectl create secret` (list in [K3S-GUIDE.md → Secrets](K3S-GUIDE.md#secrets-kept-out-of-git-create-once-per-cluster)),
+  exported encrypted by `ansible/playbooks/backup.yml`, re-created by `restore.yml`.
   `namespaces` and `data` have `prune: false`: deleting their files never deletes the database.
 
 ## Updating the diagrams

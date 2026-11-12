@@ -75,10 +75,10 @@ def draw_flow():
 
     # LAN frame + k3s frame
     c.box(0, 10, 96, 34, title="Home LAN 192.168.40.0/24")
-    c.box(2, 11, 92, 32, title="k3s v1.37.2  (3 nodes)")
+    c.box(2, 11, 92, 32, title="k3s v1.37.2  (4 nodes)")
     c.vline(cx, 10, 11)
     c.put(cx, 12, "▼")
-    c.box(23, 13, 31, 3, lines=["cloudflared  (pod, pi4-8gb)"], center=True)
+    c.box(23, 13, 31, 3, lines=["cloudflared (workstation)"], center=True)
     c.put(cx, 15, "┬")
     c.vline(cx, 16, 16)
     c.put(cx + 2, 16, "svc traefik:80")
@@ -88,13 +88,13 @@ def draw_flow():
     c.vline(cx, 21, 21)
     c.put(cx + 2, 21, "Host rules")
 
-    # monitoring (LAN only: Host grafana.lan, never routed by the tunnel)
+    # monitoring: Grafana public behind Cloudflare Access (+ grafana.lan on the LAN)
     c.box(58, 12, 34, 7, title="ns monitoring", lines=[
         "vmagent --scrape--> all pods",
-        "  & node-exporter (3 nodes)",
+        "  & node-exporter (4 nodes)",
         "VMSingle: 30d, PVC 10Gi",
-        "Grafana: https://grafana.lan",
-        "(LAN only, not public)",
+        "Grafana: grafana.<domain>",
+        "(Cloudflare Access login)",
     ])
 
     c.hline(22, 14, 62)
@@ -117,8 +117,8 @@ def draw_flow():
     c.put(72, 29, "gate + XADD")
     c.put(70, 30, "▼")
 
-    c.box(26, 31, 28, 5, lines=["PostgreSQL 17 (CNPG)", "pg-rw.data.svc:5432", "PVC 10Gi, pi4-8gb"], center=True)
-    c.box(58, 31, 28, 5, lines=["Redis 8.2 (queue/cache)", "redis.data.svc:6379", "PVC 2Gi, AOF, pi4-8gb"], center=True)
+    c.box(26, 31, 28, 5, lines=["PostgreSQL 17 (CNPG)", "pg-rw.data.svc:5432", "10Gi SSD, workstation"], center=True)
+    c.box(58, 31, 28, 5, lines=["Redis 8.2 (queue/cache)", "redis.data.svc:6379", "2Gi SSD AOF, workstation"], center=True)
 
     # cron -> postgres
     c.box(4, 38, 27, 4, lines=["batch CronJob (planned)", "nightly / one-off Jobs"], center=True, dashed=True)
@@ -143,63 +143,73 @@ def draw_flow():
 
 def draw_nodes():
     """Physical placement per node."""
-    c = Canvas(96, 15)
-    c.box(0, 0, 34, 15, title="pi4-8gb  .250", lines=[
-        "Pi 4B, 8 GB RAM, SD 32 GB",
-        "k3s server (control plane)",
+    c = Canvas(96, 27)
+    c.box(0, 0, 47, 15, title="node-workstation  .249", lines=[
+        "CF-SV9, 8 CPU, 16 GB, NVMe SSD",
+        "Ubuntu 24.04 LTS, Wi-Fi (static IP)",
+        "k3s SERVER (control plane)",
         "label role=data",
         "",
-        "* traefik, coredns",
-        "* metrics-server, local-path",
-        "* postgres pg-1",
-        "* redis-0",
-        "* cloudflared (tunnel)",
-        "* vmsingle, vmagent, ksm",
-        "* node-exporter",
+        "* postgres pg-1, redis-0 (SSD)",
+        "* vmsingle, vmagent (metrics)",
+        "* cloudflared (tunnel), coredns",
+        "* cnpg operator, local-path, svclb",
         "* app pods (k8s spreads)",
-        "- SSD for PG/Redis (todo)",
+        "* also the admin desktop (Ansible)",
+        "! single point of failure (HA: todo)",
     ])
-    c.box(36, 0, 30, 15, title="pi4-4gb  .251", lines=[
-        "Pi 4B, 4 GB RAM, SD 64 GB",
+    c.box(49, 0, 47, 15, title="node-8gb  .250", lines=[
+        "Pi 4B, 8 GB RAM, SD 64 GB",
+        "Debian 13, Ethernet",
         "k3s agent",
         "label role=apps",
         "",
-        "* cnpg operator",
-        "* grafana, vm-operator",
-        "* node-exporter",
+        "* traefik ingress, svclb",
+        "* grafana",
+        "* flux source + kustomize controllers",
         "* app pods (k8s spreads)",
-        "- KEDA autoscale (planned)",
-        "- batch CronJobs (planned)",
+        "- USB SSD + control plane (todo)",
     ])
-    c.box(68, 0, 28, 15, title="pi3  .252", lines=[
-        "Pi 3B+, 1 GB, SD 32 GB",
+    c.box(0, 15, 47, 12, title="node-4gb  .251", lines=[
+        "Pi 4B, 4 GB RAM, SD 32 GB",
+        "Debian 13, Ethernet",
+        "k3s agent",
+        "label role=apps",
+        "",
+        "* ticketlite api / web / worker",
+        "* vm-operator, kube-state-metrics",
+        "* app pods (k8s spreads)",
+        "- USB SSD + control plane (todo)",
+    ])
+    c.box(49, 15, 47, 12, title="node-1gb  .252", lines=[
+        "Pi 3B+, 1 GB RAM, SD 32 GB",
+        "Debian 13, Ethernet, ufw",
         "k3s agent",
         "label role=light",
-        "taint role=light:NoSched",
+        "taint role=light:NoSchedule",
         "",
-        "* node-exporter",
-        "* ufw firewall",
-        "- light pods only",
+        "* node-exporter only",
         "! under-voltage on load",
+        "- later: outside uptime probe",
     ])
-    return c.render() + "\n\n  * running    - planned / todo"
+    return c.render() + "\n\n  * running    - planned / todo    ! risk"
 
 
 def draw_ops():
-    """How changes reach the cluster: admin Mac -> GitHub -> Flux."""
+    """How changes reach the cluster: admin workstation -> GitHub -> Flux."""
     c = Canvas(96, 17)
-    c.box(0, 0, 38, 9, title="Mac (admin workstation)", lines=[
+    c.box(0, 0, 38, 9, title="node-workstation (admin)", lines=[
         "repo ~/workspace/source/homelab",
-        "kubectl, helm, k9s, flux (docker)",
+        "Ansible: inventory = all IPs",
+        "kubectl helm k9s flux sops age",
         "kubeconfig ~/.kube/homelab.yaml",
-        "mkcert CA: signs grafana.lan",
-        "/etc/hosts: Pis + grafana.lan",
-        "ssh key id_homelab -> Pis",
-        "browser -> https://grafana.lan",
+        "ssh id_homelab -> Pis (passphr.)",
+        "age key: backups (+ SOPS later)",
+        "Mac / laptop: ssh in, nothing else",
     ])
     c.box(56, 0, 36, 5, title="GitHub", lines=[
         "hienmv/anotherhomelab (private)",
-        "Actions: images -> GHCR (arm64)",
+        "Actions: amd64+arm64 -> GHCR",
         "  then bump tag in k8s/ (commit)",
     ])
     # git push
@@ -219,15 +229,15 @@ def draw_ops():
         "k8s/* in dependency order",
         "(secrets stay out of git)",
     ])
-    # mac -> cluster / pis
-    for x, label in ((8, "kubectl :6443"), (26, "ssh (setup)")):
+    # workstation -> cluster / pis
+    for x in (8, 26):
         c.put(x, 8, "┬")
         c.vline(x, 9, 10)
         c.put(x, 11, "▼")
-    c.put(10, 9, "admin")
-    c.put(28, 9, "OS, k3s")
-    c.put(2, 12, "k3s API")
-    c.put(2, 13, "pi4-8gb .250")
+    c.put(10, 9, "kubectl")
+    c.put(28, 9, "Ansible")
+    c.put(2, 12, "k3s API :6443")
+    c.put(2, 13, "itself (.249)")
     c.put(21, 12, "Pis .250-.252")
     c.put(21, 13, "(hien@, sudo)")
     return c.render()
