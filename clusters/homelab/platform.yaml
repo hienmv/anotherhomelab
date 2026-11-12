@@ -4,6 +4,9 @@
 #               │                                    └─> monitoring (scrapes, grafana https)
 #               └─> infra (cloudflared)
 #
+# postBuild: every Kustomization gets ${DOMAIN}, ${IMAGE_REGISTRY}, ... from the ConfigMap
+# site-settings (clusters/homelab/site-settings.yaml). Escape a literal ${x} as $${x}.
+#
 # prune: false on namespaces and data: deleting a file from git must never delete a
 # namespace or the Postgres database. Remove those by hand if really intended.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -16,6 +19,8 @@ spec:
   path: ./k8s/namespaces
   prune: false
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -31,6 +36,8 @@ spec:
   wait: true
   timeout: 15m
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -44,6 +51,8 @@ spec:
   path: ./k8s/infra
   prune: true
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -57,6 +66,8 @@ spec:
   path: ./k8s/data
   prune: false
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -70,6 +81,8 @@ spec:
   path: ./k8s/apps
   prune: true
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -83,3 +96,5 @@ spec:
   path: ./k8s/monitoring
   prune: true
   sourceRef: { kind: GitRepository, name: flux-system }
+  postBuild:
+    substituteFrom: [{ kind: ConfigMap, name: site-settings }]
