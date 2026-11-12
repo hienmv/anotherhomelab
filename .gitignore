@@ -41,3 +41,6 @@ dist/
 
 # public CA certificate for grafana.lan (no private key; see K3S-GUIDE section 7)
 !ansible/files/grafana-lan-ca.pem
+
+# Ansible run logs (ansible.cfg log_path)
+ansible/logs/

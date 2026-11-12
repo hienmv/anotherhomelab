@@ -11,7 +11,12 @@ cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/verify.ym
 ```
 
 **When to run `verify.yml`**: after every rebuild, migration, k3s or OS upgrade, node change, and
-whenever something looks wrong. It must end with `failed=0` on every host.
+whenever something looks wrong. It must end with `<host>: all checks passed` for every host.
+
+**How it reports**: every check runs, even after another one failed; each failing check adds a
+one-line reason, and each host fails once at the end with all of them, e.g.
+`2 problem(s) on node-workstation: pod: apps/landing-… Pending | config: unreplaced 1 ${DOMAIN}`.
+Every Ansible run is also logged to `ansible/logs/ansible.log` (git-ignored).
 
 ## 1. Development (application code)
 
@@ -50,8 +55,9 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Nodes Ready, names = inventory | cluster membership | `verify.yml --tags cluster` | always | ✅ |
 | Flux + Helm releases Ready | git state is applied | `verify.yml --tags cluster` | always | ✅ |
-| No stuck or crash-looping pods | every pod Running/Succeeded | `verify.yml --tags cluster` | always | ✅ |
-| **Container canary** | a Postgres pod starts, checkpoints and reloads (signals work) on **every schedulable node** | `verify.yml --tags containers` (pods created and deleted) | **before moving data to a new or changed node**, after OS/k3s upgrades | ✅ |
+| No stuck or crash-looping pods | every pod Running/Succeeded (pods being deleted are ignored) | `verify.yml --tags cluster` | always | ✅ |
+| Site variables filled in | no raw `${KEY}` of `site-settings` in any live Deployment, Ingress, ConfigMap, Middleware, … | `verify.yml --tags cluster` | always, and after every change to `k8s/` or `site-settings` | ✅ |
+| **Container canary** | a Postgres pod starts, checkpoints and reloads (signals work) on **every schedulable node**; waits for old canary pods first, allows 6 min (nodes may still pull images after a deploy) | `verify.yml --tags containers` (pods created and deleted) | **before moving data to a new or changed node**, after OS/k3s upgrades | ✅ |
 | No container AppArmor denials | the Ubuntu 26.04 class of bug (K3S-GUIDE 10.3) is absent | `verify.yml --tags nodes` (`journalctl -k -b`) | always | ✅ |
 | Failover | the cluster survives losing one node | stop a node, watch workloads move | after HA (roadmap stage 2) | ❌ |
 
