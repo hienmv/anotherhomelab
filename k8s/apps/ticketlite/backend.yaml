@@ -29,7 +29,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: api
-          image: ghcr.io/hienmv/ticketlite-backend
+          image: ticketlite-backend   # registry + tag: images in kustomization.yaml
           env:
             - { name: ROLE, value: api }
             - { name: COOKIE_SECURE, value: "true" }
@@ -88,7 +88,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: worker
-          image: ghcr.io/hienmv/ticketlite-backend
+          image: ticketlite-backend   # registry + tag: images in kustomization.yaml
           env:
             - { name: ROLE, value: worker }
           envFrom:

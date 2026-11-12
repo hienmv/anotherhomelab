@@ -1,4 +1,4 @@
-# Landing page (apps/landing, Astro on nginx): https://hien0ethan.com. Proxies /featured.json
+# Landing page (apps/landing, Astro on nginx): https://${DOMAIN}. Proxies /featured.json
 # from the notes Service in-cluster (NOTES_UPSTREAM default in the image).
 apiVersion: apps/v1
 kind: Deployment
@@ -21,7 +21,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: landing
-          image: ghcr.io/hienmv/landing
+          image: landing   # registry + tag: images in kustomization.yaml
           ports: [{ name: http, containerPort: 8080 }]
           readinessProbe:
             httpGet: { path: /, port: http }

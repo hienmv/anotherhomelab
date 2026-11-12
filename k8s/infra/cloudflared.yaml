@@ -1,7 +1,7 @@
 # Cloudflare Tunnel connector in k3s, pinned to the role=data node (node-workstation).
 # Single replica: that node also runs Postgres/Redis, so a second replica elsewhere
 # would not keep the data-backed sites up if it fails (revisit with HA).
-# Tunnel: test-cloudflared-tunnel (ab958f58-ce09-42de-a826-bd8a8779bdbd)
+# Tunnel: test-cloudflared-tunnel (${CLOUDFLARE_TUNNEL_ID})
 # DNS (Cloudflare dashboard): CNAME @ and * -> <tunnel-id>.cfargotunnel.com, proxied.
 #
 # Credentials secret is created out-of-band (never commit it):
@@ -13,14 +13,14 @@ metadata:
   namespace: infra
 data:
   config.yaml: |
-    tunnel: ab958f58-ce09-42de-a826-bd8a8779bdbd
+    tunnel: ${CLOUDFLARE_TUNNEL_ID}
     credentials-file: /etc/cloudflared/creds/credentials.json
     metrics: 0.0.0.0:2000
     no-autoupdate: true
     ingress:
-      - hostname: hien0ethan.com
+      - hostname: ${DOMAIN}
         service: http://traefik.kube-system.svc.cluster.local:80
-      - hostname: "*.hien0ethan.com"
+      - hostname: "*.${DOMAIN}"
         service: http://traefik.kube-system.svc.cluster.local:80
       - service: http_status:404
 ---

@@ -1,6 +1,6 @@
 # TicketLite frontend (React static files on nginx) + public Ingress.
-# Only on https://ticketlite.hien0ethan.com (one subdomain level: Cloudflare's free certificate
-# covers *.hien0ethan.com, not deeper names like ticketlite.homelab.hien0ethan.com).
+# Only on https://ticketlite.${DOMAIN} (one subdomain level: Cloudflare's free certificate
+# covers *.${DOMAIN}, not deeper names like ticketlite.homelab.${DOMAIN}).
 # /api -> api Service, everything else -> web. Unknown hosts redirect to the landing page.
 apiVersion: apps/v1
 kind: Deployment
@@ -23,7 +23,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: web
-          image: ghcr.io/hienmv/ticketlite-web
+          image: ticketlite-web   # registry + tag: images in kustomization.yaml
           env:
             - { name: API_UPSTREAM, value: "http://ticketlite-api.apps.svc.cluster.local" }
           ports: [{ name: http, containerPort: 8080 }]
@@ -54,7 +54,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: ticketlite.hien0ethan.com
+    - host: ticketlite.${DOMAIN}
       http:
         paths:
           - path: /api

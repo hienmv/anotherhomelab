@@ -1,4 +1,4 @@
-# https://hien0ethan.com -> landing. Plus the fallback for every hostname without its own Ingress
+# https://${DOMAIN} -> landing. Plus the fallback for every hostname without its own Ingress
 # rule (typos, retired names like tickets., direct IP access): 301 to the landing page, path kept.
 # Host-less rules have the lowest priority in Traefik, so real hosts are never affected.
 apiVersion: networking.k8s.io/v1
@@ -9,7 +9,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: hien0ethan.com
+    - host: ${DOMAIN}
       http:
         paths:
           - path: /
@@ -24,7 +24,7 @@ metadata:
 spec:
   redirectRegex:
     regex: ^https?://[^/]+(.*)
-    replacement: https://hien0ethan.com${1}
+    replacement: https://${DOMAIN}$${1}   # $${1}: regex group, escaped for Flux substitution
     permanent: true
 ---
 apiVersion: networking.k8s.io/v1

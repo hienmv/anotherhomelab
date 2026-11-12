@@ -1,4 +1,4 @@
-# Notes app (apps/notes, Astro static build on nginx): https://notes.hien0ethan.com
+# Notes app (apps/notes, Astro static build on nginx): https://notes.${DOMAIN}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +20,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: notes
-          image: ghcr.io/hienmv/notes
+          image: notes   # registry + tag: images in kustomization.yaml
           ports: [{ name: http, containerPort: 8080 }]
           readinessProbe:
             httpGet: { path: /, port: http }

@@ -62,7 +62,7 @@ grafana:
     annotations:
       # http -> https (Middleware in k8s/monitoring/grafana-https.yaml)
       traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
-    # LAN only (TLS from the Mac's mkcert CA). The public host grafana.hien0ethan.com has its own
+    # LAN only (TLS from the Mac's mkcert CA). The public host grafana.${DOMAIN} has its own
     # Ingress without the redirect middleware: k8s/monitoring/grafana-public.yaml
     hosts: [grafana.lan]
     path: /
@@ -72,7 +72,7 @@ grafana:
         hosts: [grafana.lan]
   grafana.ini:
     server:
-      root_url: https://grafana.hien0ethan.com
+      root_url: https://grafana.${DOMAIN}
     security:
       cookie_secure: true            # both hosts are HTTPS-only
       cookie_samesite: lax
