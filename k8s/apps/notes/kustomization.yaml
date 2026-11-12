@@ -6,4 +6,4 @@ resources:
 # Image tag is bumped by CI (.github/workflows/notes.yml) after each build on main.
 images:
   - name: ghcr.io/hienmv/notes
-    newTag: sha-b363e34
+    newTag: sha-3b75503
