@@ -1,0 +1,83 @@
+# Validate configuration and manifests before they reach the cluster (step H of config-not-code).
+#   - site-settings.yaml: schema, consistency, matches this repository (scripts/validate-config.py)
+#   - every k8s/ folder renders like Flux, strict substitution (scripts/render-k8s.py)
+#   - rendered manifests are valid Kubernetes (kubeconform; CRDs from the datree catalog)
+#   - every Ansible playbook parses (syntax check)
+# A failure here blocks a PR; on main it marks the commit red (Flux would hit the same error).
+name: validate
+
+on:
+  pull_request:
+    paths: ["k8s/**", "clusters/**", "ansible/**", "scripts/**", ".github/workflows/validate.yml"]
+  push:
+    branches: [main]
+    paths: ["k8s/**", "clusters/**", "ansible/**", "scripts/**", ".github/workflows/validate.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLUSTER: homelab
+  FLUX_VERSION: 2.10.0          # same as the cluster (ansible/group_vars/all.yml)
+  KUBECONFORM_VERSION: v0.8.0
+
+jobs:
+  config-and-manifests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Python YAML
+        run: python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+
+      - name: Site settings (schema, consistency, this repository)
+        run: python3 scripts/validate-config.py "$CLUSTER"
+
+      - name: Install flux CLI and kubeconform (pinned, checksums verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
+          f="flux_${FLUX_VERSION}_linux_amd64.tar.gz"
+          curl -sSfLO "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/$f"
+          curl -sSfL "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_checksums.txt" | grep " $f\$" | sha256sum -c -
+          tar -xzf "$f" -C bin flux
+          k="kubeconform-linux-amd64.tar.gz"
+          curl -sSfLO "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/$k"
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS" | grep " $k\$" | sha256sum -c -
+          tar -xzf "$k" -C bin kubeconform
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Render k8s/ like Flux (strict substitution)
+        run: python3 scripts/render-k8s.py "$CLUSTER" > "$RUNNER_TEMP/rendered.yaml"
+
+      - name: Kubernetes schemas (kubeconform)
+        run: |
+          kubeconform -summary -output text \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -ignore-missing-schemas \
+            "$RUNNER_TEMP/rendered.yaml"
+
+  ansible:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible
+        run: pipx install --include-deps ansible
+
+      - name: Syntax check every playbook
+        working-directory: ansible
+        env:
+          ANSIBLE_BECOME_ASK_PASS: "false"
+          ANSIBLE_LOG_PATH: /dev/null
+        run: |
+          set -e
+          for f in playbooks/*.yml; do
+            ansible-playbook "$f" --syntax-check > /dev/null && echo "ok $f"
+          done
