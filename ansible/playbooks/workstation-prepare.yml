@@ -356,13 +356,8 @@
           pull.rebase: "true"
           rebase.autoStash: "true"
 
-- name: Authorize the workstation's key on the Pis
-  hosts: pis
-  tasks:
-    - name: workstation -> Pi SSH key
-      ansible.posix.authorized_key:
-        user: "{{ admin_user }}"
-        key: "{{ hostvars[admin_host].homelab_pubkey }}"
+# Accounts and keys ON the Pis (admin + automation user, IP restriction) are managed by
+# playbooks/access.yml; this playbook only creates the keys on the workstation.
 
 - name: GitHub deploy key for the workstation (read/write, this repo only)
   hosts: localhost

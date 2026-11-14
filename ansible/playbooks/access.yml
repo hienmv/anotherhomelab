@@ -2,7 +2,8 @@
 #   - `automation_user` (ops): what Ansible uses. Key only (no password), passwordless sudo, and its
 #     key is accepted ONLY from the workstation's IP (authorized_keys from="..."). The key has no
 #     passphrase so scheduled jobs can run unattended; it lives only on the workstation.
-#   - `admin_user` (hien): your interactive login (key id_homelab, with passphrase). Unchanged.
+#   - `admin_user` (hien): your interactive login (key id_homelab, with passphrase), also accepted
+#     ONLY from the workstation's IP. Passwordless sudo stays (decision 2026-11-14).
 #   - SSH server: keys only, no root login (Raspberry Pi OS's cloud-init file turned passwords on).
 #
 # Bootstrap (first run) connects to the Pis as admin_user; after that the inventory uses ops.
@@ -25,9 +26,15 @@
         src: "{{ automation_key }}.pub"
       register: ops_pub
 
-    - name: Remember it
+    - name: Read the admin user's public key (created by workstation-prepare.yml)
+      ansible.builtin.slurp:
+        src: "{{ admin_key | expanduser }}.pub"
+      register: admin_pub
+
+    - name: Remember them
       ansible.builtin.set_fact:
         automation_pubkey: "{{ ops_pub.content | b64decode | trim }}"
+        admin_pubkey: "{{ admin_pub.content | b64decode | trim }}"
 
 - name: Automation user and SSH hardening on the Pis (connects as the admin user)
   hosts: pis
@@ -50,6 +57,14 @@
       ansible.posix.authorized_key:
         user: "{{ automation_user }}"
         key: "{{ hostvars[admin_host].automation_pubkey }}"
+        key_options: 'from="{{ workstation_ip }}",no-agent-forwarding,no-port-forwarding,no-X11-forwarding'
+        exclusive: true
+
+    # exclusive: any other key for the admin user on the Pis is removed (only the workstation's).
+    - name: Admin user's key, accepted only from the workstation, no forwarding
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        key: "{{ hostvars[admin_host].admin_pubkey }}"
         key_options: 'from="{{ workstation_ip }}",no-agent-forwarding,no-port-forwarding,no-X11-forwarding'
         exclusive: true
 

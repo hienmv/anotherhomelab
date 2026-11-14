@@ -440,6 +440,7 @@ age key in the password manager.
 | 4 | Mac | `gh repo deploy-key delete <id> -R <GIT_REPO_SLUG>` for the old `homelab-workstation-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
 | 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
 | 6 | workstation | paste the age key into `~/.config/sops/age/keys.txt`, `chmod 600`; `age-keygen -y` shows the public key | needed to decrypt backups (and SOPS later) |
+| 6b | workstation | restore `~/.ssh/id_homelab`, `~/.ssh/id_ops` (+ `.pub`, `chmod 600`) from the password manager **before** workstation-prepare creates new ones | the Pis accept only these keys (10.5) |
 | 7 | Mac | `scp ~/homelab-backups/homelab-*.tar.gz.age node-workstation:homelab-backup/`, then decrypt-test each file | restore.yml reads them from the workstation |
 
 Then the cluster: `phase2-migrate.yml --tags teardown,k3s` (Pis leave the old cluster, new empty
@@ -453,10 +454,14 @@ sudo-rs on 26.04 (gone with 24.04).
 
 | Account | Where | Login | sudo | Used by |
 |---|---|---|---|---|
-| `admin_user` (hien) | all hosts | key `~/.ssh/id_homelab` on node-workstation (passphrase, ssh-agent 8 h); on node-workstation itself also the desktop password | Pis: passwordless (owner's choice); node-workstation: password | you, interactively |
+| `admin_user` (hien) | all hosts | key `~/.ssh/id_homelab` on node-workstation (passphrase, ssh-agent 8 h), on the Pis accepted **only from node-workstation's IP**; on node-workstation itself also the desktop password | Pis: passwordless (owner's choice); node-workstation: password | you, interactively |
 | `automation_user` (ops) | Pis | key `~/.ssh/id_ops` on node-workstation, **no passphrase**, accepted **only from node-workstation's IP** (`from="..."`, no agent/port/X11 forwarding); password locked | passwordless | Ansible (inventory `ansible_user` for the Pis) |
 
 - Set up by `ansible/playbooks/access.yml` (idempotent; its bootstrap play connects as `admin_user`).
+- **Both keys exist only on node-workstation, and the Pis accept them only from its IP.** Keep a copy
+  of `~/.ssh/id_homelab` and `~/.ssh/id_ops` (+ `.pub`) in the password manager. After a reinstall
+  (same IP), put them back before running `access.yml`; without them, only the console (keyboard +
+  monitor on each Pi) can add a new key.
 - Why no passphrase on the ops key: scheduled jobs (verify, alerts) must run unattended, and whoever
   controls node-workstation already controls the Pis through the cluster-admin kubeconfig, so a
   passphrase would add little. The IP restriction makes a leaked copy useless elsewhere.
