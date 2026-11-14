@@ -36,7 +36,10 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Image builds for both platforms | the image runs on the Pis (arm64) and node-workstation (amd64) | `build-image.yml`, `platforms: linux/amd64,linux/arm64` | every app build | ✅ CI |
 | Deploy reaches the cluster | the bumped tag is applied | Flux kustomizations Ready (`verify.yml --tags cluster`) + new pods running the tag | after every deploy | ✅ playbook |
-| Manifests valid before merge | a bad YAML never breaks Flux | `kustomize build` + `kubeconform` per `k8s/` folder in CI | every PR touching `k8s/` | ❌ planned |
+| Site settings valid | schema (format of every key), `GIT_REPO_SSH` = `GIT_REPO_SLUG`, `gotk-sync.yaml` URL = slug, `IMAGE_REGISTRY` = `ghcr.io/<repo owner>`, slug = this repo, `substituteFrom` on every Kustomization | `scripts/validate-config.py` (workflow `validate`) | every PR / push touching `k8s/`, `clusters/`, `ansible/`, `scripts/` | ✅ CI |
+| Manifests render like Flux | every `k8s/` folder builds, strict substitution (unknown `${x}` fails), `substitute: disabled` honored | `scripts/render-k8s.py` (workflow `validate`) | same | ✅ CI |
+| Manifests valid Kubernetes | kubeconform on the rendered output, CRDs from the datree catalog (36/36 valid, 0 skipped) | workflow `validate` | same | ✅ CI |
+| Playbooks parse | `ansible-playbook --syntax-check` for every playbook | workflow `validate` | same | ✅ CI |
 
 ## 3. Infrastructure (machines, OS, network)
 
@@ -104,7 +107,6 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 1. Scheduled backups to R2 + a monthly automated restore drill.
 2. `verify.yml` on a timer (systemd on node-workstation) with alerts (e.g. Telegram), plus an outside
    probe from node-1gb.
-3. Manifest validation in CI (`kustomize build` + `kubeconform`).
-4. TicketLite end-to-end and rush test in CI (docker compose job).
-5. Failover tests once the control plane is HA.
-6. Image scanning (Trivy) and automated dependency updates (Renovate).
+3. TicketLite end-to-end and rush test in CI (docker compose job).
+4. Failover tests once the control plane is HA.
+5. Image scanning (Trivy) and automated dependency updates (Renovate).
