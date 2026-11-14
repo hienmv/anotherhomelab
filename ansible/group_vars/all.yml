@@ -9,14 +9,17 @@ site: "{{ (lookup('ansible.builtin.file', site_settings_file) | from_yaml).data 
 repo_ssh_url: "{{ site.GIT_REPO_SSH }}"
 repo_slug: "{{ site.GIT_REPO_SLUG }}"
 
-# Paths on the admin workstation, all derived from the admin user (inventory) and cluster name.
+# Paths on the workstation. Everything automation needs belongs to the automation user;
+# only your personal SSH key to the Pis is in your (admin) home.
 admin_home: "/home/{{ admin_user }}"
-repo_dest: "{{ admin_home }}/workspace/source/{{ cluster_name }}"
-kubeconfig: "{{ admin_home }}/.kube/{{ cluster_name }}.yaml"
-backup_dir: "{{ admin_home }}/{{ cluster_name }}-backup"
-age_key: "{{ admin_home }}/.config/sops/age/keys.txt"
-admin_key: "~/.ssh/id_homelab"            # admin_user's key to the Pis (passphrase, ssh-agent)
-automation_key: "~/.ssh/id_ops"            # automation_user's key (no passphrase, IP-restricted)
+automation_home: "/home/{{ automation_user }}"
+repo_dest: "{{ automation_home }}/workspace/source/{{ cluster_name }}"
+kubeconfig: "{{ automation_home }}/.kube/{{ cluster_name }}.yaml"
+backup_dir: "{{ automation_home }}/{{ cluster_name }}-backup"
+age_key: "{{ automation_home }}/.config/sops/age/keys.txt"
+admin_key: "{{ admin_home }}/.ssh/id_homelab"            # you -> Pis (passphrase, ssh-agent)
+automation_key: "{{ automation_home }}/.ssh/id_ops"       # ops -> Pis (no passphrase, IP-restricted)
+github_key: "{{ automation_home }}/.ssh/id_github"        # ops -> GitHub (deploy key, passphrase)
 
 admin_host: "{{ groups['workstation'] | first }}"   # admin workstation (kubectl, backups, keys)
 

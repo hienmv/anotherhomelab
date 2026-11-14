@@ -6,7 +6,7 @@ Status: ✅ automated (CI or a playbook), 🟡 by hand (documented command), ❌
 Quick health check of the running system (read-only, no sudo, about 2 min):
 
 ```bash
-cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/verify.yml
+cd ansible && ansible-playbook playbooks/verify.yml          # as ops (sudo -iu ops)
 #                                       ... --tags nodes,network,cluster,containers,data,apps,public,backup
 ```
 

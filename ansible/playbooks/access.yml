@@ -2,13 +2,16 @@
 #   - `automation_user` (ops): what Ansible uses. Key only (no password), passwordless sudo, and its
 #     key is accepted ONLY from the workstation's IP (authorized_keys from="..."). The key has no
 #     passphrase so scheduled jobs can run unattended; it lives only on the workstation.
-#   - `admin_user` (hien): your interactive login (key id_homelab, with passphrase), also accepted
-#     ONLY from the workstation's IP. Passwordless sudo stays (decision 2026-11-14).
+#   - `admin_user` (ethan): your interactive login (key id_homelab, with passphrase), also accepted
+#     ONLY from the workstation's IP. Passwordless sudo on the Pis stays (decision 2026-11-14).
+#   - One-off 2026-11-15: the old human account `hien` is renamed to `ethan` (same UID 1000, same
+#     home content); Raspberry Pi Connect, which ran under it, is removed.
 #   - SSH server: keys only, no root login (Raspberry Pi OS's cloud-init file turned passwords on).
 #
-# Bootstrap (first run) connects to the Pis as admin_user; after that the inventory uses ops.
-# Idempotent. Run on the workstation:
-#   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/access.yml
+# Connects as the automation user (inventory). A brand-new Pi without ops: first run with
+#   -e ansible_user=<its first user> -e ansible_ssh_private_key_file=<a key it accepts>
+# Idempotent. Run on the workstation as ops (sudo -iu ops):
+#   cd ansible && ansible-playbook playbooks/access.yml
 
 - name: Automation key on the workstation
   hosts: workstation
@@ -26,25 +29,89 @@
         src: "{{ automation_key }}.pub"
       register: ops_pub
 
-    - name: Read the admin user's public key (created by workstation-prepare.yml)
+    - name: Read your public key (created by workstation-prepare.yml, in your home)
       ansible.builtin.slurp:
-        src: "{{ admin_key | expanduser }}.pub"
+        src: "{{ admin_key }}.pub"
       register: admin_pub
+      become: true
 
     - name: Remember them
       ansible.builtin.set_fact:
         automation_pubkey: "{{ ops_pub.content | b64decode | trim }}"
         admin_pubkey: "{{ admin_pub.content | b64decode | trim }}"
 
-- name: Automation user and SSH hardening on the Pis (connects as the admin user)
+- name: Accounts and SSH hardening on the Pis
   hosts: pis
   become: true
   vars:
-    # bootstrap: use the admin account, whatever the inventory says
-    ansible_user: "{{ admin_user }}"
-    ansible_ssh_private_key_file: "{{ admin_key }}"
     workstation_ip: "{{ hostvars[admin_host].static_ip }}"
+    previous_admin_user: hien        # one-off rename 2026-11-15; harmless when it no longer exists
   tasks:
+    # ---------- one-off: hien -> ethan (keeps UID 1000 and the home content) ----------
+    - name: Does the previous admin account still exist?
+      ansible.builtin.command: id -u {{ previous_admin_user }}
+      register: previous_admin
+      changed_when: false
+      failed_when: false
+
+    - name: Rename the previous admin account
+      when: previous_admin.rc == 0
+      block:
+        - name: Stop its background services (linger) and end its sessions
+          ansible.builtin.shell: |
+            loginctl disable-linger {{ previous_admin_user }} || true
+            loginctl terminate-user {{ previous_admin_user }} || true
+            sleep 2; pkill -KILL -u {{ previous_admin_user }} || true; sleep 1
+            ! pgrep -u {{ previous_admin_user }}
+
+        - name: Rename user, group and home
+          ansible.builtin.shell: |
+            set -e
+            usermod -l {{ admin_user }} -d /home/{{ admin_user }} -m {{ previous_admin_user }}
+            groupmod -n {{ admin_user }} {{ previous_admin_user }}
+            usermod -c {{ admin_user }} {{ admin_user }}
+
+        - name: Its sudo rule moves to the new name
+          ansible.builtin.file:
+            path: "/etc/sudoers.d/{{ previous_admin_user }}"
+            state: absent
+
+    # ---------- Raspberry Pi Connect: switched off (owner's decision 2026-11-15) ----------
+    - name: Raspberry Pi Connect removed
+      ansible.builtin.apt:
+        name: [rpi-connect, rpi-connect-lite]
+        state: absent
+        purge: true
+
+    - name: Its leftovers in your home (config with the sign-in key, user service links)
+      ansible.builtin.file:
+        path: "/home/{{ admin_user }}/{{ item }}"
+        state: absent
+      loop:
+        - .config/com.raspberrypi.connect
+        - .config/systemd/user/default.target.wants/rpi-connect.service
+        - .config/systemd/user/default.target.wants/rpi-connect-wayvnc.service
+        - .config/systemd/user/paths.target.wants/rpi-connect-signin.path
+
+    - name: The first-boot file (cloud-init is off) no longer holds the Connect sign-in key
+      ansible.builtin.replace:
+        path: /boot/firmware/user-data
+        regexp: 'rpuak_[A-Za-z0-9]+'
+        replace: 'REMOVED-2026-11-15'
+
+    # ---------- your account ----------
+    - name: Your account (fixed UID)
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        uid: "{{ admin_uid }}"
+
+    - name: Your passwordless sudo on the Pis (owner's choice 2026-11-14)
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ admin_user }}"
+        content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
     # usermod refuses to renumber a user with running processes: end leftover ops sessions first
     # (e.g. an SSH ControlPersist connection from an earlier Ansible run).
     - name: Current automation user ID

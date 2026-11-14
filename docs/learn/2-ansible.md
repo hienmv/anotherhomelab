@@ -67,8 +67,9 @@ only once, in `inventory.yml`.
 
 ### become (sudo)
 
-`become: true` means "run as root". On node-workstation sudo needs your password, so Ansible asks
-for it at the start (`BECOME password:`). On the Pis the `ops` account has passwordless sudo.
+`become: true` means "run as root". Ansible runs as the automation user `ops`, which has
+passwordless sudo on every host, so it never asks. You prove who you are once, when you switch to it
+with `sudo -iu ops` (chapter 5).
 
 ### Tags
 
@@ -78,25 +79,26 @@ Big playbooks have tags so you can run only a part: `--tags k3s,restore`.
 
 | Playbook | What it does | When to run it | Prompts |
 |---|---|---|---|
-| `workstation-prepare.yml` | sets up node-workstation: packages, never sleep, static IP, tools, your keys, repo clone, kubeconfig | after a reinstall, or when you change its settings | sudo password; key passphrase (Enter if keys exist) |
-| `access.yml` | accounts on the Pis: automation user `ops`, fixed IDs, IP-restricted keys, SSH keys only | after changing access rules | none |
-| `k3s.yml` | installs/updates k3s on all nodes from the inventory | new k3s version, new node | sudo password |
+| `workstation-prepare.yml` | sets up node-workstation: packages, never sleep, static IP, tools, the `ops` account, keys (yours and ops's), repo clone, kubeconfig | after a reinstall, or when you change its settings | key passphrase (Enter if keys exist) |
+| `access.yml` | accounts on the Pis: `ops` and `ethan`, fixed IDs, IP-restricted keys, SSH keys only, Raspberry Pi Connect removed | after changing access rules | none |
+| `k3s.yml` | installs/updates k3s on all nodes from the inventory | new k3s version, new node | none |
 | `backup.yml` | encrypted backup of secrets + Postgres | before anything risky; regularly | none |
-| `restore.yml` | rebuilds Flux, secrets and Postgres in a fresh cluster from a backup | after a rebuild | sudo password |
+| `restore.yml` | rebuilds Flux, secrets and Postgres in a fresh cluster from a backup | after a rebuild | none |
 | `verify.yml` | read-only health check of everything | after every change, whenever unsure | none |
-| `phase2-migrate.yml` | the full rebuild: backup, teardown, SD swap, k3s, restore | big migrations, the rebuild drill | sudo password, `REBUILD` |
+| `phase2-migrate.yml` | the full rebuild: backup, teardown, SD swap, k3s, restore | big migrations, the rebuild drill | `REBUILD` |
 
 ## How to run one
 
-On node-workstation (from the Mac: `ssh node-workstation`), ideally inside `tmux` so it survives a
-dropped connection:
+On node-workstation **as `ops`** (from the Mac: `ssh node-workstation`, then `sudo -iu ops`),
+ideally inside `tmux` so it survives a dropped connection:
 
 ```bash
+sudo -iu ops                              # your (ethan's) password, once
 tmux new -A -s ops
 cd ~/workspace/source/homelab && git pull
 cd ansible
-ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/verify.yml     # no sudo needed
-ansible-playbook playbooks/k3s.yml                                     # asks the sudo password
+ansible-playbook playbooks/verify.yml
+ansible-playbook playbooks/k3s.yml
 ```
 
 Useful flags:
@@ -112,9 +114,9 @@ Useful flags:
 Ad-hoc commands (one module on some hosts, no playbook):
 
 ```bash
-ANSIBLE_BECOME_ASK_PASS=false ansible pis -m ping                         # can Ansible reach them?
-ANSIBLE_BECOME_ASK_PASS=false ansible pis -a 'uptime'                     # run a command
-ANSIBLE_BECOME_ASK_PASS=false ansible node-8gb -b -a 'journalctl -u k3s-agent -n 30'   # as root
+ansible pis -m ping                         # can Ansible reach them?
+ansible pis -a 'uptime'                     # run a command
+ansible node-8gb -b -a 'journalctl -u k3s-agent -n 30'   # as root
 ```
 
 ## Reading the output

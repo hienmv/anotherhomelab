@@ -1,12 +1,12 @@
 # 6. Daily operations
 
-All commands run on **node-workstation** (`ssh node-workstation` from the Mac), in the repo:
-`cd ~/workspace/source/homelab && git pull`.
+All commands run on **node-workstation as `ops`**: from the Mac `ssh node-workstation`, then
+`sudo -iu ops` (your password), then `cd ~/workspace/source/homelab && git pull`.
 
 ## Is everything OK?
 
 ```bash
-cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/verify.yml
+cd ansible && ansible-playbook playbooks/verify.yml
 ```
 
 About 30 seconds. Every host must end with `all checks passed`. Otherwise it lists every problem
@@ -24,7 +24,7 @@ flux get kustomizations           # all Ready?
 ## Make a backup
 
 ```bash
-cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml
+cd ansible && ansible-playbook playbooks/backup.yml
 ```
 
 Writes `~/homelab-backup/homelab-<date>.tar.gz.age` (secrets + Postgres, encrypted with the age
@@ -49,7 +49,7 @@ kubectl -n apps logs deploy/notes --tail=50              # an app
 kubectl -n apps logs deploy/ticketlite-api -f            # follow live (Ctrl+C to stop)
 kubectl -n data logs pg-1 -c postgres --tail=50          # Postgres
 kubectl -n flux-system logs deploy/kustomize-controller --since=10m   # why Flux is unhappy
-ANSIBLE_BECOME_ASK_PASS=false ansible node-8gb -b -a 'journalctl -u k3s-agent -n 50'   # a node
+ansible node-8gb -b -a 'journalctl -u k3s-agent -n 50'   # a node
 journalctl -k -b | grep DENIED                           # security blocks on this machine
 ```
 

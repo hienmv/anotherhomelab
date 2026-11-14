@@ -368,7 +368,7 @@ BIOS (F2 at boot), by hand: enable a battery charge limit / economy mode if pres
 `ansible/playbooks/backup.yml` (script `ansible/files/backup.sh`), runnable any time, no downtime:
 
 ```bash
-cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml   # -e workstation_ip=... while on Wi-Fi
+cd ansible && ansible-playbook playbooks/backup.yml   # as ops
 ```
 
 - Exports the hand-made Secrets (list in the playbook, plus `data/pg-app`, whose password is inside
@@ -439,9 +439,9 @@ age key in the password manager.
 | 2 | CF-SV9 | `sudo apt install -y openssh-server tmux` | Ubuntu Desktop ships without an SSH server. `systemctl is-active ssh` says `inactive` until the first login: 24.04 starts sshd on demand via `ssh.socket` (check that one) |
 | 3 | Mac | `ssh-keygen -R <workstation static_ip>` (and the DHCP IP), then `ssh-copy-id -i ~/.ssh/id_homelab_workstation <admin_user>@<DHCP IP>` | the new install has new SSH host keys; the Mac key gets in once with the password |
 | 4 | Mac | `gh repo deploy-key delete <id> -R <GIT_REPO_SLUG>` for the old `homelab-workstation-admin` (`gh repo deploy-key list ...`) | its private key died with the old disk; the playbook stops if the title exists with another key |
-| 5 | Mac | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | sudo password + a **new** key passphrase (password manager). Moves to `.249`, reboots once. Kubeconfig steps are skipped until k3s exists |
+| 5 | workstation (as `ethan`) | create the automation user first: `sudo groupadd -g 2000 ops && sudo useradd -m -u 2000 -g 2000 -s /bin/bash -c 'homelab automation' ops && echo 'ops ALL=(ALL) NOPASSWD:ALL' \| sudo tee /etc/sudoers.d/ops`; copy the repo from the Mac (`scp -r`, then `sudo cp -r … /home/ops/workspace/source/homelab && sudo chown -R ops: …`); then `sudo -iu ops`, `cd ~/workspace/source/homelab/ansible && ansible-playbook playbooks/workstation-prepare.yml -e workstation_ip=<DHCP IP>` | Ansible runs as `ops`; key passphrase for the new keys |
 | 6 | workstation | paste the age key into `~/.config/sops/age/keys.txt`, `chmod 600`; `age-keygen -y` shows the public key | needed to decrypt backups (and SOPS later) |
-| 6b | workstation | restore `~/.ssh/id_homelab`, `~/.ssh/id_ops` (+ `.pub`, `chmod 600`) from the password manager **before** workstation-prepare creates new ones | the Pis accept only these keys (10.5) |
+| 6b | workstation | restore `id_homelab` into `/home/ethan/.ssh/` and `id_ops` into `/home/ops/.ssh/` (+ `.pub`, `chmod 600`, owned by each user) from the password manager **before** workstation-prepare creates new ones | the Pis accept only these keys (10.5) |
 | 7 | Mac | `scp ~/homelab-backups/homelab-*.tar.gz.age node-workstation:homelab-backup/`, then decrypt-test each file | restore.yml reads them from the workstation |
 
 Then the cluster: `phase2-migrate.yml --tags teardown,k3s` (Pis leave the old cluster, new empty
@@ -453,27 +453,29 @@ sudo-rs on 26.04 (gone with 24.04).
 
 ### 10.5 Access model (since 2026-11-13)
 
-Every host has its **own local accounts**; `admin_user` (hien) only gives them the same name.
-Write them as `user@host` to be clear which one is meant.
+Two roles, the same on every host (inventory `admin_user`, `automation_user`); write them as
+`user@host`. Beginner explanation (passwordless, sudo, `sudo -iu`): [docs/learn/5](docs/learn/5-accounts-and-ssh.md).
 
 | Account | Logs in with | sudo | Holds | Used for |
 |---|---|---|---|---|
-| `maihien@Mac` | Mac password | – | `~/.ssh/id_homelab_workstation` (passphrase, Keychain) | `ssh node-workstation`, nothing else |
-| **`hien@node-workstation`** | desktop password, or the Mac key over SSH | with password | `id_homelab` (→ `hien@<Pi>`), `id_ops` (→ `ops@<Pi>`), `id_github`, kubeconfig, age key, backups | the admin; Ansible runs here, locally |
-| `hien@<Pi>` (node-8gb/4gb/1gb) | only `id_homelab`, only from node-workstation's IP | passwordless (owner's choice) | nothing | you: debugging, learning |
-| `ops@<Pi>` | only `id_ops` (no passphrase), only from node-workstation's IP; password locked | passwordless | nothing | Ansible (inventory `ansible_user` for the Pis) |
+| `maihien@Mac` | Mac password | – | `~/.ssh/id_homelab_workstation` (passphrase, Keychain) | `ssh node-workstation` |
+| **`ethan@node-workstation`** (1000) | desktop password, or the Mac key over SSH | with password | `id_homelab` (→ `ethan@<Pi>`) | **you**; `sudo -iu ops` for automation |
+| **`ops@node-workstation`** (2000) | none (no password, no SSH key): only `sudo -iu ops` | passwordless | `id_ops`, `id_github`, kubeconfig, age key, backups, repo checkout | **automation** (Ansible, scheduled jobs) |
+| `ethan@<Pi>` (1000) | only `id_homelab`, only from node-workstation's IP | passwordless (owner's choice) | nothing | you: debugging, learning |
+| `ops@<Pi>` (2000) | only `id_ops` (no passphrase), only from node-workstation's IP; password locked | passwordless | nothing | Ansible |
 
 ```
-maihien@Mac --ssh (id_homelab_workstation)--> hien@node-workstation --ssh (id_homelab)--> hien@node-8gb ...
-                                                     +--ssh (id_ops, Ansible)----------> ops@node-8gb ...
+maihien@Mac --(id_homelab_workstation)--> ethan@node-workstation --(id_homelab)--> ethan@<Pi>
+                                                 | sudo -iu ops (your password)
+                                                 v
+                                          ops@node-workstation --(id_ops, Ansible)--> ops@<Pi>
 ```
 
 - Set up by `ansible/playbooks/access.yml` (idempotent; its bootstrap play connects as `admin_user`).
-- **Fixed IDs**: `ops` = UID/GID **2000** on every Pi (`automation_uid` in the inventory; services
-  2000+, humans 1000+), so a file owned by 2000 means `ops` everywhere. Human IDs differ today:
-  `hien` = 1000 on the Pis, 1001 on node-workstation (1000 there is `ethan`, created by the Ubuntu
-  installer). Not changed live (the account must be fully logged out); align at the next OS install
-  by creating `hien` as the first user.
+- **Fixed IDs** (inventory `admin_uid`, `automation_uid`): `ethan` = 1000, `ops` = 2000 on every
+  host, so a file owner means the same account everywhere.
+- **History**: until 2026-11-15 the human was `hien` everywhere and `hien@node-workstation` also ran
+  all automation; renamed then (section 10.6).
 - **Both keys exist only on node-workstation, and the Pis accept them only from its IP.** Keep a copy
   of `~/.ssh/id_homelab` and `~/.ssh/id_ops` (+ `.pub`) in the password manager. After a reinstall
   (same IP), put them back before running `access.yml`; without them, only the console (keyboard +
@@ -483,7 +485,7 @@ maihien@Mac --ssh (id_homelab_workstation)--> hien@node-workstation --ssh (id_ho
   passphrase would add little. The IP restriction makes a leaked copy useless elsewhere.
 - SSH servers: keys only, no root login (`/etc/ssh/sshd_config.d/10-homelab.conf`; it must sort
   before Raspberry Pi OS's `50-cloud-init.conf`, which turns passwords on: sshd uses the first value).
-- node-workstation runs Ansible locally as `admin_user` (sudo with password); it has no ops user.
+- node-workstation runs Ansible locally as `ops` (`sudo -iu ops` from `ethan`).
 - **Decision 2026-11-14: human SSH to the Pis stays** (`hien`, key + passwordless sudo) for learning,
   simulation and debugging. Target later, when the homelab is "production": **no human SSH** on the
   Pis (`AllowUsers ops`, `hien` without key and sudo there, break-glass = console with a password in
@@ -491,6 +493,21 @@ maihien@Mac --ssh (id_homelab_workstation)--> hien@node-workstation --ssh (id_ho
   node-workstation as the only SSH entry point (bastion).
 - Wi-Fi: node-workstation sees 5-10 % packet loss and latency spikes to ~570 ms (2026-11-13), the
   Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Ethernet would fix it.
+
+### 10.6 Rename: hien -> ethan (human) and ops (automation) (2026-11-15)
+
+Before: `hien` was the human everywhere, and `hien@node-workstation` also ran all automation and
+held every key. After: the roles of 10.5. How it was done (each step re-runnable):
+
+| # | Who, where | Step |
+|---|---|---|
+| 1 | you, node-workstation desktop | copy anything personal from `/home/hien` (Downloads, browser bookmarks) to `ethan`; **log out** of hien, **log in as ethan** |
+| 2 | you, as ethan, terminal | `sudo bash /tmp/2026-11-15-rename-hien-to-ops.sh` (script: `scripts/one-off/`): ends hien's sessions, renames `hien` -> `ops` (UID/GID 2000, `/home/ops`), locks its password, hides it from the login screen, passwordless sudo, moves `id_homelab` and the Mac's login key to ethan |
+| 3 | Mac | `~/.ssh/config`: `Host node-workstation` gets `User ethan`; `ssh node-workstation` -> ethan |
+| 4 | you, as ethan | `sudo -iu ops`, `cd ~/workspace/source/homelab && git pull` |
+| 5 | as ops | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml` (Enter at the passphrase) |
+| 6 | as ops | `ansible-playbook playbooks/access.yml`: on the Pis `hien` -> `ethan` (same UID 1000), Raspberry Pi Connect removed, keys IP-restricted |
+| 7 | as ops | `ansible-playbook playbooks/verify.yml`; as ethan: `ssh-add ~/.ssh/id_homelab && ssh node-8gb whoami` = `ethan` |
 
 ## Uninstall / reset
 

@@ -11,12 +11,39 @@
   hosts: workstation
   become: true
   tasks:
-    # The workstation is a desktop that browses the web: sudo keeps its password (Ansible asks once per run,
-    # become_ask_pass in ansible.cfg). Passwordless sudo stays on the Pis only.
-    - name: No passwordless sudo on the workstation
+    # You (admin_user) browse on this desktop: your sudo keeps its password. The automation user
+    # never logs in or browses: passwordless sudo, reached only via `sudo -iu ops` (your password).
+    - name: No passwordless sudo for the human on the workstation
       ansible.builtin.file:
         path: "/etc/sudoers.d/{{ admin_user }}"
         state: absent
+
+    - name: Passwordless sudo for the automation user
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ automation_user }}"
+        content: "{{ automation_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: visudo -cf %s
+
+    - name: Automation group (fixed GID)
+      ansible.builtin.group:
+        name: "{{ automation_user }}"
+        gid: "{{ automation_uid }}"
+
+    - name: Automation user is a service account (no password, hidden from the login screen)
+      ansible.builtin.user:
+        name: "{{ automation_user }}"
+        uid: "{{ automation_uid }}"
+        group: "{{ automation_user }}"
+        shell: /bin/bash
+        password: "!"
+        comment: homelab automation
+
+    - name: Hidden from the login screen
+      ansible.builtin.copy:
+        dest: "/var/lib/AccountsService/users/{{ automation_user }}"
+        content: "[User]\nSystemAccount=true\n"
+        mode: "0600"
 
     - name: Hostname {{ inventory_hostname }}
       ansible.builtin.hostname:
@@ -239,27 +266,28 @@
         reboot_timeout: 600
       when: ansible_connection != 'local'
 
-- name: Admin workstation keys and config (as the admin user)
+- name: Keys and settings on the workstation (yours and the automation user's)
   hosts: workstation
-  # Asked every run (vars_prompt cannot be conditional); once keys and repo exist, press Enter.
+  # Asked every run (vars_prompt cannot be conditional); once the keys and the repo exist, press Enter.
   vars_prompt:
     - name: key_passphrase
-      prompt: "Passphrase for the workstation SSH keys id_homelab + id_github (first run: invent one, min 12 chars; later runs: just Enter)"
+      prompt: "Passphrase for new keys (your id_homelab, ops's id_github); keys and repo already there: just Enter"
       private: true
       confirm: true
   tasks:
-    - name: Which SSH keys exist
+    - name: Which keys exist
       ansible.builtin.stat:
-        path: "{{ admin_home }}/.ssh/id_{{ item }}"
-      loop: [homelab, github]
+        path: "{{ item }}"
+      loop: ["{{ admin_key }}", "{{ github_key }}"]
       register: key_stat
+      become: true
 
     - name: Repo already cloned?
       ansible.builtin.stat:
         path: "{{ repo_dest }}/.git"
       register: repo_stat
 
-    - name: Keys to create; keep the passphrase as a host fact for the clone play
+    - name: Keys to create; keep the passphrase for the clone play
       ansible.builtin.set_fact:
         missing_keys: "{{ key_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}"
         admin_key_passphrase: "{{ key_passphrase }}"
@@ -272,33 +300,37 @@
         quiet: true
       when: missing_keys | length > 0 or not repo_stat.stat.exists
 
+    # ---------- yours (admin_user): the key to the Pis ----------
+    - name: Your .ssh folder
+      ansible.builtin.file:
+        path: "{{ admin_home }}/.ssh"
+        state: directory
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0700"
+      become: true
+
     # openssh_keypair encrypts in Python: the passphrase never appears in a process list.
-    - name: Create passphrase-protected SSH keys (Pis, GitHub)
+    - name: Your key to the Pis (passphrase)
       community.crypto.openssh_keypair:
-        path: "{{ admin_home }}/.ssh/id_{{ item }}"
+        path: "{{ admin_key }}"
         type: ed25519
-        comment: "{{ inventory_hostname }}->{{ item }}"
+        comment: "{{ inventory_hostname }}->homelab"
         passphrase: "{{ key_passphrase }}"
         private_key_format: ssh
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
         mode: "0600"
-      loop: "{{ missing_keys }}"
+      become: true
+      when: admin_key in missing_keys
       no_log: true
 
-    - name: Read public keys
-      ansible.builtin.slurp:
-        src: "{{ admin_home }}/.ssh/id_{{ item }}.pub"
-      loop: [homelab, github]
-      register: pubkeys
-
-    - name: Remember public keys
-      ansible.builtin.set_fact:
-        homelab_pubkey: "{{ pubkeys.results[0].content | b64decode | trim }}"
-        github_pubkey: "{{ pubkeys.results[1].content | b64decode | trim }}"
-
-    - name: SSH client config
+    - name: Your SSH client config (Pis as you, passphrase cached 8 h)
       ansible.builtin.blockinfile:
         path: "{{ admin_home }}/.ssh/config"
         create: true
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
         mode: "0600"
         marker: "# {mark} homelab (ansible)"
         block: |
@@ -306,55 +338,89 @@
             User {{ admin_user }}
             IdentityFile ~/.ssh/id_homelab
             IdentitiesOnly yes
+          Host *
+            AddKeysToAgent 8h
+      become: true
+
+    # Desktop login has GNOME's agent. Over SSH from the Mac there is none: start one on a
+    # fixed socket and reuse it, so the passphrase is typed once per 8 h, not per command.
+    - name: ssh-agent for your SSH sessions
+      ansible.builtin.blockinfile:
+        path: "{{ admin_home }}/.bashrc"
+        marker: "# {mark} ssh-agent (ansible)"
+        block: "{{ agent_snippet }}"
+      become: true
+
+    # ---------- the automation user's (runs as it, locally) ----------
+    # The GitHub key (deploy key, this repo) is created with the same passphrase as yours.
+    - name: Automation .ssh folder
+      ansible.builtin.file:
+        path: "{{ automation_home }}/.ssh"
+        state: directory
+        mode: "0700"
+
+    - name: GitHub key of the automation user (passphrase)
+      community.crypto.openssh_keypair:
+        path: "{{ github_key }}"
+        type: ed25519
+        comment: "{{ inventory_hostname }}->github"
+        passphrase: "{{ key_passphrase }}"
+        private_key_format: ssh
+        mode: "0600"
+      when: github_key in missing_keys
+      no_log: true
+
+    - name: Read the GitHub public key
+      ansible.builtin.slurp:
+        src: "{{ github_key }}.pub"
+      register: github_pub
+
+    - name: Remember it
+      ansible.builtin.set_fact:
+        github_pubkey: "{{ github_pub.content | b64decode | trim }}"
+
+    - name: Automation SSH client config (GitHub)
+      ansible.builtin.blockinfile:
+        path: "{{ automation_home }}/.ssh/config"
+        create: true
+        mode: "0600"
+        marker: "# {mark} homelab (ansible)"
+        block: |
           Host github.com
             User git
             IdentityFile ~/.ssh/id_github
             IdentitiesOnly yes
           Host *
-            # passphrase asked once, then cached in the agent for 8 h
             AddKeysToAgent 8h
 
-    # Desktop login has GNOME's agent. Over SSH from the Mac there is none: start one on a
-    # fixed socket and reuse it, so the passphrase is typed once per 8 h, not per command.
-    - name: ssh-agent for SSH sessions
+    - name: ssh-agent and KUBECONFIG for the automation user
       ansible.builtin.blockinfile:
-        path: "{{ admin_home }}/.bashrc"
+        path: "{{ automation_home }}/.bashrc"
         marker: "# {mark} ssh-agent (ansible)"
-        block: |
-          if [ -z "$SSH_AUTH_SOCK" ]; then
-            export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
-            ssh-add -l >/dev/null 2>&1
-            if [ $? -eq 2 ]; then
-              rm -f "$SSH_AUTH_SOCK"
-              eval "$(ssh-agent -a "$SSH_AUTH_SOCK")" >/dev/null
-            fi
-          fi
+        block: "{{ agent_snippet }}"
 
-    - name: KUBECONFIG in ~/.bashrc
+    - name: KUBECONFIG
       ansible.builtin.lineinfile:
-        path: "{{ admin_home }}/.bashrc"
+        path: "{{ automation_home }}/.bashrc"
         line: "export KUBECONFIG={{ kubeconfig }}"
 
-    - name: Git identity of the machine running Ansible is known
-      ansible.builtin.assert:
-        that:
-          - lookup('pipe', 'git config user.name') | length > 0
-          - lookup('pipe', 'git config user.email') | length > 0
-        fail_msg: "Set git user.name and user.email on the machine running Ansible first."
-        quiet: true
-
-    - name: Git identity
+    - name: Git settings of the automation user
       community.general.git_config:
         scope: global
         name: "{{ item.key }}"
         value: "{{ item.value }}"
-      loop: "{{ git_identity | dict2items }}"
-      vars:
-        git_identity:
-          user.name: "{{ lookup('pipe', 'git config user.name') }}"
-          user.email: "{{ lookup('pipe', 'git config user.email') }}"
-          pull.rebase: "true"
-          rebase.autoStash: "true"
+      loop: "{{ {'user.name': 'homelab automation (' ~ inventory_hostname ~ ')', 'user.email': automation_user ~ '@' ~ inventory_hostname, 'pull.rebase': 'true', 'rebase.autoStash': 'true'} | dict2items }}"
+
+  vars:
+    agent_snippet: |
+      if [ -z "$SSH_AUTH_SOCK" ]; then
+        export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+        ssh-add -l >/dev/null 2>&1
+        if [ $? -eq 2 ]; then
+          rm -f "$SSH_AUTH_SOCK"
+          eval "$(ssh-agent -a "$SSH_AUTH_SOCK")" >/dev/null
+        fi
+      fi
 
 # Accounts and keys ON the Pis (admin + automation user, IP restriction) are managed by
 # playbooks/access.yml; this playbook only creates the keys on the workstation.
@@ -449,7 +515,7 @@
         askpass="$(mktemp)"; trap 'rm -f "$askpass"; ssh-agent -k >/dev/null 2>&1 || true' EXIT
         printf '#!/bin/sh\necho "$KEY_PASSPHRASE"\n' > "$askpass"; chmod 700 "$askpass"
         eval "$(ssh-agent -s)" >/dev/null
-        SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=none ssh-add ~/.ssh/id_github </dev/null
+        SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=none ssh-add {{ github_key }} </dev/null
         mkdir -p "$(dirname {{ repo_dest }})"
         GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git clone {{ repo_ssh_url }} {{ repo_dest }}
       args:

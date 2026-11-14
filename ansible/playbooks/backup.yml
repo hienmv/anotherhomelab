@@ -1,7 +1,7 @@
 # Phase 1 (K3S-GUIDE section 10) and any manual backup later: export the hand-made Secrets and
 # dump PostgreSQL, encrypted with the workstation's age key. No downtime, no sudo, read-only on the cluster.
 #
-#   cd ansible && ANSIBLE_BECOME_ASK_PASS=false ansible-playbook playbooks/backup.yml
+#   cd ansible && ansible-playbook playbooks/backup.yml   (as ops: sudo -iu ops)
 #
 # Result: <backup_dir>/<cluster_name>-<date>.tar.gz.age on the workstation (paths: group_vars/all.yml),
 # plus a copy in ~/<cluster_name>-backups/ on the machine running Ansible when that is another machine.

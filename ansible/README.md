@@ -16,9 +16,9 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `playbooks/verify.yml` | read-only health checks per layer (catalog: [docs/testing.md](../docs/testing.md)) |
 | `files/net-static.sh` | static IP on the `lan_link` link (used by workstation-prepare) |
 
-Run from the `ansible/` folder **on node-workstation** (it detects itself and runs locally), in `tmux`
-for long runs. Unlock the Pi key once per 8 h: `ssh-add ~/.ssh/id_homelab`. Since 2026-11-12 only
-node-workstation's key opens the Pis. Ansible connects by IP with `~/.ssh/id_homelab` (Pis) and `~/.ssh/id_homelab_workstation` (workstation, from the Mac).
+Run from the `ansible/` folder **on node-workstation as `ops`** (`sudo -iu ops` from your account,
+your password once), in `tmux` for long runs. `ops` has passwordless sudo and an unattended key to
+the Pis, so no prompts. Accounts explained: [docs/learn/5](../docs/learn/5-accounts-and-ssh.md). Ansible connects by IP with `~/.ssh/id_homelab` (Pis) and `~/.ssh/id_homelab_workstation` (workstation, from the Mac).
 
 ```bash
 brew install ansible                     # Mac; on node-workstation the playbook installs it with apt
@@ -29,7 +29,7 @@ ansible-playbook playbooks/workstation-prepare.yml
 
 First run only: `-e workstation_ip=<current Wi-Fi IP>` (no static IP yet). Every run asks the node-workstation sudo
 password (`become_ask_pass` in `ansible.cfg`; node-workstation keeps its sudo password). Commands that need no
-sudo can skip the prompt: `ANSIBLE_BECOME_ASK_PASS=false ansible pis -m ping`.
+sudo can skip the prompt: `ansible pis -m ping`.
 
 ## Configuration, not code
 

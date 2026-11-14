@@ -181,7 +181,8 @@ How changes reach the cluster.
 ### Admin workstation (node-workstation)
 
 node-workstation (CF-SV9, always on at home) is the admin box **and** the k3s server + data node.
-The Mac only SSHes into it (`ssh node-workstation`, key `~/.ssh/id_homelab_workstation`).
+The Mac only SSHes into it (`ssh node-workstation` = `ethan`). You (`ethan`) switch to the
+automation account with `sudo -iu ops`; `ops` owns everything below. Accounts: [K3S-GUIDE 10.5](K3S-GUIDE.md).
 
 | Role | What lives there | If it is lost |
 |---|---|---|
