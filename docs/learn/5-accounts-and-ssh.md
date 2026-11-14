@@ -90,12 +90,65 @@ cd ansible && ansible-playbook playbooks/verify.yml
 exit                                    # back to ethan
 ```
 
-## If you lose the keys
+## The password manager: what must be in it, and why
 
-The Pis accept **only** `id_homelab` and `id_ops`, **only** from node-workstation's IP. If
-node-workstation's disk dies, restore both files from the **password manager** onto the
-reinstalled machine (same IP): `id_homelab` into ethan's `~/.ssh/`, `id_ops` into ops's, before running any playbook. Without them, only a keyboard and
-monitor plugged into each Pi can add a new key.
+Some secrets exist in **one place only** (node-workstation's disk). If that disk dies, they are
+gone, and some of them cannot be recreated. The password manager is the second copy.
+
+| Item | Why it matters | Where it lives |
+|---|---|---|
+| **age key** (`keys.txt`) | the only way to decrypt the backups | `/home/ops/.config/sops/age/keys.txt` |
+| **`id_ops`** + `id_ops.pub` | the Pis accept only this key for Ansible (and only from node-workstation's IP) | `/home/ops/.ssh/` |
+| **`id_homelab`** + `id_homelab.pub` | the Pis accept only this key for you | `/home/ethan/.ssh/` |
+| passphrase of `id_homelab` / `id_github` | `id_homelab` is useless without it | your head + password manager |
+| `ethan`'s password on node-workstation | sudo, `sudo -iu ops`, desktop login | password manager |
+| Mac key passphrase (`id_homelab_workstation`) | SSH from the Mac | password manager (also in the macOS Keychain) |
+| GitHub / Cloudflare account logins (+ MFA) | the repo, the domain, the tunnel, Access | password manager |
+
+Not needed there: `id_github` (a new deploy key can be added in minutes), the kubeconfig (rebuilt by
+`k3s.yml`), the cluster's secrets (in the encrypted backups).
+
+### Save the keys (once, and again whenever a key changes)
+
+Create one **secure note** per key (1Password and Bitwarden also have an "SSH key" item type) and
+paste the **whole** file, including the `-----BEGIN`/`-----END` lines:
+
+```bash
+# as ethan on node-workstation
+cat ~/.ssh/id_homelab ~/.ssh/id_homelab.pub        # -> note "homelab: id_homelab (ethan -> Pis)"
+
+# as ops (sudo -iu ops)
+cat ~/.ssh/id_ops ~/.ssh/id_ops.pub                # -> note "homelab: id_ops (ops -> Pis)"
+cat ~/.config/sops/age/keys.txt                    # -> note "homelab: age key" (if not saved yet)
+exit
+```
+
+Clear the terminal afterwards (`clear`), so the keys are not left on the screen.
+
+### Restore them after a reinstall (same IP 192.168.40.249)
+
+Before running any playbook ([K3S-GUIDE.md 10.4](../../K3S-GUIDE.md), step 6b):
+
+```bash
+# as ethan: paste the note into the files (nano: paste, Ctrl+O, Enter, Ctrl+X)
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+nano ~/.ssh/id_homelab && nano ~/.ssh/id_homelab.pub
+chmod 600 ~/.ssh/id_homelab
+ssh-keygen -y -f ~/.ssh/id_homelab                 # asks the passphrase, prints the public key: OK
+
+# as ops (sudo -iu ops)
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+nano ~/.ssh/id_ops && nano ~/.ssh/id_ops.pub
+chmod 600 ~/.ssh/id_ops
+ssh -i ~/.ssh/id_ops ops@192.168.40.250 hostname   # expected: node-8gb
+```
+
+### If the keys are lost anyway
+
+The Pis reject every other key. Per Pi: power it off, take out the SD card, mount it on another
+computer, add the new public key to `home/ethan/.ssh/authorized_keys` and `home/ops/.ssh/authorized_keys`
+(keep the `from="192.168.40.249",...` prefix), put the card back. Or plug in a keyboard and
+monitor and log in as `ethan` with its Pi password. Then run `access.yml` to put everything back in order.
 
 ## The SSH servers
 

@@ -477,7 +477,8 @@ maihien@Mac --(id_homelab_workstation)--> ethan@node-workstation --(id_homelab)-
 - **History**: until 2026-11-15 the human was `hien` everywhere and `hien@node-workstation` also ran
   all automation; renamed then (section 10.6).
 - **Both keys exist only on node-workstation, and the Pis accept them only from its IP.** Keep a copy
-  of `~/.ssh/id_homelab` and `~/.ssh/id_ops` (+ `.pub`) in the password manager. After a reinstall
+  of `/home/ethan/.ssh/id_homelab` and `/home/ops/.ssh/id_ops` (+ `.pub`) in the password manager
+  (what to store, how to save and restore: [docs/learn/5](docs/learn/5-accounts-and-ssh.md)). After a reinstall
   (same IP), put them back before running `access.yml`; without them, only the console (keyboard +
   monitor on each Pi) can add a new key.
 - Why no passphrase on the ops key: scheduled jobs (verify, alerts) must run unattended, and whoever
