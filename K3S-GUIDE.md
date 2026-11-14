@@ -494,7 +494,7 @@ maihien@Mac --(id_homelab_workstation)--> ethan@node-workstation --(id_homelab)-
 - Wi-Fi: node-workstation sees 5-10 % packet loss and latency spikes to ~570 ms (2026-11-13), the
   Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Ethernet would fix it.
 
-### 10.6 Rename: hien -> ethan (human) and ops (automation) (2026-11-15)
+### 10.6 Rename: hien -> ethan (human) and ops (automation) (done 2026-11-15)
 
 Before: `hien` was the human everywhere, and `hien@node-workstation` also ran all automation and
 held every key. After: the roles of 10.5. How it was done (each step re-runnable):
@@ -508,6 +508,12 @@ held every key. After: the roles of 10.5. How it was done (each step re-runnable
 | 5 | as ops | `cd ansible && ansible-playbook playbooks/workstation-prepare.yml` (Enter at the passphrase) |
 | 6 | as ops | `ansible-playbook playbooks/access.yml`: on the Pis `hien` -> `ethan` (same UID 1000), Raspberry Pi Connect removed, keys IP-restricted |
 | 7 | as ops | `ansible-playbook playbooks/verify.yml`; as ethan: `ssh-add ~/.ssh/id_homelab && ssh node-8gb whoami` = `ethan` |
+
+Checked afterwards on all 3 Pis: `ethan` = 1000 with sudo, `hien` gone, Raspberry Pi Connect packages
+and processes 0, no linger, the old Connect sign-in key gone from `/boot/firmware/user-data`, `ops` =
+2000, sudo rules only `ethan` and `ops`, `ethan`'s key restricted to node-workstation's IP.
+Gotcha: a terminal opened before `workstation-prepare.yml` added the ssh-agent lines to `~/.bashrc`
+says "Could not open a connection to your authentication agent": `source ~/.bashrc` (or log in again).
 
 ## Uninstall / reset
 
