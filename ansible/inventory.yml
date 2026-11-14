@@ -11,6 +11,12 @@ all:
     # Automation account on the Pis (playbooks/access.yml): key only, passwordless sudo, key accepted
     # only from the workstation's IP. The workstation itself runs Ansible locally as admin_user.
     automation_user: ops
+    # Fixed numeric IDs: the same number must mean the same account on every host (file ownership
+    # in backups, copied files). Services live at 2000+, away from human accounts (1000+).
+    automation_uid: 2000
+    # Human account IDs today (not changed live: the account must be fully logged out):
+    # hien = 1000 on the Pis, 1001 on node-workstation (1000 there is `ethan`, from the installer).
+    # Align at the next OS install: create hien as the first user (= 1000).
     ansible_user: "{{ admin_user }}"
     lan_prefix: 24
     lan_gateway: 192.168.40.1

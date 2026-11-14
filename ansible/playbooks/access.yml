@@ -45,13 +45,43 @@
     ansible_ssh_private_key_file: "{{ admin_key }}"
     workstation_ip: "{{ hostvars[admin_host].static_ip }}"
   tasks:
-    - name: Automation user (no password, key login only)
+    # usermod refuses to renumber a user with running processes: end leftover ops sessions first
+    # (e.g. an SSH ControlPersist connection from an earlier Ansible run).
+    - name: Current automation user ID
+      ansible.builtin.command: id -u {{ automation_user }}
+      register: ops_uid
+      changed_when: false
+      failed_when: false
+
+    - name: End ops sessions before renumbering
+      ansible.builtin.command: pkill -KILL -u {{ automation_user }}
+      register: killed
+      changed_when: killed.rc == 0
+      failed_when: false
+      when: ops_uid.rc == 0 and ops_uid.stdout | int != automation_uid
+
+    - name: Automation group (fixed GID)
+      ansible.builtin.group:
+        name: "{{ automation_user }}"
+        gid: "{{ automation_uid }}"
+
+    - name: Automation user (fixed UID, no password, key login only)
       ansible.builtin.user:
         name: "{{ automation_user }}"
+        uid: "{{ automation_uid }}"
+        group: "{{ automation_user }}"
         comment: homelab automation (Ansible)
         shell: /bin/bash
         password: "!"
         create_home: true
+
+    # groupmod/usermod renumber the account, not files that already belonged to the old group.
+    - name: Home folder owned by the automation user and group
+      ansible.builtin.file:
+        path: "/home/{{ automation_user }}"
+        owner: "{{ automation_user }}"
+        group: "{{ automation_user }}"
+        recurse: true
 
     - name: Its only key, accepted only from the workstation, no forwarding
       ansible.posix.authorized_key:

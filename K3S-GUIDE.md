@@ -468,6 +468,11 @@ maihien@Mac --ssh (id_homelab_workstation)--> hien@node-workstation --ssh (id_ho
 ```
 
 - Set up by `ansible/playbooks/access.yml` (idempotent; its bootstrap play connects as `admin_user`).
+- **Fixed IDs**: `ops` = UID/GID **2000** on every Pi (`automation_uid` in the inventory; services
+  2000+, humans 1000+), so a file owned by 2000 means `ops` everywhere. Human IDs differ today:
+  `hien` = 1000 on the Pis, 1001 on node-workstation (1000 there is `ethan`, created by the Ubuntu
+  installer). Not changed live (the account must be fully logged out); align at the next OS install
+  by creating `hien` as the first user.
 - **Both keys exist only on node-workstation, and the Pis accept them only from its IP.** Keep a copy
   of `~/.ssh/id_homelab` and `~/.ssh/id_ops` (+ `.pub`) in the password manager. After a reinstall
   (same IP), put them back before running `access.yml`; without them, only the console (keyboard +
