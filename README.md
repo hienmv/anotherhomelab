@@ -13,6 +13,9 @@ queue workers, batch jobs. Public via Cloudflare Tunnel:
 Values are this site's: the domain and Cloudflare IDs come from `clusters/homelab/site-settings.yaml`,
 IPs and node settings from `ansible/inventory.yml`. Change them there, not here.
 
+**New here? Start with [docs/learn/](docs/learn/README.md)**, a beginner handbook (big picture, Ansible,
+GitOps, configuration, accounts, daily operations).
+
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
 **[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting) ·
 **[docs/testing.md](docs/testing.md)** (every test per part, `verify.yml` health check) ·

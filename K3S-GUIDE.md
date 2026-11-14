@@ -6,6 +6,7 @@ under `k8s/`; this guide links to them instead of copying them.
 
 | Topic | Document |
 |---|---|
+| **Beginner handbook** (concepts, Ansible, GitOps, daily operations) | [docs/learn/](docs/learn/README.md) |
 | Overview, diagrams, components, admin workstation | [README.md](README.md) |
 | Hostnames, Cloudflare, tunnel, Ingress, redirects | [docs/domains.md](docs/domains.md) |
 | TicketLite (Ktor/React, CI, metrics) | [apps/ticketlite/README.md](apps/ticketlite/README.md) |
