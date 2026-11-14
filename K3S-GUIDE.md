@@ -463,6 +463,11 @@ sudo-rs on 26.04 (gone with 24.04).
 - SSH servers: keys only, no root login (`/etc/ssh/sshd_config.d/10-homelab.conf`; it must sort
   before Raspberry Pi OS's `50-cloud-init.conf`, which turns passwords on: sshd uses the first value).
 - node-workstation runs Ansible locally as `admin_user` (sudo with password); it has no ops user.
+- **Decision 2026-11-14: human SSH to the Pis stays** (`hien`, key + passwordless sudo) for learning,
+  simulation and debugging. Target later, when the homelab is "production": **no human SSH** on the
+  Pis (`AllowUsers ops`, `hien` without key and sudo there, break-glass = console with a password in
+  the password manager, debugging via `kubectl debug node/...` and Ansible ad-hoc as ops), with
+  node-workstation as the only SSH entry point (bastion).
 - Wi-Fi: node-workstation sees 5-10 % packet loss and latency spikes to ~570 ms (2026-11-13), the
   Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Ethernet would fix it.
 
