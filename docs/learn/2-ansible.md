@@ -85,7 +85,8 @@ Big playbooks have tags so you can run only a part: `--tags k3s,restore`.
 | `backup.yml` | encrypted backup of secrets + Postgres | before anything risky; regularly | none |
 | `restore.yml` | rebuilds Flux, secrets and Postgres in a fresh cluster from a backup | after a rebuild | none |
 | `verify.yml` | read-only health check of everything | after every change, whenever unsure | none |
-| `phase2-migrate.yml` | the full rebuild: backup, teardown, SD swap, k3s, restore | big migrations, the rebuild drill | `REBUILD` |
+| `rebuild.yml` | disaster recovery / drill: backup, wipe k3s everywhere, reinstall, restore, verify, timing | the rebuild drill; after a total failure | `REBUILD` |
+| `phase2-migrate.yml` | the one-time 2026-11 migration (server moved, SD swap); kept as a record | not again | `REBUILD` |
 
 ## How to run one
 

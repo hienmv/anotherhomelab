@@ -11,6 +11,7 @@ Automation for the homelab hosts. Plan and context: [K3S-GUIDE.md → section 10
 | `playbooks/backup.yml` + `files/backup.sh` | phase 1 / any time: Secrets + PostgreSQL, age-encrypted, on node-workstation (+ a copy on the controller if that is another machine) |
 | `playbooks/k3s.yml` | install/update k3s on group `k3s` (server `k3s_servers`, agents `k3s_agents`) |
 | `playbooks/restore.yml` | new cluster from a backup: Flux, Secrets, PostgreSQL (row counts checked) |
+| `playbooks/rebuild.yml` | rebuild drill / disaster recovery: backup → teardown → k3s → restore → verify, with timing |
 | `playbooks/phase2-migrate.yml` | phase 2: backup → teardown → Pi identities / SD swap → k3s → restore |
 | `playbooks/access.yml` | accounts on the Pis: automation user `ops` (IP-restricted key, passwordless sudo), SSH keys only |
 | `playbooks/verify.yml` | read-only health checks per layer (catalog: [docs/testing.md](../docs/testing.md)) |

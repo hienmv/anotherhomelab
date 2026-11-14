@@ -74,7 +74,7 @@ Restarting an app safely: `kubectl -n apps rollout restart deploy/<name>`.
 | Procedure | Where |
 |---|---|
 | reinstall node-workstation | [K3S-GUIDE.md 10.4](../../K3S-GUIDE.md) |
-| rebuild the whole cluster from a backup | `phase2-migrate.yml --tags teardown,k3s,restore` ([K3S-GUIDE.md 10.3](../../K3S-GUIDE.md)) |
+| rebuild the whole cluster from a backup (drill or disaster) | `rebuild.yml` ([K3S-GUIDE.md section 11](../../K3S-GUIDE.md)) |
 | add a public subdomain for a new app | [docs/domains.md](../domains.md) |
 | change who can log in | `access.yml` ([chapter 5](5-accounts-and-ssh.md)) |
 

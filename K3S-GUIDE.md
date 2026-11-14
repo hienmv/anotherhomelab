@@ -516,6 +516,34 @@ and processes 0, no linger, the old Connect sign-in key gone from `/boot/firmwar
 Gotcha: a terminal opened before `workstation-prepare.yml` added the ssh-agent lines to `~/.bashrc`
 says "Could not open a connection to your authentication agent": `source ~/.bashrc` (or log in again).
 
+## 11. Rebuild drill (disaster recovery)
+
+**What**: wipe k3s on every node and rebuild the whole cluster from git + configuration + the newest
+backup: `ansible/playbooks/rebuild.yml` = confirm → backup → teardown → `k3s.yml` → `restore.yml` →
+`verify.yml` → timing. **Why**: a backup you never restored is a hope, not a backup; and it proves
+the "built from config alone" goal. **When**: after big changes, and regularly (e.g. every 3 months).
+**Downtime**: all sites, about 30-45 minutes.
+
+### Runbook
+
+| # | Where | Step | Expected |
+|---|---|---|---|
+| 0 | as ops | `ansible-playbook playbooks/verify.yml` | every host `all checks passed` (start from a healthy system) |
+| 1 | Mac | `ssh node-workstation` | you are `ethan` |
+| 2 | ethan | `sudo -iu ops` (your password), then `tmux new -A -s drill` | a tmux session as ops (survives a dropped SSH connection; reattach: `tmux attach -t drill`) |
+| 3 | ops | `cd ~/workspace/source/homelab && git pull && cd ansible` | up to date |
+| 4 | ops | `ansible-playbook playbooks/rebuild.yml`, type `REBUILD` | backup line `encrypted: ... decrypt check OK`; then teardown, k3s (4 nodes Ready), restore (`Restored rows` = the backup's), apps restarted, public URLs `200`, verify `all checks passed`, timing |
+| 5 | anyone | open the sites; log in to Grafana | everything as before |
+
+If a step fails: read its message, fix the cause, resume with tags, e.g.
+`ansible-playbook playbooks/rebuild.yml --tags k3s,restore,verify` (no backup or teardown again).
+
+### Drill log
+
+| Date | Result | Downtime | Notes |
+|---|---|---|---|
+| 2026-11-12 | (first rebuild, as the migration, see 10.3) | ~21 h | Ubuntu 26.04 AppArmor bug; postmortem |
+
 ## Uninstall / reset
 
 Removes k3s from every node (agents first, then the server: **its volumes, i.e. Postgres, are

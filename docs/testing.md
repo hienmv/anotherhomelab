@@ -73,7 +73,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Data on the data node | every `data` pod runs on the `role=data` node | `verify.yml --tags data` | always | ✅ |
 | Backup is fresh and decryptable | newest backup decrypts with the age key; warns when older than 7 days | `verify.yml --tags backup` | always | ✅ |
 | Backup content | each dump starts with `PGDMP`; exact row counts recorded | `backup.yml` (fails on a bad dump) | every backup | ✅ |
-| **Restore drill** | a backup really restores: row counts after `pg_restore` = row counts in the backup | `restore.yml` (used for the 2026-11-12 rebuild) | after every rebuild; drill monthly once scheduled | ✅ playbook, ❌ schedule |
+| **Rebuild drill** | the whole cluster rebuilds from git + config + backup, row counts match, everything healthy | `rebuild.yml` (K3S-GUIDE section 11, drill log there) | every ~3 months, after big changes | ✅ playbook, ❌ schedule |
 | Scheduled backups | backups happen without a human | CNPG → R2 (WAL + base), roadmap stage 1 | – | ❌ |
 
 ## 6. Applications (running system)

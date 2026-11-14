@@ -1,0 +1,90 @@
+# Rebuild drill / disaster recovery: back up, wipe k3s on every node, reinstall it from the
+# inventory, restore Flux + secrets + Postgres from the backup, verify. Everything comes from the
+# configuration (site-settings.yaml, inventory), so this also proves "built from config alone".
+# DOWNTIME: all sites are down from the teardown until the restore finishes (about 30-45 min).
+#
+# Run on the workstation as ops, inside tmux (sudo -iu ops; tmux new -A -s drill):
+#   cd ~/workspace/source/homelab && git pull && cd ansible
+#   ansible-playbook playbooks/rebuild.yml
+# Prompts: REBUILD. Resume after a failure with tags: confirm backup teardown k3s restore verify
+#   e.g. ansible-playbook playbooks/rebuild.yml --tags k3s,restore,verify
+# Runbook and log of past drills: K3S-GUIDE.md section 11.
+
+- name: Confirm
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [confirm]
+  tasks:
+    - name: Confirm the rebuild
+      ansible.builtin.pause:
+        prompt: |
+          This WIPES k3s on {{ groups['k3s'] | join(', ') }} (server: {{ k3s_server }}; Postgres data on
+          its volume is deleted) after taking a fresh backup, then rebuilds and restores everything.
+          All sites go down for about 30-45 minutes.
+          Type REBUILD to continue
+      register: confirm
+
+    - name: Confirmed
+      ansible.builtin.assert:
+        that: confirm.user_input == 'REBUILD'
+        fail_msg: "Not confirmed, nothing changed."
+        quiet: true
+
+    - name: Start time
+      ansible.builtin.set_fact:
+        drill_start: "{{ now(utc=true).timestamp() | int }}"
+
+- name: Fresh backup (must succeed, or nothing is torn down)
+  ansible.builtin.import_playbook: backup.yml
+  tags: [backup]
+
+- name: Teardown (agents first, then the server)
+  hosts: k3s
+  become: true
+  gather_facts: false
+  tags: [teardown]
+  tasks:
+    - name: Downtime starts
+      ansible.builtin.set_fact:
+        teardown_at: "{{ now(utc=true).timestamp() | int }}"
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+
+    - name: Uninstall k3s agents
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-agent-uninstall.sh
+        removes: /usr/local/bin/k3s-agent-uninstall.sh
+      when: inventory_hostname in groups['k3s_agents']
+
+    - name: Uninstall the k3s server (cluster state and volumes are deleted)
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-uninstall.sh
+        removes: /usr/local/bin/k3s-uninstall.sh
+      when: inventory_hostname in groups['k3s_servers']
+
+- name: Reinstall k3s
+  ansible.builtin.import_playbook: k3s.yml
+  tags: [k3s]
+
+- name: Restore Flux, secrets and Postgres
+  ansible.builtin.import_playbook: restore.yml
+  tags: [restore]
+
+- name: Health check
+  ansible.builtin.import_playbook: verify.yml
+  tags: [verify]
+
+- name: Drill result
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  tasks:
+    - name: Timing
+      ansible.builtin.debug:
+        msg:
+          - "total (confirm -> verified): {{ ((now(utc=true).timestamp() | int) - (drill_start | int)) // 60 }} min"
+          - "downtime (teardown -> verified): {{ ((now(utc=true).timestamp() | int) - (hostvars['localhost'].teardown_at | int)) // 60 }} min"
+      when: drill_start is defined and hostvars['localhost'].teardown_at is defined
