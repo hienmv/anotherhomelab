@@ -71,6 +71,25 @@ Linux stores file owners as **numbers**, not names. The same number must mean th
 everywhere, or a copied file changes owner. Fixed here (inventory `admin_uid`, `automation_uid`):
 **`ethan` = 1000** and **`ops` = 2000** on every host.
 
+## Things you will do
+
+```bash
+# from the Mac
+ssh node-workstation                    # you are ethan (Keychain unlocks your Mac key)
+
+# as ethan on node-workstation
+ssh-add ~/.ssh/id_homelab               # once per 8 h, to use the Pis as yourself
+                                        # "Could not open a connection to your authentication agent"?
+                                        #   -> source ~/.bashrc  (or log in again)
+ssh node-8gb                            # = ethan@node-8gb
+
+# automation: switch to ops (asks YOUR password once)
+sudo -iu ops
+cd ~/workspace/source/homelab && git pull
+cd ansible && ansible-playbook playbooks/verify.yml
+exit                                    # back to ethan
+```
+
 ## If you lose the keys
 
 The Pis accept **only** `id_homelab` and `id_ops`, **only** from node-workstation's IP. If
