@@ -452,10 +452,20 @@ sudo-rs on 26.04 (gone with 24.04).
 
 ### 10.5 Access model (since 2026-11-13)
 
-| Account | Where | Login | sudo | Used by |
+Every host has its **own local accounts**; `admin_user` (hien) only gives them the same name.
+Write them as `user@host` to be clear which one is meant.
+
+| Account | Logs in with | sudo | Holds | Used for |
 |---|---|---|---|---|
-| `admin_user` (hien) | all hosts | key `~/.ssh/id_homelab` on node-workstation (passphrase, ssh-agent 8 h), on the Pis accepted **only from node-workstation's IP**; on node-workstation itself also the desktop password | Pis: passwordless (owner's choice); node-workstation: password | you, interactively |
-| `automation_user` (ops) | Pis | key `~/.ssh/id_ops` on node-workstation, **no passphrase**, accepted **only from node-workstation's IP** (`from="..."`, no agent/port/X11 forwarding); password locked | passwordless | Ansible (inventory `ansible_user` for the Pis) |
+| `maihien@Mac` | Mac password | – | `~/.ssh/id_homelab_workstation` (passphrase, Keychain) | `ssh node-workstation`, nothing else |
+| **`hien@node-workstation`** | desktop password, or the Mac key over SSH | with password | `id_homelab` (→ `hien@<Pi>`), `id_ops` (→ `ops@<Pi>`), `id_github`, kubeconfig, age key, backups | the admin; Ansible runs here, locally |
+| `hien@<Pi>` (node-8gb/4gb/1gb) | only `id_homelab`, only from node-workstation's IP | passwordless (owner's choice) | nothing | you: debugging, learning |
+| `ops@<Pi>` | only `id_ops` (no passphrase), only from node-workstation's IP; password locked | passwordless | nothing | Ansible (inventory `ansible_user` for the Pis) |
+
+```
+maihien@Mac --ssh (id_homelab_workstation)--> hien@node-workstation --ssh (id_homelab)--> hien@node-8gb ...
+                                                     +--ssh (id_ops, Ansible)----------> ops@node-8gb ...
+```
 
 - Set up by `ansible/playbooks/access.yml` (idempotent; its bootstrap play connects as `admin_user`).
 - **Both keys exist only on node-workstation, and the Pis accept them only from its IP.** Keep a copy
