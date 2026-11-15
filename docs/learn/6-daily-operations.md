@@ -21,6 +21,24 @@ kubectl get pods -A               # anything not Running?
 flux get kustomizations           # all Ready?
 ```
 
+## Alerts: you don't have to check by hand
+
+A timer runs this health check **every 15 minutes** (and a full one daily). You get a **Telegram
+message when something changes**: 🔴 with the problems, 🟢 when all is good again. If the homelab is
+completely gone (power, internet), it cannot send anything, so **healthchecks.io** notices that the
+regular "I'm fine" pings stopped and alerts you from outside.
+
+Create the settings file once, as ops (the values are typed hidden):
+
+```bash
+mkdir -p ~/.config/homelab && chmod 700 ~/.config/homelab
+read -rsp "Telegram bot token: " T; echo; read -rp "Telegram chat id: " C; read -rp "healthchecks.io ping URL: " H
+printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_CHAT_ID=%s\nHEALTHCHECK_URL=%s\n' "$T" "$C" "$H" > ~/.config/homelab/alerting.env
+chmod 600 ~/.config/homelab/alerting.env; unset T C H
+```
+
+Where to get those values, and how the timers work: [K3S-GUIDE.md section 12](../../K3S-GUIDE.md).
+
 ## Make a backup
 
 ```bash

@@ -134,6 +134,64 @@
         validate: sshd -t -f %s
       notify: Reload sshd
 
+    # Scheduled health checks with alerting (files/homelab-check.sh). Settings with the Telegram
+    # token and healthchecks.io URL: {{ automation_home }}/.config/homelab/alerting.env (by hand).
+    # Check: systemctl list-timers 'homelab-*'; journalctl -u homelab-check -n 30
+    - name: Health check services (quick and full)
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/homelab-check{{ item.suffix }}.service"
+        content: |
+          [Unit]
+          Description=homelab health check{{ item.desc }} (verify.yml + alerting)
+          Wants=network-online.target
+          After=network-online.target
+          [Service]
+          Type=oneshot
+          User={{ automation_user }}
+          ExecStart={{ repo_dest }}/ansible/files/homelab-check.sh{{ item.arg }}
+          TimeoutStartSec=20min
+        mode: "0644"
+      loop:
+        - { suffix: "", desc: "", arg: "" }
+        - { suffix: "-full", desc: " (full, with canary)", arg: " --full" }
+      loop_control: { label: "homelab-check{{ item.suffix }}" }
+      register: check_services
+
+    - name: Health check timers
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/homelab-check{{ item.suffix }}.timer"
+        content: |
+          [Unit]
+          Description=homelab health check{{ item.desc }}
+          [Timer]
+          OnCalendar={{ item.when }}
+          Persistent=true
+          RandomizedDelaySec=1min
+          [Install]
+          WantedBy=timers.target
+        mode: "0644"
+      loop:
+        - { suffix: "", desc: " every 15 min", when: "{{ check_quick_every }}" }
+        - { suffix: "-full", desc: " daily", when: "{{ check_full_at }}" }
+      loop_control: { label: "homelab-check{{ item.suffix }}" }
+      register: check_timers
+
+    - name: Health check timers enabled and started
+      ansible.builtin.systemd_service:
+        name: "homelab-check{{ item }}.timer"
+        enabled: true
+        state: started
+        daemon_reload: "{{ check_services is changed or check_timers is changed }}"
+      loop: ["", "-full"]
+
+    - name: Folder for the alerting settings (file itself is created by hand)
+      ansible.builtin.file:
+        path: "{{ automation_home }}/.config/homelab"
+        state: directory
+        owner: "{{ automation_user }}"
+        group: "{{ automation_user }}"
+        mode: "0700"
+
     - name: logind drop-in directory (not shipped by Ubuntu)
       ansible.builtin.file:
         path: /etc/systemd/logind.conf.d

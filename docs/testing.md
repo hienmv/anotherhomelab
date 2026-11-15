@@ -13,6 +13,9 @@ cd ansible && ansible-playbook playbooks/verify.yml          # as ops (sudo -iu 
 **When to run `verify.yml`**: after every rebuild, migration, k3s or OS upgrade, node change, and
 whenever something looks wrong. It must end with `<host>: all checks passed` for every host.
 
+**Scheduled**: every 15 min (quick) and daily (full) by systemd timers, with Telegram messages
+and a healthchecks.io dead man's switch: [K3S-GUIDE.md section 12](../K3S-GUIDE.md).
+
 **How it reports**: every check runs, even after another one failed; each failing check adds a
 one-line reason, and each host fails once at the end with all of them, e.g.
 `2 problem(s) on node-workstation: pod: apps/landing-… Pending | config: unreplaced 1 ${DOMAIN}`.
@@ -40,6 +43,8 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Manifests render like Flux | every `k8s/` folder builds, strict substitution (unknown `${x}` fails), `substitute: disabled` honored | `scripts/render-k8s.py` (workflow `validate`) | same | ✅ CI |
 | Manifests valid Kubernetes | kubeconform on the rendered output, CRDs from the datree catalog (36/36 valid, 0 skipped) | workflow `validate` | same | ✅ CI |
 | Playbooks parse | `ansible-playbook --syntax-check` for every playbook | workflow `validate` | same | ✅ CI |
+| No secrets in git | gitleaks over the whole history (false positives: `.gitleaks.toml`) | workflow `validate`, job `secrets` | every PR and push | ✅ CI |
+| Checks before deploy | `main` accepts changes only through PRs whose `validate` jobs pass | ruleset `.github/rulesets/main.json` | always | ✅ (once applied) |
 
 ## 3. Infrastructure (machines, OS, network)
 
@@ -105,8 +110,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 ## Gaps, in order (roadmap)
 
 1. Scheduled backups to R2 + a monthly automated restore drill.
-2. `verify.yml` on a timer (systemd on node-workstation) with alerts (e.g. Telegram), plus an outside
-   probe from node-1gb.
+2. Metric-based alerts (vmalert + Alertmanager) between the 15-minute checks.
 3. TicketLite end-to-end and rush test in CI (docker compose job).
 4. Failover tests once the control plane is HA.
 5. Image scanning (Trivy) and automated dependency updates (Renovate).

@@ -319,6 +319,32 @@
         problems: "{{ problems + ['backup: ' ~ ((backup_age.stderr | truncate(200)) if backup_age.rc != 0 else ('newest is ' ~ backup_age.stdout.split()[0] ~ ' h old (' ~ backup_age.stdout.split()[1] ~ '), run backup.yml'))] }}"
       when: backup_age.rc != 0 or (backup_age.stdout.split()[0] | int) > 168
 
+    # ---------- expiry dates (nothing else warns about these) ----------
+    - name: Expiry dates from group_vars (days left)
+      tags: [apps]
+      vars:
+        days_left: "{{ ((item.date | to_datetime('%Y-%m-%d')) - now()).days }}"
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['expiry: ' ~ item.name ~ ' expires ' ~ item.date ~ ' (' ~ days_left ~ ' days left)'] }}"
+      loop: "{{ expiry_dates | default([]) }}"
+      loop_control: { label: "{{ item.name }}" }
+      when: days_left | int < expiry_warn_days | int
+
+    - name: grafana.lan certificate (days left)
+      tags: [apps]
+      ansible.builtin.shell: >-
+        end=$(kubectl -n monitoring get secret grafana-lan-tls -o jsonpath='{.data.tls\.crt}' | base64 -d
+        | openssl x509 -noout -enddate | cut -d= -f2) && echo $(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+      register: lan_cert_days
+      changed_when: false
+      failed_when: false
+
+    - name: grafana.lan certificate result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['expiry: grafana.lan certificate ' ~ ('unreadable: ' ~ (lan_cert_days.stderr | truncate(120)) if lan_cert_days.rc != 0 else 'expires in ' ~ lan_cert_days.stdout ~ ' days (new CA + cert: K3S-GUIDE section 7)')] }}"
+      when: lan_cert_days.rc != 0 or lan_cert_days.stdout | int < expiry_warn_days | int
+
 - name: Public entry points (Cloudflare, from the machine running Ansible)
   hosts: localhost
   connection: local

@@ -313,7 +313,7 @@ Open:
   verify checks). Steps: plug the SSD into a USB 3 port of node-8gb, then continue from the review
   (docs/review/2026-11-15-resilience-review.md, roadmap step 1).
 - [ ] SOPS-encrypted secrets
-- [ ] Alerting (choose a channel: Telegram, Discord, Slack, email)
+- [x] Alerting: scheduled checks + Telegram + healthchecks.io (section 12); metric alerts (vmalert) still open
 - [ ] KEDA worker autoscaling; batch CronJobs
 - [ ] Archive hienmv.github.io once the notes site is confirmed (user)
 
@@ -548,6 +548,38 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 | Date | Result | Downtime | Notes |
 |---|---|---|---|
 | 2026-11-12 | (first rebuild, as the migration, see 10.3) | ~21 h | Ubuntu 26.04 AppArmor bug; postmortem |
+
+## 12. Alerting (since 2026-11-15)
+
+| Part | What | Where |
+|---|---|---|
+| quick check | `verify.yml` without the canary, every 15 min, as `ops` | timer `homelab-check` |
+| full check | everything incl. the canary pods, daily 04:15 | timer `homelab-check-full` |
+| messages | Telegram, **only on change** (🔴 new problems, 🟢 all good again) + a reminder every 6 h while broken | `ansible/files/homelab-check.sh` |
+| dead man's switch | every successful check pings healthchecks.io; **if the pings stop** (homelab, power or internet down), healthchecks.io alerts from outside | healthchecks.io check (period 15 min, grace 30 min) |
+| expiry reminders | problem 30 days before: GHCR pull token (`expiry_dates` in `group_vars/all.yml`), `grafana.lan` certificate | `verify.yml` |
+
+Settings (never in git), as `ops`: `~/.config/homelab/alerting.env` (mode 600):
+
+```bash
+TELEGRAM_BOT_TOKEN=<from @BotFather>
+TELEGRAM_CHAT_ID=<your chat id>
+HEALTHCHECK_URL=https://hc-ping.com/<uuid>
+```
+
+Set up once:
+1. Telegram: talk to **@BotFather** → `/newbot` → name it → copy the **token**. Send any message to
+   your new bot, then open `https://api.telegram.org/bot<token>/getUpdates` in a browser: the number
+   after `"chat":{"id":` is your **chat id**.
+2. healthchecks.io: sign up (free) → **Add Check** "homelab", period **15 minutes**, grace **30
+   minutes** → copy the **ping URL**; under Integrations add Telegram and/or e-mail.
+3. As ops: create the file (hidden input, see docs/learn/6), then
+   `ansible-playbook playbooks/workstation-prepare.yml` installs the timers.
+4. Test: `~/workspace/source/homelab/ansible/files/homelab-check.sh` (prints the result; a first
+   ping appears on healthchecks.io).
+
+Look at it: `systemctl list-timers 'homelab-*'`, `journalctl -u homelab-check -n 30`. Not yet:
+metric-based alerts (vmalert + Alertmanager: disk full, Postgres down between two checks).
 
 ## Uninstall / reset
 
