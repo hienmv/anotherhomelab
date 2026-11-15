@@ -7,4 +7,4 @@ resources:
 images:
   - name: notes
     newName: ${IMAGE_REGISTRY}/notes
-    newTag: sha-90de57e
+    newTag: sha-f42113f
