@@ -19,6 +19,7 @@ GitOps, configuration, accounts, daily operations).
 Docs: **[docs/domains.md](docs/domains.md)** (how each hostname is wired, how to add one) ·
 **[K3S-GUIDE.md](K3S-GUIDE.md)** (how the cluster was built, decisions, secrets, troubleshooting) ·
 **[docs/testing.md](docs/testing.md)** (every test per part, `verify.yml` health check) ·
+**[docs/review/](docs/review/2026-11-15-resilience-review.md)** (resilience review vs real systems) ·
 **[docs/postmortems/](docs/postmortems/)** (incidents: [2026-11-11 migration](docs/postmortems/2026-11-11-phase2-migration.md)).
 
 ## System design

@@ -33,5 +33,6 @@ start here.
 | How it was built, decisions, troubleshooting | [K3S-GUIDE.md](../../K3S-GUIDE.md) |
 | Hostnames, Cloudflare, routing | [docs/domains.md](../domains.md) |
 | Every test and health check | [docs/testing.md](../testing.md) |
+| How resilient is it, compared to real systems? | [docs/review/](../review/2026-11-15-resilience-review.md) |
 | The Ansible folder | [ansible/README.md](../../ansible/README.md) |
 | Each app | `apps/<app>/README.md` |
