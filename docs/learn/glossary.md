@@ -9,6 +9,7 @@
 | **authorized_keys** | file on a server listing the public keys allowed to log in |
 | **bastion** | the one machine you log in to first to reach the others (here: node-workstation) |
 | **become** | Ansible for "run as root via sudo" |
+| **branch** | a separate line of commits; only `main` is deployed |
 | **break-glass** | emergency access, used only when everything else fails (e.g. keyboard on the Pi) |
 | **canary** | try something on one small target first (one node, one pod) before everything |
 | **CI** | Continuous Integration: GitHub Actions builds and tests on every push |
@@ -17,10 +18,14 @@
 | **ConfigMap / Secret** | Kubernetes objects holding settings / passwords |
 | **container / image** | a program packaged with everything it needs / the package itself (stored in GHCR) |
 | **CRD** | Custom Resource Definition: lets an operator add its own object types (e.g. `Cluster` for Postgres) |
+| **dead man's switch** | an alarm that fires when regular "I'm alive" pings **stop** (healthchecks.io here) |
+| **deploy key** | an SSH key that may access **one** repository (read, or read + write); here for Flux, the workstation and CI's tag bumps |
 | **Deployment / Pod** | "run N copies of this image" / one running copy |
 | **drill** | practising a procedure on purpose (e.g. a full rebuild) to prove it works |
 | **Flux** | GitOps tool inside the cluster: applies what is in git (chapter 3) |
 | **GHCR** | GitHub Container Registry: where the app images are stored (`ghcr.io/<owner>/...`) |
+| **GitHub Actions secret** | an encrypted value stored in the repo's settings; workflows can use it, nobody can read it back (e.g. `CI_DEPLOY_KEY`) |
+| **gitleaks** | a scanner that looks for secrets (keys, tokens) in the git history; runs in CI |
 | **GitOps** | the cluster runs what is in git; changes happen by commits |
 | **Helm / HelmRelease** | packages of Kubernetes manifests ("charts") / Flux's object that installs one |
 | **idempotent** | running it again changes nothing if it is already right |
@@ -37,6 +42,9 @@
 | **passphrase** | password that encrypts a private key file |
 | **playbook / play / task / module** | Ansible file / a list of tasks for some hosts / one step / the tool doing the step |
 | **postmortem** | written review after an incident: what, why, what changes (no blame) |
+| **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
+| **required check** | a CI job that must pass before a PR may be merged |
+| **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SOPS** | encrypts secrets so they can live in git (planned) |
