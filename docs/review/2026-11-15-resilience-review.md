@@ -159,7 +159,7 @@ the files).
 
 | # | Step | Fixes | Effort |
 |---|---|---|---|
-| 1 | **Off-site automated backups** (CNPG → R2 with WAL, nightly secrets backup), checked by `verify.yml` | total data loss if node-workstation's disk dies | half a day |
+| 1 | **Off-site automated backups**: tier 1 Garage S3 on an SSD on node-8gb (continuous Postgres WAL + nightly base, secrets archives), tier 2 encrypted nightly copy to R2; checked by `verify.yml`. **Parked 2026-11-15 until the SSD is ready**; code on branch `wip/offsite-backup` | total data loss if node-workstation's disk dies | 1 day + SSD |
 | 2 | **Alerting**: scheduled `verify.yml` as `ops`, alerts to a phone, external uptime probe, expiry reminders | nobody notices an outage | half a day |
 | 3 | **Repo visibility decision** + secret scanning | public reconnaissance, accidental leaks | 30 min |
 | 4 | **Branch protection + PR flow** with required checks | a broken push deploys at once | 30 min |

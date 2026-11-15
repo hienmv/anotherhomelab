@@ -306,7 +306,12 @@ Done (details in git history):
 
 Open:
 - [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
-- [ ] Scheduled backups to R2 + monthly restore drill (section 8)
+- [ ] **Off-site backups** (designed 2026-11-15, waiting for the SSD): tier 1 = Garage S3 on a 128 GB
+  SSD on node-8gb (host service, outside k8s; continuous Postgres WAL + nightly base via the Barman
+  Cloud plugin, secrets archives), tier 2 = nightly encrypted (rclone crypt) copy to Cloudflare R2.
+  Prepared code: branch `wip/offsite-backup` (cert-manager, plugin, ObjectStore, R2 upload, timer,
+  verify checks). Steps: plug the SSD into a USB 3 port of node-8gb, then continue from the review
+  (docs/review/2026-11-15-resilience-review.md, roadmap step 1).
 - [ ] SOPS-encrypted secrets
 - [ ] Alerting (choose a channel: Telegram, Discord, Slack, email)
 - [ ] KEDA worker autoscaling; batch CronJobs
