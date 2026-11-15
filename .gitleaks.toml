@@ -1,0 +1,7 @@
+# gitleaks (secret scanner, CI job "secrets"): default rules + documented false positives only.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "diagram label 'TicketLite web + api x2' in scripts/diagrams.py (2026-11-08), not a key"
+commits = ["79ae97cde9b61b3c20243d142106b9cd96c275e7"]
