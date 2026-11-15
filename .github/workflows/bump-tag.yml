@@ -19,9 +19,13 @@ jobs:
     name: bump image tags (Flux deploys)
     runs-on: ubuntu-24.04
     steps:
+      # Pushes to main with the deploy key "ci-bump-tag" (secret CI_DEPLOY_KEY): main is protected by
+      # a ruleset (.github/rulesets/main.json) and only deploy keys may push to it directly. Without
+      # the secret, checkout falls back to GITHUB_TOKEN (works only while main is unprotected).
       - uses: actions/checkout@v7
         with:
           ref: main
+          ssh-key: ${{ secrets.CI_DEPLOY_KEY }}
 
       - name: Set image tags to this commit
         env:

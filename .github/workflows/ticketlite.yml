@@ -50,6 +50,7 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/bump-tag.yml
+    secrets: inherit        # CI_DEPLOY_KEY: push past the main ruleset
     permissions:
       contents: write
     with:
