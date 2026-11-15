@@ -16,3 +16,13 @@ gh api -X PUT  repos/hienmv/anotherhomelab/rulesets/<id> --input .github/ruleset
 
 Why deploy keys and not "GitHub Actions" as the exception: GitHub allows the Actions app as a
 bypass actor only for organisation repositories; on a personal repo it rejects it.
+
+## Status
+
+Applied 2026-11-15 (ruleset id 27316513). Since then every change goes through a pull request:
+
+```bash
+git switch -c <topic>; git commit ...; git push -u origin <topic>
+gh pr create --fill          # validate runs on the PR
+gh pr merge --squash --auto  # merges by itself once the checks pass
+```
