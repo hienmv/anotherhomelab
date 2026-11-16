@@ -90,6 +90,18 @@ remote: - Changes must be made through a pull request.
 
 That is the protection working, not an error in your setup.
 
+## Secrets and a public repo
+
+The repo is **public** (decided 2026-11-16), so anyone can read every commit, forever. Two guards:
+
+| Guard | When | What happens |
+|---|---|---|
+| GitHub **push protection** | on `git push` | a push containing a known token type (GitHub, AWS, Cloudflare, ...) is **refused** before it lands |
+| **gitleaks** (required check `secrets`) | on every PR | scans the whole history; a leak blocks the merge |
+
+If a secret ever lands anyway: **rotate it first** (new token, delete the old one). Removing it from
+git afterwards does not help, it has already been seen.
+
 ## The first PR (2026-11-15), as an example
 
 PR #1: a docs change plus a comment in `apps/notes/nginx.conf`. The checks passed, it was merged as
