@@ -160,11 +160,11 @@ How changes reach the cluster.
 <!-- diagram:ops:start -->
 ```text
 ┌─ node-workstation (admin) ─────────┐                  ┌─ GitHub ─────────────────────────┐
-│ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab (private)  │
+│ repo ~/workspace/source/homelab    │    git push      │ hienmv/anotherhomelab (public)   │
 │ Ansible: inventory = all IPs       ├─────────────────►│ Actions: amd64+arm64 -> GHCR     │
 │ kubectl helm k9s flux sops age     │                  │   then bump tag in k8s/ (commit) │
 │ kubeconfig ~/.kube/homelab.yaml    │                  └─────────────────┬────────────────┘
-│ ssh id_homelab -> Pis (passphr.)   │               pull every 1m (SSH)  │
+│ ssh ops key -> Pis (IP-locked)     │               pull every 1m (SSH)  │
 │ age key: backups (+ SOPS later)    │              read-only deploy key  │
 │ Mac / laptop: ssh in, nothing else │                                    │
 └───────┬─────────────────┬──────────┘                                    │

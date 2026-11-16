@@ -559,6 +559,8 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 | dead man's switch | every successful check pings healthchecks.io; **if the pings stop** (homelab, power or internet down), healthchecks.io alerts from outside | healthchecks.io check (period 15 min, grace 30 min) |
 | expiry reminders | problem 30 days before: GHCR pull token (`expiry_dates` in `group_vars/all.yml`), `grafana.lan` certificate | `verify.yml` |
 
+Live since 2026-11-16: timers installed by `workstation-prepare.yml`, first manual run `all checks passed`.
+
 Settings (never in git), as `ops`: `~/.config/homelab/alerting.env` (mode 600):
 
 ```bash

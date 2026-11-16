@@ -40,6 +40,11 @@ postmortem: useful reconnaissance, no keys.
 | Keep it public (portfolio, learning in the open) | fine as long as secrets never enter git: add secret scanning (GitHub's own, plus `gitleaks` in CI) |
 | Make it private | `gh repo edit --visibility private`; nothing else changes (Flux uses its deploy key) |
 
+**Decided 2026-11-16: keep it public.** Guards: `gitleaks` scans the whole history on every PR
+(required check `secrets`), and GitHub **secret scanning + push protection** are on (a push that
+contains a known token type is refused before it lands; 0 alerts when enabled). Rule stays: secrets
+live in the password manager and on node-workstation, never in git.
+
 ## 1. Failure scenarios: what happens today
 
 RTO = time until service is back. RPO = how much data can be lost.
@@ -161,7 +166,7 @@ the files).
 |---|---|---|---|
 | 1 | **Off-site automated backups**: tier 1 Garage S3 on an SSD on node-8gb (continuous Postgres WAL + nightly base, secrets archives), tier 2 encrypted nightly copy to R2; checked by `verify.yml`. **Parked 2026-11-15 until the SSD is ready**; code on branch `wip/offsite-backup` | total data loss if node-workstation's disk dies | 1 day + SSD |
 | 2 | **Alerting**: scheduled `verify.yml` as `ops`, alerts to a phone, external uptime probe, expiry reminders. **Built 2026-11-15** (K3S-GUIDE 12) | nobody notices an outage | half a day |
-| 3 | **Repo visibility decision** + secret scanning. **gitleaks in CI 2026-11-15** | public reconnaissance, accidental leaks | 30 min |
+| 3 | **Repo visibility decision** + secret scanning. **Done 2026-11-16**: public; gitleaks in CI, GitHub secret scanning + push protection on | public reconnaissance, accidental leaks | 30 min |
 | 4 | **Branch protection + PR flow** with required checks. **Ruleset as code 2026-11-15** (`.github/rulesets/`) | a broken push deploys at once | 30 min |
 | 5 | **Ethernet** for node-workstation; UPS for router + Pis | packet loss, power cuts | hardware |
 | 6 | **2 replicas + PodDisruptionBudgets** for the public apps; Grafana storage not pinned to one Pi | one Pi or one pod takes a site down | 1–2 h |

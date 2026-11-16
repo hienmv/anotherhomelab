@@ -222,12 +222,12 @@ def draw_ops():
         "Ansible: inventory = all IPs",
         "kubectl helm k9s flux sops age",
         "kubeconfig ~/.kube/homelab.yaml",
-        "ssh id_homelab -> Pis (passphr.)",
+        "ssh ops key -> Pis (IP-locked)",
         "age key: backups (+ SOPS later)",
         "Mac / laptop: ssh in, nothing else",
     ])
     c.box(56, 0, 36, 5, title="GitHub", lines=[
-        f"{SITE['GIT_REPO_SLUG']} (private)",
+        f"{SITE['GIT_REPO_SLUG']} (public)",
         "Actions: amd64+arm64 -> GHCR",
         "  then bump tag in k8s/ (commit)",
     ])
