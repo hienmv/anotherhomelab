@@ -1,13 +1,26 @@
+<!--
+  Logs are structured JSON, one object per line, so the central log store (VictoriaLogs) gets real
+  fields: level, logger, request_id, status, duration_ms, order_id, ... (docs/learn/9-monitoring-grafana.md).
+
+    {"time":"2026-11-16T06:23:21.028Z","level":"INFO","logger":"ticketlite.http","message":"GET /api/concerts -> 200 in 13 ms",
+     "service":"ticketlite","role":"api","request_id":"8e2f...","method":"GET","path":"/api/concerts","status":200,"duration_ms":13}
+
+  Levels (same rule everywhere in this homelab):
+    ERROR  the service failed and someone should look (5xx, unhandled exception, lost connection)
+    WARN   degraded but still working (slow request, a retry)
+    INFO   normal events (requests incl. 4xx like SOLD_OUT, orders processed, start/stop)
+    DEBUG  details for a bug hunt; off unless LOG_LEVEL=DEBUG
+
+  Env: LOG_FORMAT=json (default, also in docker compose) | text (readable), LOG_LEVEL=INFO (default).
+-->
 <configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg%n</pattern>
-        </encoder>
-    </appender>
+    <!-- appender "out": JSON (logback-json.xml) or readable text (logback-text.xml) -->
+    <include resource="logback-${LOG_FORMAT:-json}.xml"/>
+
     <logger name="com.zaxxer.hikari" level="WARN"/>
     <logger name="org.flywaydb" level="INFO"/>
     <logger name="io.ktor" level="INFO"/>
-    <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="out"/>
     </root>
 </configuration>

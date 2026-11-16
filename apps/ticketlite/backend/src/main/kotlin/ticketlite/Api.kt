@@ -8,7 +8,8 @@ import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.BadRequestException
-import io.ktor.server.plugins.calllogging.CallLogging
+import io.ktor.server.plugins.callid.CallId
+import io.ktor.server.plugins.callid.callId
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.forwardedheaders.XForwardedHeaders
 import io.ktor.server.plugins.statuspages.StatusPages
@@ -30,8 +31,8 @@ import io.ktor.server.sessions.get
 import io.ktor.server.sessions.sessions
 import io.ktor.server.sessions.set
 import java.util.UUID
+import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
-import org.slf4j.event.Level
 
 private val log = LoggerFactory.getLogger("ticketlite.api")
 
@@ -52,16 +53,23 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
         distributionStatisticConfig = DistributionStatisticConfig.Builder().percentilesHistogram(true).build()
     }
     install(ContentNegotiation) { json() }
-    install(CallLogging) {
-        level = Level.INFO
-        filter { it.request.path().startsWith("/api") }
+    // Request id: one id per request, in every log line it causes (api AND worker), and sent back as
+    // X-Request-ID. Taken from the caller if it sent one, else Cloudflare's CF-Ray (also shown in
+    // Cloudflare's dashboard), else a new random one.
+    install(CallId) {
+        retrieveFromHeader("X-Request-ID")
+        retrieveFromHeader("CF-Ray")
+        generate { UUID.randomUUID().toString() }
+        verify { it.isNotEmpty() && it.length <= 128 && it.all { ch -> ch.isLetterOrDigit() || ch in "-_." } }
+        replyToHeader("X-Request-ID")
     }
+    install(RequestLog)
     install(StatusPages) {
         exception<BadRequestException> { call, _ ->
             call.respond(HttpStatusCode.BadRequest, ErrorDto("BAD_REQUEST"))
         }
         exception<Throwable> { call, e ->
-            log.error("unhandled error", e)
+            log.error("unhandled error on {}", call.request.path(), kv("request_id", call.callId ?: "-"), e)
             call.respond(HttpStatusCode.InternalServerError, ErrorDto("INTERNAL"))
         }
     }
@@ -147,7 +155,7 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
                 val id = UUID.randomUUID()
                 try {
                     repo.insertPending(id, s.userId, concert.id, req.quantity)
-                    gate.enqueue(id)
+                    gate.enqueue(id, call.callId)
                 } catch (e: Exception) {
                     gate.release(concert.id, s.userId, req.quantity)
                     runCatching { repo.markFailed(id, "ENQUEUE_FAILED") }

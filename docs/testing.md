@@ -25,8 +25,9 @@ Every Ansible run is also logged to `ansible/logs/ansible.log` (the file is git-
 
 | Test | Proves | How | When | Status |
 |---|---|---|---|---|
-| TicketLite backend unit tests | config parsing, limits, metric names (`MetricsTest` guards the dashboard) | `gradle test`, inside the Docker build | every push / PR touching `apps/ticketlite/` | ✅ CI |
+| TicketLite backend unit tests | config parsing, limits, metric names (`MetricsTest` guards the dashboard), JSON log fields + level rule (`LoggingTest` guards the log queries) | `gradle test`, inside the Docker build | every push / PR touching `apps/ticketlite/` | ✅ CI |
 | TicketLite web tests (31) | every Atomic Design level, `buyState`, API errors, ConcertsPage flow | `npm test` (Vitest + RTL), inside the Docker build | same | ✅ CI |
+| nginx JSON access logs (landing, notes, ticketlite-web) | config valid, one JSON line per request, 5xx = ERROR, probes not logged | `nginx -t` + curl in the image (manual, 2026-11-16); in the cluster: Grafana `service:=notes` | after changing an `nginx.conf*` | ✅ manual |
 | landing / notes checks | type check, unit tests, build, **no broken links** | `npm run check && npm test && npm run build && npm run check:links` in the Docker build | every push / PR touching the app | ✅ CI |
 | TicketLite end-to-end | real Postgres + Redis, order flow | docker compose by hand ([apps/ticketlite](../apps/ticketlite/README.md#tests)) | before risky backend changes | 🟡 |
 | TicketLite rush test | 30 parallel buys on 5 tickets: exactly 5 sold, per-user limit holds, nothing stuck | by hand ([apps/ticketlite](../apps/ticketlite/README.md)) | after queue/limit changes | 🟡 |

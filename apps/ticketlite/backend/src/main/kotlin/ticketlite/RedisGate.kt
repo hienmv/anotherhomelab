@@ -62,8 +62,10 @@ class RedisGate(redisUrl: String) {
 
     fun available(concertId: Long): Int? = jedis.get(inventoryKey(concertId))?.toIntOrNull()
 
-    fun enqueue(orderId: UUID) {
-        jedis.xadd(STREAM, XAddParams.xAddParams().maxLen(10_000).approximateTrimming(), mapOf("orderId" to orderId.toString()))
+    /** requestId travels with the order, so the worker's log lines carry the same request_id. */
+    fun enqueue(orderId: UUID, requestId: String?) {
+        val fields = mapOf("orderId" to orderId.toString()) + (requestId?.let { mapOf("requestId" to it) } ?: emptyMap())
+        jedis.xadd(STREAM, XAddParams.xAddParams().maxLen(10_000).approximateTrimming(), fields)
     }
 
     companion object {

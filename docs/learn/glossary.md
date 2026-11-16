@@ -40,6 +40,7 @@
 | **Kustomize / Kustomization** | combines and patches manifests (`kustomization.yaml`) / Flux's object that applies one folder |
 | **metrics / logs** | numbers measured over time (graphs in Grafana) / text lines a program prints (`kubectl logs`) |
 | **LogsQL** | VictoriaLogs' query language, e.g. `kubernetes.pod_namespace:=apps AND error` |
+| **log level** | how urgent a log line is: ERROR (failed) / WARN (degraded) / INFO (normal) / DEBUG (details); rule in chapter 9 |
 | **manifest** | a YAML file describing Kubernetes objects |
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
@@ -50,10 +51,12 @@
 | **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
 | **required check** | a CI job that must pass before a PR may be merged |
 | **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
+| **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SOPS** | encrypts secrets so they can live in git (planned) |
+| **structured logs** | log lines as JSON objects (`{"level":"INFO","status":200,...}`): every part is a searchable field |
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
 | **tmux** | keeps a terminal session running when your SSH connection drops |
 | **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |

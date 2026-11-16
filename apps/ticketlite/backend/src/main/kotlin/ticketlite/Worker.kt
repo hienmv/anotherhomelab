@@ -7,6 +7,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import net.logstash.logback.argument.StructuredArguments.kv
+import net.logstash.logback.argument.StructuredArguments.v
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.StreamEntryID
 import redis.clients.jedis.exceptions.JedisDataException
@@ -53,7 +55,8 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
                 for (batch in batches) batch.value.forEach(::handle)
             } catch (e: Exception) {
                 if (e is JedisDataException && e.message?.contains("NOGROUP") == true) ensureGroup()
-                log.error("worker loop error, retrying in 2s", e)
+                // WARN: it retries by itself. If it never recovers, the probes/alerts catch it.
+                log.warn("worker loop error, retrying in 2s", e)
                 Thread.sleep(2_000)
             }
         }
@@ -91,7 +94,13 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
                 if (outcome.status == OrderStatus.FAILED) gate.release(outcome.concertId, outcome.userId, outcome.quantity)
                 if (outcome.reason == "SOLD_OUT") gate.resyncInventory(outcome.concertId, outcome.dbAvailable)
                 Metrics.orderProcessed(outcome.status, outcome.reason, outcome.quantity, System.nanoTime() - started)
-                log.info("order {} -> {}{}", orderId, outcome.status, outcome.reason?.let { " ($it)" } ?: "")
+                // A FAILED order (LIMIT, SOLD_OUT) is a normal business outcome: INFO, with fields
+                log.info(
+                    "order {} -> {}", v("order_id", orderId.toString()), v("order_status", outcome.status),
+                    kv("reason", outcome.reason ?: "-"), kv("quantity", outcome.quantity),
+                    kv("concert_id", outcome.concertId), kv("duration_ms", (System.nanoTime() - started) / 1_000_000),
+                    kv("request_id", entry.fields["requestId"] ?: "-"),
+                )
             }
         }
         gate.jedis.xack(RedisGate.STREAM, RedisGate.GROUP, entry.id)
