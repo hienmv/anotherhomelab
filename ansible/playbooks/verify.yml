@@ -288,6 +288,29 @@
         problems: "{{ problems + ['deployment: ' ~ item] }}"
       loop: "{{ deploys.stdout_lines }}"
 
+    # Central logs: a collector (vlagent) on every node, and VictoriaLogs received lines recently.
+    - name: Central logs (collector on every node, lines in the last 15 min)
+      tags: [apps]
+      ansible.builtin.shell: |
+        nodes=$(kubectl get nodes --no-headers | wc -l)
+        ready=$(kubectl -n monitoring get ds -l app.kubernetes.io/name=vlagent -o jsonpath='{.items[0].status.numberReady}' 2>/dev/null)
+        [ "${ready:-0}" -ge "$nodes" ] || echo "log collector (vlagent) ready on ${ready:-0} of $nodes nodes"
+        svc=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=vlsingle -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        [ -n "$svc" ] || { echo "VictoriaLogs service not found"; exit 0; }
+        # LogsQL: _time:15m | stats count() rows   ->   {"rows":"12345"}
+        out=$(kubectl get --raw "/api/v1/namespaces/monitoring/services/$svc:9428/proxy/select/logsql/query?query=_time%3A15m%20%7C%20stats%20count()%20rows" 2>&1)
+        rows=$(printf '%s' "$out" | grep -oE '"rows":"?[0-9]+' | grep -oE '[0-9]+$')
+        [ "${rows:-0}" -gt 0 ] || echo "VictoriaLogs received no log lines in 15 min ($(printf '%s' "$out" | head -c 120))"
+      register: central_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Central logs result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['logs: ' ~ item] }}"
+      loop: "{{ central_logs.stdout_lines }}"
+
     # 2-copy deployments only survive a node failure if the copies sit on different nodes. The
     # spread is soft, so after a node outage both copies can stay on one node until a restart.
     - name: 2-copy deployments with all copies on one node

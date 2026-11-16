@@ -18,6 +18,7 @@
 | **ConfigMap / Secret** | Kubernetes objects holding settings / passwords |
 | **container / image** | a program packaged with everything it needs / the package itself (stored in GHCR) |
 | **CRD** | Custom Resource Definition: lets an operator add its own object types (e.g. `Cluster` for Postgres) |
+| **DaemonSet** | "run one copy on every node" (e.g. the log collector, node-exporter) |
 | **dead man's switch** | an alarm that fires when regular "I'm alive" pings **stop** (healthchecks.io here) |
 | **deploy key** | an SSH key that may access **one** repository (read, or read + write); here for Flux, the workstation and CI's tag bumps |
 | **Deployment / Pod** | "run N copies of this image" / one running copy |
@@ -38,6 +39,7 @@
 | **kubectl** | the command-line tool for Kubernetes |
 | **Kustomize / Kustomization** | combines and patches manifests (`kustomization.yaml`) / Flux's object that applies one folder |
 | **metrics / logs** | numbers measured over time (graphs in Grafana) / text lines a program prints (`kubectl logs`) |
+| **LogsQL** | VictoriaLogs' query language, e.g. `kubernetes.pod_namespace:=apps AND error` |
 | **manifest** | a YAML file describing Kubernetes objects |
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
@@ -56,5 +58,6 @@
 | **tmux** | keeps a terminal session running when your SSH connection drops |
 | **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |
 | **vmagent / vmsingle** | collects metrics every 30 s / stores them 30 days (VictoriaMetrics, on node-workstation) |
+| **VictoriaLogs / vlagent** | the log database (`vlsingle`, 14 days) / the collector on every node that ships log lines to it |
 | **UID / GID** | the number Linux uses for a user / group; file owners are stored as numbers |
 | **verify.yml** | the read-only health check of the whole homelab |

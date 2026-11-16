@@ -41,9 +41,9 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 ┌─ Home LAN 192.168.40.0/24 ──────────┼────────────────────────────────────────────────────────┐
 │ ┌─ k3s v1.37.2  (4 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
 │ │                                   ▼                   ┌─ ns monitoring ────────────────┐ │ │
-│ │                    ┌─────────────────────────────┐    │ vmagent --scrape--> all pods   │ │ │
-│ │                    │   cloudflared x2 (2 nodes)  │    │   & node-exporter (4 nodes)    │ │ │
-│ │                    └──────────────┬──────────────┘    │ VMSingle: 30d, PVC 10Gi        │ │ │
+│ │                    ┌─────────────────────────────┐    │ vmagent scrape -> VMSingle 30d │ │ │
+│ │                    │   cloudflared x2 (2 nodes)  │    │ vlagent (4 nodes) -> VLSingle  │ │ │
+│ │                    └──────────────┬──────────────┘    │   logs 14d / 8 GiB             │ │ │
 │ │                                   │ svc traefik:80    │ Grafana: grafana.<domain>      │ │ │
 │ │                                   ▼                   │ (Cloudflare Access login)      │ │ │
 │ │                    ┌─────────────────────────────┐    └────────────────────────────────┘ │ │
@@ -86,7 +86,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ label role=data                             │  │ label role=apps                             │
 │                                             │  │                                             │
 │ * postgres pg-1, redis-0 (SSD)              │  │ * traefik ingress, svclb                    │
-│ * vmsingle, vmagent (metrics)               │  │ * grafana                                   │
+│ * vmsingle, vmagent, vlsingle (logs)        │  │ * grafana                                   │
 │ * cloudflared (tunnel), coredns             │  │ * flux source + kustomize controllers       │
 │ * cnpg operator, local-path, svclb          │  │ * app pods (k8s spreads)                    │
 │ * app pods (k8s spreads)                    │  │ - USB SSD + control plane (todo)            │
@@ -129,6 +129,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | KEDA worker autoscaling | apps | - | - | planned |
 | Batch CronJobs | apps | node-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | node-workstation | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
+| VictoriaLogs (VLSingle 14d) + vlagent on every node | monitoring | node-workstation (collector: all 4) | `vlsingle-vm-victoria-metrics-k8s-stack:9428` | since 2026-11-16 |
 | Grafana (built-in + TicketLite dashboards) | monitoring | node-8gb | `https://grafana.hien0ethan.com` (public, login), `https://grafana.lan` (LAN, mkcert CA) | running |
 | node-exporter, kube-state-metrics | monitoring | all nodes | - | running |
 | Flux v2.10 (GitOps) | flux-system | any node | pulls this repo every 1m (read-only deploy key) | running |
