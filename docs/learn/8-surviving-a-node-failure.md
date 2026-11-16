@@ -77,7 +77,7 @@ is not voluntary); the 2 copies + spread cover that.
 | Postgres, Redis | node-workstation | TicketLite down; landing and notes stay up. Fix later: Postgres replicas on another node (CNPG), roadmap |
 | k3s server (control plane) | node-workstation | running pods keep running and serving, but nothing new can be scheduled or changed |
 | metrics (vmsingle) | node-workstation | Grafana shows no data |
-| Grafana | one Pi (its storage folder is on that Pi) | Grafana down until that Pi is back; see the Grafana PR |
+| Grafana | 1 copy, **stateless** since 2026-11-16 (no storage) | restarts on the other apps Pi within ~5 min; you log in again |
 
 So the honest result: **losing node-8gb or node-4gb no longer takes any site down; losing
 node-workstation still takes TicketLite down.**
@@ -93,8 +93,7 @@ kubectl drain node-4gb --ignore-daemonsets --delete-emptydir-data   # the PDBs m
 kubectl uncordon node-4gb                                           # node usable again
 ```
 
-If Grafana lives on node-4gb, it stays `Pending` during the drain (its storage cannot move) and
-starts again after the `uncordon`. That is the Grafana problem from the table above.
+Grafana (1 copy) moves to the other Pi during the drain: a short gap, then you log in again.
 
 ```bash
 ansible-playbook playbooks/verify.yml                               # may report "spread": restart those deployments
