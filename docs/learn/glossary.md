@@ -21,6 +21,7 @@
 | **dead man's switch** | an alarm that fires when regular "I'm alive" pings **stop** (healthchecks.io here) |
 | **deploy key** | an SSH key that may access **one** repository (read, or read + write); here for Flux, the workstation and CI's tag bumps |
 | **Deployment / Pod** | "run N copies of this image" / one running copy |
+| **drain** | `kubectl drain <node>`: move every pod off a node before maintenance (respects PDBs) |
 | **drill** | practising a procedure on purpose (e.g. a full rebuild) to prove it works |
 | **Flux** | GitOps tool inside the cluster: applies what is in git (chapter 3) |
 | **GHCR** | GitHub Container Registry: where the app images are stored (`ghcr.io/<owner>/...`) |
@@ -40,15 +41,18 @@
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
 | **passphrase** | password that encrypts a private key file |
+| **PodDisruptionBudget (PDB)** | "keep at least N copies running" during voluntary disruptions (drain, upgrade) |
 | **playbook / play / task / module** | Ansible file / a list of tasks for some hosts / one step / the tool doing the step |
 | **postmortem** | written review after an incident: what, why, what changes (no blame) |
 | **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
 | **required check** | a CI job that must pass before a PR may be merged |
+| **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SOPS** | encrypts secrets so they can live in git (planned) |
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
 | **tmux** | keeps a terminal session running when your SSH connection drops |
+| **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |
 | **UID / GID** | the number Linux uses for a user / group; file owners are stored as numbers |
 | **verify.yml** | the read-only health check of the whole homelab |

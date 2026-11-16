@@ -5,6 +5,9 @@
 # Caveat (tested 2026-11-08): LAN clients hitting a node IP directly are also trusted, because
 # k3s ServiceLB forwards their traffic from a 10.42.x address. A LAN client can therefore fake
 # X-Forwarded-Proto/For for its OWN requests only. Internet traffic always arrives via cloudflared.
+#
+# 2 copies on different nodes + a disruption budget (since 2026-11-16): every public request goes
+# through Traefik, so one Pi going down must not take it away.
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -12,6 +15,17 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    deployment:
+      replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels: { app.kubernetes.io/name: traefik }
     ports:
       web:
         forwardedHeaders:

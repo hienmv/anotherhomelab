@@ -97,7 +97,7 @@ def draw_flow():
     c.box(2, 11, 92, 32, title="k3s v1.37.2  (4 nodes)")
     c.vline(cx, 10, 11)
     c.put(cx, 12, "▼")
-    c.box(23, 13, 31, 3, lines=["cloudflared (workstation)"], center=True)
+    c.box(23, 13, 31, 3, lines=["cloudflared x2 (2 nodes)"], center=True)
     c.put(cx, 15, "┬")
     c.vline(cx, 16, 16)
     c.put(cx + 2, 16, "svc traefik:80")

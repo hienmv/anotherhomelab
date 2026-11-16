@@ -105,3 +105,25 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
+---
+# Voluntary disruptions (node drain, k3s upgrade) take at most one copy at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticketlite-api
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: api }
+---
+# Voluntary disruptions (node drain, k3s upgrade) take at most one copy at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticketlite-worker
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: worker }

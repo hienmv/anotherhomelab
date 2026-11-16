@@ -288,6 +288,29 @@
         problems: "{{ problems + ['deployment: ' ~ item] }}"
       loop: "{{ deploys.stdout_lines }}"
 
+    # 2-copy deployments only survive a node failure if the copies sit on different nodes. The
+    # spread is soft, so after a node outage both copies can stay on one node until a restart.
+    - name: 2-copy deployments with all copies on one node
+      tags: [apps]
+      ansible.builtin.shell: |
+        for d in apps/landing apps/notes apps/ticketlite-web apps/ticketlite-api infra/cloudflared kube-system/traefik; do
+          ns=${d%/*}; name=${d#*/}
+          # matchLabels as JSON {"k":"v",...} -> k=v,... (a label selector)
+          sel=$(kubectl -n "$ns" get deploy "$name" -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null | tr -d '{}"' | tr ':' '=')
+          [ -n "$sel" ] || { echo "$d: deployment not found"; continue; }
+          nodes=$(kubectl -n "$ns" get pods -l "$sel" --field-selector=status.phase=Running -o jsonpath='{.items[*].spec.nodeName}' | tr ' ' '\n' | sort -u | grep -c .)
+          [ "$nodes" -ge 2 ] || echo "$d: all copies on one node (fix: kubectl -n $ns rollout restart deploy/$name)"
+        done
+      register: spread
+      changed_when: false
+      failed_when: false
+
+    - name: Spread result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['spread: ' ~ item] }}"
+      loop: "{{ spread.stdout_lines }}"
+
     - name: grafana.lan answers with a trusted certificate (LAN name, private CA)
       tags: [apps]
       ansible.builtin.command: curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result}' https://grafana.lan

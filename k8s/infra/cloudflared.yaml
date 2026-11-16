@@ -1,6 +1,6 @@
-# Cloudflare Tunnel connector in k3s, pinned to the role=data node (node-workstation).
-# Single replica: that node also runs Postgres/Redis, so a second replica elsewhere
-# would not keep the data-backed sites up if it fails (revisit with HA).
+# Cloudflare Tunnel connector in k3s: 2 copies on different nodes (since 2026-11-16). Both connect
+# to the same tunnel; Cloudflare uses whichever is up. If node-workstation (Postgres/Redis) fails,
+# TicketLite is down anyway, but landing and notes stay online through the other copy.
 # Tunnel: test-cloudflared-tunnel (${CLOUDFLARE_TUNNEL_ID})
 # DNS (Cloudflare dashboard): CNAME @ and * -> <tunnel-id>.cfargotunnel.com, proxied.
 #
@@ -30,7 +30,7 @@ metadata:
   name: cloudflared
   namespace: infra
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: { app: cloudflared }
   template:
@@ -39,8 +39,13 @@ spec:
       annotations:
         config-rev: "1"   # bump to restart pod after editing the ConfigMap
     spec:
-      nodeSelector:
-        role: data          # node-workstation
+      # 2 copies on different nodes when possible (soft: still runs if only one node is left)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: cloudflared }
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -71,3 +76,14 @@ spec:
           configMap: { name: cloudflared }
         - name: creds
           secret: { secretName: tunnel-creds }
+---
+# Voluntary disruptions (node drain, k3s upgrade) take at most one copy at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudflared
+  namespace: infra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: cloudflared }
