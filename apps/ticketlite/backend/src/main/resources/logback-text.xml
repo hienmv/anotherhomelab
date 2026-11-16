@@ -1,0 +1,8 @@
+<!-- Included by logback.xml when LOG_FORMAT=text (docker compose). -->
+<included>
+    <appender name="out" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg %mdc%n</pattern>
+        </encoder>
+    </appender>
+</included>

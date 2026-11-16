@@ -1,7 +1,7 @@
 # 9. Monitoring: metrics and logs, where they are stored
 
-Short version: Grafana shows **metrics** (numbers, as graphs) and, since 2026-11-16, **logs** (text
-lines, searchable). Both are copied off every node within seconds and stored on node-workstation, so
+Short version: Grafana shows **metrics** (numbers, as graphs) and, since 2026-11-16, **logs**
+(structured JSON lines with a level and a request id, searchable). Both are copied off every node within seconds and stored on node-workstation, so
 they survive a pod being replaced or a Pi going down.
 
 ## Two kinds of information
@@ -57,12 +57,18 @@ Grafana → **Explore** (compass icon) → data source **VictoriaLogs (DS)** →
 
 | You want | LogsQL |
 |---|---|
+| **all errors, every app** | `level:=ERROR` |
+| errors and warnings of one app | `service:=ticketlite level:in(ERROR, WARN)` |
+| **one request, through api and worker** | `request_id:="demo-req-42"` |
+| slow requests | `logger:=ticketlite.http duration_ms:>1000` |
+| sold-out answers | `path:="/api/orders" status:=409` |
+| one order | `order_id:="28d923da-ef06-4569-81e8-4fce1a1b5cfd"` |
+| requests per status code, last hour | `_time:1h status:* \| stats by (service, status) count() requests` |
 | everything from TicketLite's api | `kubernetes.container_name:=api` |
-| errors in the `apps` namespace | `kubernetes.pod_namespace:=apps AND error` |
 | everything one machine logged | `kubernetes.pod_node_name:=node-8gb` |
 | one word anywhere, last hour (time picker) | `timeout` |
 | lines per pod, last 15 min | `_time:15m \| stats by (kubernetes.pod_name) count() lines` |
-| Postgres warnings | `kubernetes.pod_namespace:=data AND (WARNING OR ERROR)` |
+| Postgres warnings (not JSON: search words) | `kubernetes.pod_namespace:=data AND (WARNING OR ERROR)` |
 
 - `field:=value` means exactly equal; a bare word searches the message text.
 - Click a line to see all its fields. To show one pod's lines only, click `+` next to a field
@@ -75,7 +81,7 @@ A real entry (2026-11-16), clicked open in Explore, shortened:
 
 | Field | Value | Meaning |
 |---|---|---|
-| `line` (the message, `_msg`) | `06:23:21.028 INFO  i.k.s.Application - 200 OK: GET - /api/concerts in 13ms` | what the program printed |
+| `line` (the message, `_msg`) | `06:23:21.028 INFO  i.k.s.Application - 200 OK: GET - /api/concerts in 13ms` | what the program printed (plain text, before 2026-11-16: see below) |
 | `timeLocal` / `timeUtc` | `15:23:21` / `06:23:21` | when (JST = UTC + 9; the app itself prints UTC) |
 | `kubernetes.pod_namespace` | `apps` | added by vlagent: where it came from ... |
 | `kubernetes.pod_name` | `ticketlite-api-c7cdf7c65-vrxh8` | ... which pod (Deployment name + ReplicaSet hash + random) |
@@ -84,18 +90,64 @@ A real entry (2026-11-16), clicked open in Explore, shortened:
 | `kubernetes.pod_labels.*` | `app.kubernetes.io/name=ticketlite`, `component=api` | the pod's labels: filter a whole app, all copies at once |
 | `output_stream` | `stdout` | normal output (`stderr` = the error channel) |
 | `_stream` | `{container_name="api",pod_name=...,pod_namespace="apps"}` | VictoriaLogs groups lines into **streams** (one per container); filtering on these is fastest |
-| `logLevel` | `unknown` | see below |
+| `logLevel` | `unknown` | the level was only a word in the text: fixed by structured logs, below |
 
 So `kubernetes.pod_node_name:=node-8gb` shows everything one machine logged, and
 `kubernetes.pod_labels.app.kubernetes.io/name:=ticketlite` shows both api copies and the workers.
 
-**Why `logLevel: unknown`?** The app prints plain text; the word `INFO` is just part of the
-sentence, so Grafana cannot tell it is a level. Real systems log **structured JSON**
-(`{"level":"info","msg":"200 OK: GET /api/concerts","duration_ms":13}`): then the level, the duration and
-the path become fields you can filter, count and graph (`level:=error | stats count()`). Until then,
-search the word: `kubernetes.pod_namespace:=apps AND ERROR`.
+## Structured logs (since 2026-11-16)
 
-`kubectl logs` still works and is quicker for "what is this pod doing right now":
+The apps used to print plain sentences. Now every line is a **JSON object**, so each part is a field
+you can filter, count and graph. A real TicketLite request, then the worker processing that order:
+
+```json
+{"time":"2026-11-16T06:36:24.722Z","level":"INFO","logger":"ticketlite.http","message":"POST /api/orders -> 202 in 13 ms",
+ "service":"ticketlite","role":"api","method":"POST","path":"/api/orders","status":202,"duration_ms":13,"request_id":"demo-req-42"}
+{"time":"2026-11-16T06:36:24.957Z","level":"INFO","logger":"ticketlite.worker","message":"order 28d9... -> CONFIRMED",
+ "service":"ticketlite","role":"worker","order_id":"28d9...","order_status":"CONFIRMED","reason":"-","quantity":1,"duration_ms":238,"request_id":"demo-req-42"}
+```
+
+| Who | How | Fields |
+|---|---|---|
+| TicketLite api + worker | logback + `logstash-logback-encoder` (`backend/src/main/resources/logback*.xml`, `RequestLog.kt`) | `time level logger message service role` + `method path status duration_ms request_id` per request, `order_id order_status reason quantity` per order, `stack_trace` on errors |
+| landing, notes, ticketlite-web | nginx `log_format json` (their `nginx.conf*`) | the same request fields, plus `bytes client_ip user_agent referer` |
+| Postgres, Traefik, Flux, ... | not ours | their own format (search words) |
+
+### Log levels: one rule for every app
+
+| Level | Means | Examples here | Who reacts |
+|---|---|---|---|
+| **ERROR** | the service **failed**; someone should look | 5xx answer, unhandled exception, crash at start | you (later: an alert) |
+| **WARN** | **degraded**, but it still works or recovers by itself | request slower than 1 s, worker retrying after a Redis error | look if it repeats |
+| **INFO** | **normal** events | every request (also 4xx), order confirmed or failed, start/stop | nobody; for investigating |
+| **DEBUG** | details for a bug hunt | off; `LOG_LEVEL=DEBUG` on the Deployment to switch on | – |
+
+Why is a 4xx (`409 SOLD_OUT`, `401 UNAUTHORIZED`) only INFO? The service answered **correctly**; a
+sold-out concert is business, not a fault. If 4xx were WARN, a ticket rush would bury the real
+warnings. Levels describe **the health of the service**, not whether the visitor was happy.
+
+### One request, followed through the system: `request_id`
+
+Every request gets an id, chosen in this order: the caller's `X-Request-ID` header, else
+Cloudflare's `CF-Ray` (also visible in Cloudflare's dashboard), else a new random one. The api:
+
+- writes it in its request line,
+- sends it back to the browser as the `X-Request-ID` response header,
+- puts it **into the Redis queue** with the order, so the **worker** logs the same id.
+
+So `request_id:="..."` shows the whole story of one purchase across two programs (and from the
+browser: DevTools → Network → the request → Response headers → `X-Request-ID`). Real systems call
+this a **correlation id**; full **tracing** (OpenTelemetry) adds timings for every step on top.
+
+### Guarded by a test
+
+`LoggingTest.kt` (runs in every image build) fails if a field name the queries above rely on changes
+(`level`, `message`, `request_id`, `status`, `duration_ms`, ...) or the level rule changes, the same
+way `MetricsTest` protects the dashboard.
+
+## `kubectl logs`
+
+Still works and is quicker for "what is this pod doing right now":
 
 ```bash
 kubectl -n apps logs deploy/ticketlite-api --tail=50       # last 50 lines

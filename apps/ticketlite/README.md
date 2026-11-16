@@ -149,6 +149,16 @@ dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded au
 `MetricsTest` fails the build if a metric the dashboard uses is renamed. Counters are pre-registered at 0:
 otherwise the first burst after a pod start is invisible to `increase()` (dashboard showed 8 of 18).
 
+## Logs
+
+JSON, one object per line (`src/main/resources/logback*.xml`, request lines from `RequestLog.kt`):
+`time level logger message service role`, per request `method path status duration_ms request_id`,
+per order `order_id order_status reason quantity concert_id duration_ms request_id`. The api takes the
+request id from `X-Request-ID` / `CF-Ray` (or makes one), returns it as `X-Request-ID` and passes it to
+the worker through the Redis stream. Levels: 5xx/crash = ERROR, slow (>1 s) or retry = WARN, rest INFO.
+`LOG_FORMAT=text` for readable local output, `LOG_LEVEL=DEBUG` for more. `LoggingTest` guards the field
+names. Searching them in Grafana: [docs/learn/9](../../docs/learn/9-monitoring-grafana.md).
+
 ## Tests
 
 - Backend (JUnit, `gradle test`): config parsing, limits, metric names.

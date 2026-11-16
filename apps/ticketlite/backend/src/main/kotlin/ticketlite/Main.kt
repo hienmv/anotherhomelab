@@ -1,9 +1,23 @@
 package ticketlite
 
+import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
 
+private val log = LoggerFactory.getLogger("ticketlite")
+
 fun main() {
-    val log = LoggerFactory.getLogger("ticketlite")
+    // Crashes go through the logger too (one JSON line at ERROR with the stack trace), not as a
+    // plain-text Java stack trace that the log search cannot parse.
+    Thread.setDefaultUncaughtExceptionHandler { t, e -> log.error("uncaught exception in thread {}", t.name, e) }
+    try {
+        start()
+    } catch (e: Throwable) {
+        log.error("fatal: {}", e.message, e)
+        exitProcess(1)
+    }
+}
+
+private fun start() {
     val cfg = AppConfig.fromEnv()
     val db = Db(cfg.db)
     val gate = RedisGate(cfg.redisUrl)
