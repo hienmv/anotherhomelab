@@ -9,7 +9,7 @@ metadata:
   namespace: apps
   labels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
   template:
@@ -17,6 +17,13 @@ spec:
       labels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
     spec:
       imagePullSecrets: [{ name: ghcr-pull }]
+      # 2 copies on different nodes when possible (soft: still runs if only one node is left)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
@@ -45,6 +52,17 @@ metadata:
 spec:
   selector: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
   ports: [{ name: http, port: 80, targetPort: http }]
+---
+# Voluntary disruptions (node drain, k3s upgrade) take at most one copy at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticketlite-web
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ticketlite, app.kubernetes.io/component: web }
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

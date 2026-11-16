@@ -15,6 +15,7 @@ start here.
 | 5 | [Accounts and SSH](5-accounts-and-ssh.md) | keys, passphrases, the agent, who can log in where, and why |
 | 6 | [Daily operations](6-daily-operations.md) | health check, backups, deploying, reading logs, what to do when something breaks |
 | 7 | [Git workflow](7-git-workflow.md) | branches and pull requests, why `main` is protected, deploy keys, how a change gets in |
+| 8 | [Surviving a node failure](8-surviving-a-node-failure.md) | 2 copies per site, spreading over nodes, disruption budgets; what is still single |
 | – | [Glossary](glossary.md) | every term used in these pages, in one place |
 
 ## Golden rules (learned the hard way, see the [postmortem](../postmortems/2026-11-11-phase2-migration.md))

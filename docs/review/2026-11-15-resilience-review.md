@@ -169,7 +169,7 @@ the files).
 | 3 | **Repo visibility decision** + secret scanning. **Done 2026-11-16**: public; gitleaks in CI, GitHub secret scanning + push protection on | public reconnaissance, accidental leaks | 30 min |
 | 4 | **Branch protection + PR flow** with required checks. **Ruleset as code 2026-11-15** (`.github/rulesets/`) | a broken push deploys at once | 30 min |
 | 5 | **Ethernet** for node-workstation; UPS for router + Pis | packet loss, power cuts | hardware |
-| 6 | **2 replicas + PodDisruptionBudgets** for the public apps; Grafana storage not pinned to one Pi | one Pi or one pod takes a site down | 1–2 h |
+| 6 | **2 replicas + PodDisruptionBudgets** for the public apps; Grafana storage not pinned to one Pi. **Copies + PDBs + spread check 2026-11-16** (Traefik, cloudflared, landing, notes, ticketlite); Grafana in a separate PR | one Pi or one pod takes a site down | 1–2 h |
 | 7 | **Database rollback safety**: backward-compatible migrations, backup before a migration | a bad migration loses data | 1 h + habit |
 | 8 | **Renovate** | outdated dependencies, missed security fixes | 1 h |
 | 9 | **SOPS** secrets in git | manual secret steps on rebuild | 1–2 h |

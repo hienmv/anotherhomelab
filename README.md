@@ -42,7 +42,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ ┌─ k3s v1.37.2  (4 nodes) ──────────┼──────────────────────────────────────────────────────┐ │
 │ │                                   ▼                   ┌─ ns monitoring ────────────────┐ │ │
 │ │                    ┌─────────────────────────────┐    │ vmagent --scrape--> all pods   │ │ │
-│ │                    │  cloudflared (workstation)  │    │   & node-exporter (4 nodes)    │ │ │
+│ │                    │   cloudflared x2 (2 nodes)  │    │   & node-exporter (4 nodes)    │ │ │
 │ │                    └──────────────┬──────────────┘    │ VMSingle: 30d, PVC 10Gi        │ │ │
 │ │                                   │ svc traefik:80    │ Grafana: grafana.<domain>      │ │ │
 │ │                                   ▼                   │ (Cloudflare Access login)      │ │ │
@@ -118,7 +118,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | k3s v1.37.2 server | - | node-workstation | `https://192.168.40.249:6443` | running |
 | k3s agent | - | node-8gb, node-4gb, node-1gb (tainted `role=light`) | - | running |
 | Traefik ingress | kube-system | node-8gb | `:80` on node IPs (ServiceLB) | running |
-| cloudflared tunnel 2026.10.7 | infra | node-workstation (`role=data`), 1 replica | -> `traefik.kube-system.svc:80` | running |
+| cloudflared tunnel 2026.10.7 | infra | 2 copies on different nodes (since 2026-11-16) | -> `traefik.kube-system.svc:80` (Traefik: 2 copies too) | running |
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
 | PostgreSQL 17 (`pg`) | data | node-workstation (`role=data`) | `pg-rw.data.svc:5432` | running, NVMe SSD |
 | Redis 8.2 | data | node-workstation (`role=data`) | `redis.data.svc:6379` | running, NVMe SSD |

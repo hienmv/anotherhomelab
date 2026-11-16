@@ -133,7 +133,7 @@ Everything after this point is applied by Flux from git (section 6), not by hand
 | CloudNativePG operator | `k8s/releases/cnpg.yaml` | HelmRelease |
 | PostgreSQL 17 `pg` | `k8s/data/postgres.yaml` | 10Gi on the `role=data` node (node-workstation SSD); creates secret `data/pg-app`; host `pg-rw.data.svc:5432` |
 | Redis 8.2 | `k8s/data/redis.yaml` | AOF, `noeviction` (queue must never drop jobs), 2Gi on the `role=data` node |
-| cloudflared | `k8s/infra/cloudflared.yaml` | 1 replica on the `role=data` node; routing in [docs/domains.md](docs/domains.md) |
+| cloudflared | `k8s/infra/cloudflared.yaml` | 2 copies on different nodes + PDB (docs/learn/8); routing in [docs/domains.md](docs/domains.md) |
 | Traefik customisation | `k8s/infra/traefik-config.yaml` | trusts `X-Forwarded-*` from pods |
 | Monitoring stack | `k8s/releases/vm-stack.yaml` + `vm-stack-values.yaml` | section 7 |
 | Extra scrapes, Grafana HTTPS, dashboards | `k8s/monitoring/` | |
