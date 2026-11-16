@@ -20,7 +20,10 @@ state="$state_dir/check.state"          # "<ok|fail> <epoch of last message> <ha
 [ -f "$conf" ] && . "$conf"
 
 args=(--skip-tags containers); [ "${1:-}" = "--full" ] && args=()
-out="$(mktemp)"; trap 'rm -f "$out"' EXIT
+# Scheduled runs (~100 a day) stay out of ansible/logs/ansible.log, which is for runs by a person.
+# The latest output is kept instead (overwritten each run): ~/.local/state/homelab/last-check.log
+out="$state_dir/last-check.log"
+export ANSIBLE_LOG_PATH=/dev/null
 
 cd "$repo_ansible"
 ansible-playbook playbooks/verify.yml "${args[@]}" > "$out" 2>&1
