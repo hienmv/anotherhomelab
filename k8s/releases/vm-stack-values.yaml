@@ -49,10 +49,13 @@ grafana:
     existingSecret: grafana-admin
     userKey: admin-user
     passwordKey: admin-password
+  # Stateless since 2026-11-16: everything Grafana needs comes from git or a Secret (dashboards via
+  # the sidecar, datasources from the chart, admin from grafana-admin), so it can start on either
+  # apps node. A local-path volume tied it to the one Pi it first started on. Cost: anything made
+  # only in the UI (dashboards, preferences) and login sessions are lost on restart: put dashboards
+  # in k8s/monitoring/dashboards/ instead.
   persistence:
-    enabled: true
-    storageClassName: local-path
-    size: 1Gi
+    enabled: false
   resources:
     # 384Mi was OOMKilled (2026-11-08): ~415Mi steady, spikes on dashboard reload
     requests: { cpu: 50m, memory: 256Mi }
