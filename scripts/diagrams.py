@@ -109,9 +109,9 @@ def draw_flow():
 
     # monitoring: Grafana public behind Cloudflare Access (+ grafana.lan on the LAN)
     c.box(58, 12, 34, 7, title="ns monitoring", lines=[
-        "vmagent --scrape--> all pods",
-        "  & node-exporter (4 nodes)",
-        "VMSingle: 30d, PVC 10Gi",
+        "vmagent scrape -> VMSingle 30d",
+        "vlagent (4 nodes) -> VLSingle",
+        "  logs 14d / 8 GiB",
         "Grafana: grafana.<domain>",
         "(Cloudflare Access login)",
     ])
@@ -170,7 +170,7 @@ def draw_nodes():
         "label role=data",
         "",
         "* postgres pg-1, redis-0 (SSD)",
-        "* vmsingle, vmagent (metrics)",
+        "* vmsingle, vmagent, vlsingle (logs)",
         "* cloudflared (tunnel), coredns",
         "* cnpg operator, local-path, svclb",
         "* app pods (k8s spreads)",

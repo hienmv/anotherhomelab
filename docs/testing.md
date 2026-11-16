@@ -67,6 +67,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Site variables filled in | no raw `${KEY}` of `site-settings` in any live Deployment, Ingress, ConfigMap, Middleware, … | `verify.yml --tags cluster` | always, and after every change to `k8s/` or `site-settings` | ✅ |
 | **Container canary** | a Postgres pod starts, checkpoints and reloads (signals work) on **every schedulable node**; waits for old canary pods first, allows 6 min (nodes may still pull images after a deploy) | `verify.yml --tags containers` (pods created and deleted) | **before moving data to a new or changed node**, after OS/k3s upgrades | ✅ |
 | No container AppArmor denials | the Ubuntu 26.04 class of bug (K3S-GUIDE 10.3) is absent | `verify.yml --tags nodes` (`journalctl -k -b`) | always | ✅ |
+| Central logs | a log collector is ready on every node; VictoriaLogs received lines in the last 15 min | `verify.yml --tags apps` (`logs:` problem) | always | ✅ |
 | Copies spread | Traefik, cloudflared, landing, notes, ticketlite-web/api each have copies on **2 nodes** | `verify.yml --tags apps` (`spread:` problem, with the fix) | always | ✅ |
 | Failover (drain) | losing node-8gb or node-4gb keeps every site up (PDBs: one copy at a time) | `kubectl drain`, curl the sites, `uncordon` ([learn/8](learn/8-surviving-a-node-failure.md#try-it-the-failover-drill)) | after changes to replicas/PDBs, every ~3 months | ✅ procedure, ❌ not run yet |
 

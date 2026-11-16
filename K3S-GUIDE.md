@@ -245,6 +245,8 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 | vmagent | node-workstation (`role=data`) | scrapes every 30s; extra targets in `k8s/monitoring/scrapes.yaml` (CNPG, cloudflared, TicketLite) |
 | Grafana | a `role=apps` node | `https://grafana.<domain>` (behind Cloudflare Access, then admin login; docs/domains.md) and https://grafana.lan (LAN); dashboards incl. **TicketLite** (`k8s/monitoring/dashboards/`); memory limit 768Mi (384Mi was OOMKilled) |
 | node-exporter | all 4 nodes | tolerates node-1gb's taint |
+| VictoriaLogs single (`vlsingle`) | node-workstation (`role=data`) | central logs since 2026-11-16: 14 days or 8 GiB, 10Gi volume; Grafana Explore → VictoriaLogs (DS) |
+| vlagent (log collector) | all 4 nodes (DaemonSet) | reads `/var/log/pods`, ships each line within seconds; [docs/learn/9](docs/learn/9-monitoring-grafana.md) |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
 Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.

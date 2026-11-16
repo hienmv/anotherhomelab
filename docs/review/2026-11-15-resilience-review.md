@@ -114,6 +114,8 @@ RTO = time until service is back. RPO = how much data can be lost.
 - **Next**: `verify.yml` + backup checks on a systemd timer as `ops`; alerts to Telegram/e-mail
   (vmalert + Alertmanager, a channel); an external uptime probe (node-1gb or a free service);
   later central logs (VictoriaLogs) and a simple SLO per site.
+- **Done 2026-11-15/16**: `verify.yml` on timers with Telegram + healthchecks.io (step 2); **central logs**:
+  vlagent on every node → VictoriaLogs (14 days), searchable in Grafana. Still open: an SLO per site.
 
 ### Operations & disaster recovery (4)
 - **Real systems**: runbooks, game days / DR drills, blameless postmortems, change history,

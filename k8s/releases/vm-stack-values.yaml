@@ -35,6 +35,37 @@ vmagent:
       # 384Mi was OOMKilled on the first full scrape after the 2026-11-12 rebuild (4 nodes)
       limits: { memory: 768Mi }
 
+# Central logs (since 2026-11-16, docs/learn/9-monitoring-grafana.md): vlagent on EVERY node reads the
+# container log files and ships each line within seconds to VictoriaLogs on the role=data node. Logs then
+# survive pod replacement and a Pi going down. Grafana: Explore -> "VictoriaLogs (DS)".
+# The operator connects them (vlagent -> vlsingle, Grafana data source -> vlsingle).
+vlsingle:
+  enabled: true
+  spec:
+    retentionPeriod: "14d"
+    extraArgs:
+      retention.maxDiskSpaceUsageBytes: 8GiB   # whichever comes first: 14 days or 8 GiB
+    nodeSelector: { role: data }
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+    storage:
+      storageClassName: local-path
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests: { storage: 10Gi }
+
+vlagent:
+  enabled: true
+  spec:
+    k8sCollector:
+      enabled: true          # DaemonSet: one collector per node, reads /var/log/pods
+    tolerations:
+      - operator: Exists     # also on tainted node-1gb
+    resources:
+      requests: { cpu: 20m, memory: 48Mi }
+      limits: { memory: 192Mi }
+
 # Alerting: off for now (no notification channel yet)
 alertmanager:
   enabled: false
@@ -45,6 +76,9 @@ vmalert:
 grafana:
   enabled: true
   nodeSelector: { role: apps }
+  # Logs data source (VictoriaLogs). Downloaded from grafana.com on every start (Grafana is stateless).
+  plugins:
+    - victoriametrics-logs-datasource@0.33.1
   admin:
     existingSecret: grafana-admin
     userKey: admin-user
