@@ -19,7 +19,7 @@ and a healthchecks.io dead man's switch: [K3S-GUIDE.md section 12](../K3S-GUIDE.
 **How it reports**: every check runs, even after another one failed; each failing check adds a
 one-line reason, and each host fails once at the end with all of them, e.g.
 `2 problem(s) on node-workstation: pod: apps/landing-… Pending | config: unreplaced 1 ${DOMAIN}`.
-Every Ansible run is also logged to `ansible/logs/ansible.log` (git-ignored).
+Every Ansible run is also logged to `ansible/logs/ansible.log` (the file is git-ignored; the empty folder is kept in git, because without it Ansible silently does not log).
 
 ## 1. Development (application code)
 
