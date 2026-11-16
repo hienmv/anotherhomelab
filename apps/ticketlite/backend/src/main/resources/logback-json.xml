@@ -11,7 +11,8 @@
             </fieldNames>
             <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSSX</timestampPattern>
             <timeZone>UTC</timeZone>
-            <customFields>{"service":"ticketlite","role":"${ROLE:-unknown}"}</customFields>
+            <!-- service.name = the name in the traces (OTEL_SERVICE_NAME): ticketlite-api / ticketlite-worker -->
+            <customFields>{"service.name":"${OTEL_SERVICE_NAME:-ticketlite-${ROLE:-unknown}}","service.namespace":"ticketlite"}</customFields>
             <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
                 <maxDepthPerThrowable>30</maxDepthPerThrowable>
                 <rootCauseFirst>true</rootCauseFirst>

@@ -30,6 +30,9 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.5.18")
     // JSON log lines (docs/learn/9-monitoring-grafana.md, rules in src/main/resources/logback.xml)
     implementation("net.logstash.logback:logstash-logback-encoder:8.1")
+    // Tracing API only (docs/learn/10-tracing.md). The OpenTelemetry Java agent in the image does the
+    // work; without the agent (unit tests) these calls are no-ops.
+    implementation("io.opentelemetry:opentelemetry-api:1.67.0")
 
     implementation("com.zaxxer:HikariCP:6.3.0")
     implementation("org.postgresql:postgresql:42.7.5")

@@ -311,6 +311,34 @@
         problems: "{{ problems + ['logs: ' ~ item] }}"
       loop: "{{ central_logs.stdout_lines }}"
 
+    # Traces: make ONE real request, then find its trace in VictoriaTraces (proves agent -> collector ->
+    # store end to end). Needed because idle traffic is filtered out: "no traces" alone proves nothing.
+    # Takes ~20 s (agent batch 5 s + collector decision 10 s + batch 5 s).
+    - name: Tracing pipeline (one test request, then its trace)
+      tags: [apps]
+      ansible.builtin.shell: |
+        vt=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=vtsingle -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        [ -n "$vt" ] || { echo "VictoriaTraces service not found"; exit 0; }
+        start=$(( $(date +%s) * 1000000 ))
+        kubectl get --raw /api/v1/namespaces/apps/services/ticketlite-api:80/proxy/api/concerts >/dev/null 2>&1 \
+          || { echo "test request to ticketlite-api failed"; exit 0; }
+        for i in $(seq 1 9); do
+          sleep 5
+          now=$(( $(date +%s) * 1000000 ))
+          n=$(kubectl get --raw "/api/v1/namespaces/monitoring/services/$vt:10428/proxy/select/jaeger/api/traces?service=ticketlite-api&operation=GET%20%2Fapi%2Fconcerts&limit=5&start=$start&end=$now" 2>/dev/null | grep -o '"traceID"' | wc -l)
+          [ "$n" -gt 0 ] && exit 0
+        done
+        echo "the trace of a test request did not reach VictoriaTraces within 45 s (ticketlite agent -> otel-collector -> VictoriaTraces)"
+      register: tracing
+      changed_when: false
+      failed_when: false
+
+    - name: Tracing result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['traces: ' ~ item] }}"
+      loop: "{{ tracing.stdout_lines }}"
+
     # 2-copy deployments only survive a node failure if the copies sit on different nodes. The
     # spread is soft, so after a node outage both copies can stay on one node until a restart.
     - name: 2-copy deployments with all copies on one node

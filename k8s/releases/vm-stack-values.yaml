@@ -66,6 +66,57 @@ vlagent:
       requests: { cpu: 20m, memory: 48Mi }
       limits: { memory: 192Mi }
 
+# Traces (since 2026-11-16, docs/learn/10-tracing.md): apps (OpenTelemetry Java agent) -> otel-collector
+# (k8s/monitoring/otel-collector.yaml, drops noise) -> VictoriaTraces. Grafana: Explore -> VictoriaTraces.
+vtsingle:
+  enabled: true
+  spec:
+    retentionPeriod: "7d"
+    extraArgs:
+      retention.maxDiskSpaceUsageBytes: 4GiB   # whichever comes first: 7 days or 4 GiB
+    nodeSelector: { role: data }
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+    storage:
+      storageClassName: local-path
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests: { storage: 5Gi }
+
+# Grafana data sources for logs and traces, linked both ways:
+#   a trace -> "Logs for this span" (VictoriaLogs, trace_id:=...)
+#   a log line with trace_id -> its trace (VictoriaTraces)
+# A double dollar below is Flux's escape: Grafana receives a single dollar (its own variables).
+defaultDatasources:
+  victorialogs:
+    datasources:
+      - name: VictoriaLogs (DS)
+        access: proxy
+        uid: VictoriaLogs
+        type: victoriametrics-logs-datasource
+        plugin: true
+        jsonData:
+          derivedFields:
+            - name: trace_id
+              matcherType: label
+              matcherRegex: trace_id
+              url: "$${__value.raw}"
+              datasourceUid: VictoriaTraces
+  victoriatraces:
+    datasources:
+      - name: VictoriaTraces
+        access: proxy
+        uid: VictoriaTraces
+        type: jaeger
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: VictoriaLogs
+            spanStartTimeShift: "-5m"
+            spanEndTimeShift: "5m"
+            customQuery: true
+            query: 'trace_id:="$${__trace.traceId}"'
+
 # Alerting: off for now (no notification channel yet)
 alertmanager:
   enabled: false

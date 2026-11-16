@@ -1,0 +1,84 @@
+# OpenTelemetry Collector config (docs/learn/10-tracing.md). Used by the cluster (ConfigMap
+# otel-collector, see otel-collector.yaml) AND by apps/ticketlite/docker-compose.yml: same file.
+#
+#   apps (OTel Java agent) --OTLP--> collector --OTLP--> VictoriaTraces
+#
+# Why a collector between them (instead of apps -> VictoriaTraces directly):
+#   - tail sampling: decide per COMPLETE trace. Here: drop traces of Kubernetes probes, metrics
+#     scrapes and background housekeeping (~100/min of noise), keep everything else.
+#   - one place to change destinations or sampling, without touching or restarting the apps
+#   - memory limit + retry queue: VictoriaTraces restarting does not lose spans for a few minutes
+# Not substituted by Flux: ${env:...} below is the collector's own syntax.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+
+  tail_sampling:
+    # wait this long for all spans of a trace (api + worker) before deciding
+    decision_wait: 10s
+    num_traces: 20000
+    decision_cache:
+      sampled_cache_size: 20000       # late spans of a kept trace are still kept
+      non_sampled_cache_size: 20000
+    policies:
+      # A "drop" policy drops a trace only when ALL its sub-policies match: one per kind of noise.
+      - name: drop-probes-and-scrapes
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: url-path
+              type: string_attribute
+              string_attribute: { key: url.path, values: [/healthz, /metrics] }
+      # Real work starts with an incoming request (SERVER) or a queue message (CONSUMER). A trace whose
+      # ROOT is an outgoing call (CLIENT: SQL, Redis) is background housekeeping: the worker polling
+      # an empty queue (XREADGROUP every 5 s), the connection pool checking its connections.
+      - name: drop-background-client-calls
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: root-is-client
+              type: ottl_condition
+              ottl_condition:
+                error_mode: ignore
+                span:
+                  - 'span.kind == SPAN_KIND_CLIENT and IsRootSpan()'
+      - name: keep-everything-else
+        type: always_sample
+
+  batch:
+    timeout: 5s
+
+exporters:
+  otlp_http/traces:
+    endpoint: ${env:TRACES_ENDPOINT}      # e.g. http://vtsingle-...:10428/insert/opentelemetry
+    sending_queue:
+      enabled: true
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      encoding: json
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, batch]
+      exporters: [otlp_http/traces]

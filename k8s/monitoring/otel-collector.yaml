@@ -1,0 +1,69 @@
+# OpenTelemetry Collector (docs/learn/10-tracing.md): receives spans from the apps (OTLP), drops the
+# noise (tail sampling), forwards to VictoriaTraces. Config: otel-collector-config.yaml (ConfigMap
+# generated in kustomization.yaml, name hashed so a config change restarts the pod).
+#
+# One copy is enough: if it is down, the apps drop spans (they never wait for it) and traces have a
+# gap; requests are not affected. Tail sampling needs all spans of a trace in ONE collector, so
+# more copies would need a load-balancing layer in front (real systems: two collector tiers).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels: { app.kubernetes.io/name: otel-collector }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: otel-collector }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: otel-collector }
+    spec:
+      nodeSelector: { role: data }   # next to VictoriaTraces
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-k8s:0.164.0
+          args: ["--config=/etc/otelcol/config.yaml"]
+          env:
+            - name: TRACES_ENDPOINT
+              value: http://vtsingle-vm-victoria-metrics-k8s-stack.monitoring.svc.cluster.local:10428/insert/opentelemetry
+            - name: GOMEMLIMIT          # Go runtime: stay under the container limit
+              value: 200MiB
+          ports:
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: health, containerPort: 13133 }
+          readinessProbe:
+            httpGet: { path: /, port: health }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: health }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/otelcol, readOnly: true }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  selector: { app.kubernetes.io/name: otel-collector }
+  ports:
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
