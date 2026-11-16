@@ -59,6 +59,7 @@ Grafana → **Explore** (compass icon) → data source **VictoriaLogs (DS)** →
 |---|---|
 | everything from TicketLite's api | `kubernetes.container_name:=api` |
 | errors in the `apps` namespace | `kubernetes.pod_namespace:=apps AND error` |
+| everything one machine logged | `kubernetes.pod_node_name:=node-8gb` |
 | one word anywhere, last hour (time picker) | `timeout` |
 | lines per pod, last 15 min | `_time:15m \| stats by (kubernetes.pod_name) count() lines` |
 | Postgres warnings | `kubernetes.pod_namespace:=data AND (WARNING OR ERROR)` |
@@ -67,6 +68,32 @@ Grafana → **Explore** (compass icon) → data source **VictoriaLogs (DS)** →
 - Click a line to see all its fields. To show one pod's lines only, click `+` next to a field
   (a filter is added).
 - The LogsQL docs are at https://docs.victoriametrics.com/victorialogs/logsql/
+
+### Reading one log entry
+
+A real entry (2026-11-16), clicked open in Explore, shortened:
+
+| Field | Value | Meaning |
+|---|---|---|
+| `line` (the message, `_msg`) | `06:23:21.028 INFO  i.k.s.Application - 200 OK: GET - /api/concerts in 13ms` | what the program printed |
+| `timeLocal` / `timeUtc` | `15:23:21` / `06:23:21` | when (JST = UTC + 9; the app itself prints UTC) |
+| `kubernetes.pod_namespace` | `apps` | added by vlagent: where it came from ... |
+| `kubernetes.pod_name` | `ticketlite-api-c7cdf7c65-vrxh8` | ... which pod (Deployment name + ReplicaSet hash + random) |
+| `kubernetes.container_name` | `api` | ... which container in the pod |
+| `kubernetes.pod_node_name` | `node-workstation` | ... which machine |
+| `kubernetes.pod_labels.*` | `app.kubernetes.io/name=ticketlite`, `component=api` | the pod's labels: filter a whole app, all copies at once |
+| `output_stream` | `stdout` | normal output (`stderr` = the error channel) |
+| `_stream` | `{container_name="api",pod_name=...,pod_namespace="apps"}` | VictoriaLogs groups lines into **streams** (one per container); filtering on these is fastest |
+| `logLevel` | `unknown` | see below |
+
+So `kubernetes.pod_node_name:=node-8gb` shows everything one machine logged, and
+`kubernetes.pod_labels.app.kubernetes.io/name:=ticketlite` shows both api copies and the workers.
+
+**Why `logLevel: unknown`?** The app prints plain text; the word `INFO` is just part of the
+sentence, so Grafana cannot tell it is a level. Real systems log **structured JSON**
+(`{"level":"info","msg":"200 OK: GET /api/concerts","duration_ms":13}`): then the level, the duration and
+the path become fields you can filter, count and graph (`level:=error | stats count()`). Until then,
+search the word: `kubernetes.pod_namespace:=apps AND ERROR`.
 
 `kubectl logs` still works and is quicker for "what is this pod doing right now":
 
