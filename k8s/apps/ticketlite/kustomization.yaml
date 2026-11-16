@@ -7,7 +7,7 @@ resources:
 images:
   - name: ticketlite-backend
     newName: ${IMAGE_REGISTRY}/ticketlite-backend
-    newTag: sha-8271f05
+    newTag: sha-36c3cc8
   - name: ticketlite-web
     newName: ${IMAGE_REGISTRY}/ticketlite-web
-    newTag: sha-8271f05
+    newTag: sha-36c3cc8
