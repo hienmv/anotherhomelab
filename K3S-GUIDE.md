@@ -548,6 +548,7 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 | Date | Result | Downtime | Notes |
 |---|---|---|---|
 | 2026-11-12 | (first rebuild, as the migration, see 10.3) | ~21 h | Ubuntu 26.04 AppArmor bug; postmortem |
+| 2026-11-15 | ✅ passed: 4 nodes Ready, public URLs 200, 7 concerts restored, verify all checks passed | not recorded (k3s up again 14:16–14:17 JST) | the run log was never written: `ansible/logs/` was missing on the fresh clone. Fixed 2026-11-16 (folder kept in git). Next drill: copy the `Timing` lines here |
 
 ## 12. Alerting (since 2026-11-15)
 

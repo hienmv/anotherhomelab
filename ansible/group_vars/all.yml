@@ -53,4 +53,4 @@ check_full_at: "*-*-* 04:15:00"      # once a day, everything (canary included)
 # Expiry dates nothing else warns about; verify.yml reports a problem 30 days before.
 expiry_warn_days: 30
 expiry_dates:
-  - { name: "ghcr-pull token (classic PAT, read:packages; K3S-GUIDE secrets)", date: "2027-02-01" }   # exact date: GitHub token page
+  - { name: "ghcr-pull token (classic PAT, read:packages; K3S-GUIDE secrets)", date: "2027-02-07" }   # GitHub token page, checked 2026-11-16
