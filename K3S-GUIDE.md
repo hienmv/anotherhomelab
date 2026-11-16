@@ -561,6 +561,7 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 | expiry reminders | problem 30 days before: GHCR pull token (`expiry_dates` in `group_vars/all.yml`), `grafana.lan` certificate | `verify.yml` |
 
 Live since 2026-11-16: timers installed by `workstation-prepare.yml`, first manual run `all checks passed`.
+Output of the latest scheduled check (overwritten each run): `~/.local/state/homelab/last-check.log` as `ops`; summary lines in `journalctl -u homelab-check`. Scheduled runs are not written to `ansible/logs/ansible.log`.
 
 Settings (never in git), as `ops`: `~/.config/homelab/alerting.env` (mode 600):
 
