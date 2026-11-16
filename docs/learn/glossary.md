@@ -37,6 +37,7 @@
 | **kubeconform** | checks manifests against Kubernetes schemas (in CI) |
 | **kubectl** | the command-line tool for Kubernetes |
 | **Kustomize / Kustomization** | combines and patches manifests (`kustomization.yaml`) / Flux's object that applies one folder |
+| **metrics / logs** | numbers measured over time (graphs in Grafana) / text lines a program prints (`kubectl logs`) |
 | **manifest** | a YAML file describing Kubernetes objects |
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
@@ -54,5 +55,6 @@
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
 | **tmux** | keeps a terminal session running when your SSH connection drops |
 | **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |
+| **vmagent / vmsingle** | collects metrics every 30 s / stores them 30 days (VictoriaMetrics, on node-workstation) |
 | **UID / GID** | the number Linux uses for a user / group; file owners are stored as numbers |
 | **verify.yml** | the read-only health check of the whole homelab |

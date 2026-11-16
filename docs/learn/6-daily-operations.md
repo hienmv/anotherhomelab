@@ -72,7 +72,7 @@ journalctl -k -b | grep DENIED                           # security blocks on th
 ```
 
 Grafana shows metrics: `https://grafana.<domain>` (Cloudflare login) or `https://grafana.lan` on
-node-workstation.
+node-workstation. Metrics vs logs, and where each is stored: [chapter 9](9-monitoring-grafana.md).
 
 ## Common fixes
 
