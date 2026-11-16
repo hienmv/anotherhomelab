@@ -4,6 +4,7 @@ resources:
   - scrapes.yaml
   - grafana-https.yaml
   - grafana-public.yaml
+  - otel-collector.yaml
 # Grafana dashboards: ConfigMaps labelled grafana_dashboard=1 are loaded by Grafana's sidecar.
 configMapGenerator:
   - name: dashboard-ticketlite
@@ -16,6 +17,17 @@ configMapGenerator:
       annotations:
         grafana_folder: Apps
         # ${datasource} & co. are Grafana variables: Flux must not substitute them
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+  # OpenTelemetry Collector config (also used by apps/ticketlite/docker-compose.yml). Name gets a
+  # content hash, so editing the file restarts the collector with the new config.
+  - name: otel-collector-config
+    namespace: monitoring
+    files:
+      - config.yaml=otel-collector-config.yaml
+    options:
+      disableNameSuffixHash: false
+      annotations:
+        # ${env:...} is the collector's own syntax: Flux must not substitute it
         kustomize.toolkit.fluxcd.io/substitute: disabled
 generatorOptions:
   disableNameSuffixHash: true

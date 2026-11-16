@@ -151,13 +151,23 @@ otherwise the first burst after a pod start is invisible to `increase()` (dashbo
 
 ## Logs
 
-JSON, one object per line (`src/main/resources/logback*.xml`, request lines from `RequestLog.kt`):
-`time level logger message service role`, per request `method path status duration_ms request_id`,
-per order `order_id order_status reason quantity concert_id duration_ms request_id`. The api takes the
+JSON, one object per line (`src/main/resources/logback*.xml`, request lines from `RequestLog.kt`),
+OpenTelemetry field names: `time level logger message service.name service.namespace trace_id span_id`,
+per request `http.request.method url.path http.response.status_code duration_ms request_id`, per order
+`order.id order.status order.reason order.quantity concert.id duration_ms request_id`. The api takes the
 request id from `X-Request-ID` / `CF-Ray` (or makes one), returns it as `X-Request-ID` and passes it to
 the worker through the Redis stream. Levels: 5xx/crash = ERROR, slow (>1 s) or retry = WARN, rest INFO.
 `LOG_FORMAT=text` for readable local output, `LOG_LEVEL=DEBUG` for more. `LoggingTest` guards the field
 names. Searching them in Grafana: [docs/learn/9](../../docs/learn/9-monitoring-grafana.md).
+
+## Traces
+
+The OpenTelemetry Java agent (pinned in the `Dockerfile`) traces every HTTP request, SQL query and
+Redis call; `Tracing.kt` carries the trace through the Redis stream (`traceparent` field), so api and
+worker form ONE trace (`orders publish` → `orders process` → `payment (simulated)` → SQL). Settings:
+`OTEL_*` env (cluster: `k8s/apps/ticketlite/backend.yaml`); `OTEL_JAVAAGENT_ENABLED=false` switches
+it off. `docker compose up` includes the collector and VictoriaTraces (http://localhost:10428/select/vmui/).
+Details: [docs/learn/10](../../docs/learn/10-tracing.md).
 
 ## Tests
 

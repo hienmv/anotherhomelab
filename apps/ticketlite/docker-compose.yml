@@ -8,6 +8,11 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   SESSION_SECRET: 6c6f63616c2d6465762d6f6e6c792d6e6f742d612d7265616c2d736563726574
   COOKIE_SECURE: "false"
+  # Traces -> collector (same config as the cluster) -> VictoriaTraces (UI: http://localhost:10428/select/vmui/)
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_METRICS_EXPORTER: none      # metrics: Prometheus /metrics, as in the cluster
+  OTEL_LOGS_EXPORTER: none         # logs: stdout JSON, as in the cluster
 
 services:
   postgres:
@@ -25,12 +30,24 @@ services:
     image: redis:8.2-alpine
     command: ["--appendonly", "yes"]
 
+  traces:
+    image: victoriametrics/victoria-traces:v0.12.1
+    ports: ["10428:10428"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-k8s:0.164.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes: ["../../k8s/monitoring/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro"]
+    environment:
+      TRACES_ENDPOINT: http://traces:10428/insert/opentelemetry
+
   api:
     build: ./backend
     image: ticketlite-backend:dev
     environment:
       <<: *backend-env
       ROLE: api
+      OTEL_SERVICE_NAME: ticketlite-api
     ports: ["8081:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -41,6 +58,7 @@ services:
     environment:
       <<: *backend-env
       ROLE: worker
+      OTEL_SERVICE_NAME: ticketlite-worker
     deploy:
       replicas: 2
     depends_on:

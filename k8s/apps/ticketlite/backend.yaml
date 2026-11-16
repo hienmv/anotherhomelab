@@ -2,6 +2,7 @@
 #   api    - HTTP API (login, concerts, orders), runs DB migrations on start
 #   worker - consumes the Redis stream `orders`, confirms purchases in Postgres
 # Secrets (out of git): apps/app-env (DATABASE_URL, REDIS_URL), apps/ticketlite (SESSION_SECRET).
+# Traces: OTEL_* env below; logs: JSON on stdout; metrics: GET /metrics.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +34,14 @@ spec:
           env:
             - { name: ROLE, value: api }
             - { name: COOKIE_SECURE, value: "true" }
+            # Tracing (docs/learn/10-tracing.md): the OpenTelemetry Java agent in the image sends spans to
+            # the collector, which filters noise and forwards to VictoriaTraces.
+            - { name: OTEL_SERVICE_NAME, value: ticketlite-api }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.monitoring.svc.cluster.local:4318" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+            - { name: OTEL_METRICS_EXPORTER, value: none }   # metrics: Prometheus /metrics (vmagent)
+            - { name: OTEL_LOGS_EXPORTER, value: none }      # logs: stdout JSON (vlagent)
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=ticketlite,deployment.environment.name=homelab" }
           envFrom:
             - secretRef: { name: app-env }
             - secretRef: { name: ticketlite }
@@ -45,8 +54,9 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 15
           resources:
-            requests: { cpu: 100m, memory: 192Mi }
-            limits: { memory: 512Mi }
+            # +64Mi for the OpenTelemetry agent (2026-11-16)
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 640Mi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
@@ -91,6 +101,14 @@ spec:
           image: ticketlite-backend   # registry + tag: images in kustomization.yaml
           env:
             - { name: ROLE, value: worker }
+            # Tracing (docs/learn/10-tracing.md): the OpenTelemetry Java agent in the image sends spans to
+            # the collector, which filters noise and forwards to VictoriaTraces.
+            - { name: OTEL_SERVICE_NAME, value: ticketlite-worker }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.monitoring.svc.cluster.local:4318" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+            - { name: OTEL_METRICS_EXPORTER, value: none }   # metrics: Prometheus /metrics (vmagent)
+            - { name: OTEL_LOGS_EXPORTER, value: none }      # logs: stdout JSON (vlagent)
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=ticketlite,deployment.environment.name=homelab" }
           envFrom:
             - secretRef: { name: app-env }
             - secretRef: { name: ticketlite }
@@ -100,8 +118,9 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 15
           resources:
-            requests: { cpu: 50m, memory: 160Mi }
-            limits: { memory: 384Mi }
+            # +64Mi for the OpenTelemetry agent (2026-11-16)
+            requests: { cpu: 50m, memory: 224Mi }
+            limits: { memory: 448Mi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }

@@ -247,6 +247,9 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 | node-exporter | all 4 nodes | tolerates node-1gb's taint |
 | VictoriaLogs single (`vlsingle`) | node-workstation (`role=data`) | central logs since 2026-11-16: 14 days or 8 GiB, 10Gi volume; Grafana Explore → VictoriaLogs (DS) |
 | vlagent (log collector) | all 4 nodes (DaemonSet) | reads `/var/log/pods`, ships each line within seconds; [docs/learn/9](docs/learn/9-monitoring-grafana.md) |
+| VictoriaTraces single (`vtsingle`) | node-workstation (`role=data`) | traces since 2026-11-16: 7 days or 4 GiB, 5Gi volume; Grafana Explore → VictoriaTraces (Jaeger API), linked to logs by `trace_id` |
+| otel-collector | node-workstation (`role=data`) | OpenTelemetry Collector 0.164.0: OTLP in (`otel-collector.monitoring:4318`), tail sampling drops probes/scrapes/housekeeping, retry queue; `k8s/monitoring/otel-collector*.yaml`; [docs/learn/10](docs/learn/10-tracing.md) |
+| OpenTelemetry Java agent | in ticketlite-api / -worker | 2.33.1, in the image; `OTEL_*` env in `k8s/apps/ticketlite/backend.yaml` |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
 Alerting (vmalert + Alertmanager) is off until a notification channel is chosen.

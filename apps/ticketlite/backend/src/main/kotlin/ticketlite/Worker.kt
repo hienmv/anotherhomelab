@@ -7,6 +7,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import io.opentelemetry.api.trace.SpanKind
 import net.logstash.logback.argument.StructuredArguments.kv
 import net.logstash.logback.argument.StructuredArguments.v
 import org.slf4j.LoggerFactory
@@ -84,21 +85,29 @@ class Worker(private val cfg: AppConfig, private val db: Db, private val gate: R
         claimed.value.forEach(::handle)
     }
 
-    private fun handle(entry: StreamEntry) {
+    /** One queue message = one CONSUMER span, a child of the api's publish span (same trace). */
+    private fun handle(entry: StreamEntry) = Tracing.inSpan(
+        "${RedisGate.STREAM} process", SpanKind.CONSUMER, parentFields = entry.fields,
+        attributes = mapOf(
+            "messaging.system" to "redis", "messaging.destination.name" to RedisGate.STREAM,
+            "messaging.message.id" to entry.id.toString(), "order.id" to (entry.fields["orderId"] ?: "-"),
+        ),
+    ) { span ->
         val orderId = entry.fields["orderId"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
         if (orderId != null) {
             val started = System.nanoTime()
-            if (cfg.workerDelayMs > 0) Thread.sleep(cfg.workerDelayMs) // simulated payment step
+            if (cfg.workerDelayMs > 0) Tracing.inSpan("payment (simulated)") { Thread.sleep(cfg.workerDelayMs) }
             val outcome = process(orderId)
+            outcome?.let { span.setAttribute("order.status", it.status) }
             if (outcome != null) {
                 if (outcome.status == OrderStatus.FAILED) gate.release(outcome.concertId, outcome.userId, outcome.quantity)
                 if (outcome.reason == "SOLD_OUT") gate.resyncInventory(outcome.concertId, outcome.dbAvailable)
                 Metrics.orderProcessed(outcome.status, outcome.reason, outcome.quantity, System.nanoTime() - started)
                 // A FAILED order (LIMIT, SOLD_OUT) is a normal business outcome: INFO, with fields
                 log.info(
-                    "order {} -> {}", v("order_id", orderId.toString()), v("order_status", outcome.status),
-                    kv("reason", outcome.reason ?: "-"), kv("quantity", outcome.quantity),
-                    kv("concert_id", outcome.concertId), kv("duration_ms", (System.nanoTime() - started) / 1_000_000),
+                    "order {} -> {}", v("order.id", orderId.toString()), v("order.status", outcome.status),
+                    kv("order.reason", outcome.reason ?: "-"), kv("order.quantity", outcome.quantity),
+                    kv("concert.id", outcome.concertId), kv("duration_ms", (System.nanoTime() - started) / 1_000_000),
                     kv("request_id", entry.fields["requestId"] ?: "-"),
                 )
             }

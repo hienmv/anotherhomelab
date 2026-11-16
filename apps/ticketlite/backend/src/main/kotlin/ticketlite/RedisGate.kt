@@ -1,5 +1,6 @@
 package ticketlite
 
+import io.opentelemetry.api.trace.SpanKind
 import java.net.URI
 import java.util.UUID
 import redis.clients.jedis.JedisPooled
@@ -62,11 +63,20 @@ class RedisGate(redisUrl: String) {
 
     fun available(concertId: Long): Int? = jedis.get(inventoryKey(concertId))?.toIntOrNull()
 
-    /** requestId travels with the order, so the worker's log lines carry the same request_id. */
-    fun enqueue(orderId: UUID, requestId: String?) {
-        val fields = mapOf("orderId" to orderId.toString()) + (requestId?.let { mapOf("requestId" to it) } ?: emptyMap())
-        jedis.xadd(STREAM, XAddParams.xAddParams().maxLen(10_000).approximateTrimming(), fields)
-    }
+    /**
+     * The trace (W3C `traceparent`) and the request id travel with the order, so the worker continues
+     * the same trace and its log lines carry the same ids (docs/learn/10-tracing.md).
+     */
+    fun enqueue(orderId: UUID, requestId: String?) =
+        Tracing.inSpan(
+            "$STREAM publish", SpanKind.PRODUCER,
+            attributes = mapOf("messaging.system" to "redis", "messaging.destination.name" to STREAM, "order.id" to orderId.toString()),
+        ) {
+            val fields = mapOf("orderId" to orderId.toString()) +
+                (requestId?.let { mapOf("requestId" to it) } ?: emptyMap()) +
+                Tracing.injectCurrent()
+            jedis.xadd(STREAM, XAddParams.xAddParams().maxLen(10_000).approximateTrimming(), fields)
+        }
 
     companion object {
         const val STREAM = "orders"

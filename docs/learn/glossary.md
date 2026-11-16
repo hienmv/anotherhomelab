@@ -52,15 +52,21 @@
 | **required check** | a CI job that must pass before a PR may be merged |
 | **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
 | **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
+| **OpenTelemetry (OTel)** | the industry standard for producing and sending metrics, logs and traces: libraries/agent in the app, the Collector, standard field names (chapter 10) |
+| **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SOPS** | encrypts secrets so they can live in git (planned) |
+| **span** | one timed step of a trace (an HTTP request, one SQL query, ...), with a `span_id` and a parent |
 | **structured logs** | log lines as JSON objects (`{"level":"INFO","status":200,...}`): every part is a searchable field |
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
 | **tmux** | keeps a terminal session running when your SSH connection drops |
+| **tail sampling** | deciding to keep or drop a trace after it is complete (the collector drops probe and housekeeping traces) |
 | **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |
 | **vmagent / vmsingle** | collects metrics every 30 s / stores them 30 days (VictoriaMetrics, on node-workstation) |
 | **VictoriaLogs / vlagent** | the log database (`vlsingle`, 14 days) / the collector on every node that ships log lines to it |
+| **trace / trace_id** | everything one request caused, across programs / its id, also on every log line (`traceparent` header between programs) |
+| **VictoriaTraces** | the trace database (`vtsingle`, 7 days) |
 | **UID / GID** | the number Linux uses for a user / group; file owners are stored as numbers |
 | **verify.yml** | the read-only health check of the whole homelab |

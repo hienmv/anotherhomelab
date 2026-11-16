@@ -25,7 +25,8 @@ fun requestLevel(status: Int, durationMs: Long): String = when {
 
 /**
  * One structured log line per /api request, with the fields you filter on in Grafana:
- * request_id, method, path, status, duration_ms. Replaces Ktor's CallLogging (plain text, always INFO).
+ * http.request.method, url.path, http.response.status_code, duration_ms, request_id (+ trace_id, span_id
+ * from the OpenTelemetry agent). Replaces Ktor's CallLogging (plain text, always INFO).
  * 4xx (SOLD_OUT, UNAUTHORIZED, ...) are INFO: the client got a correct answer, the service is fine.
  */
 val RequestLog = createApplicationPlugin("RequestLog") {
@@ -38,7 +39,8 @@ val RequestLog = createApplicationPlugin("RequestLog") {
         val method = call.request.httpMethod.value
         // v(): the value appears in the message AND as a JSON field; kv() without a {}: field only
         val args = arrayOf<Any>(
-            v("method", method), v("path", path), v("status", status), v("duration_ms", ms),
+            // OpenTelemetry semantic-convention names (same names as in the traces)
+            v("http.request.method", method), v("url.path", path), v("http.response.status_code", status), v("duration_ms", ms),
             kv("request_id", call.callId ?: "-"),
         )
         val msg = "{} {} -> {} in {} ms"

@@ -58,12 +58,12 @@ Grafana → **Explore** (compass icon) → data source **VictoriaLogs (DS)** →
 | You want | LogsQL |
 |---|---|
 | **all errors, every app** | `level:=ERROR` |
-| errors and warnings of one app | `service:=ticketlite level:in(ERROR, WARN)` |
-| **one request, through api and worker** | `request_id:="demo-req-42"` |
+| errors and warnings of one app | `service.name:=ticketlite-api level:in(ERROR, WARN)` |
+| **one request, through api and worker** | `trace_id:="6571ab6e74c37e8cb6408496f38739e2"` (or `request_id:="..."`) |
 | slow requests | `logger:=ticketlite.http duration_ms:>1000` |
-| sold-out answers | `path:="/api/orders" status:=409` |
-| one order | `order_id:="28d923da-ef06-4569-81e8-4fce1a1b5cfd"` |
-| requests per status code, last hour | `_time:1h status:* \| stats by (service, status) count() requests` |
+| sold-out answers | `url.path:="/api/orders" http.response.status_code:=409` |
+| one order | `order.id:="28d923da-ef06-4569-81e8-4fce1a1b5cfd"` |
+| requests per status code, last hour | `_time:1h http.response.status_code:* \| stats by (service.name, http.response.status_code) count() requests` |
 | everything from TicketLite's api | `kubernetes.container_name:=api` |
 | everything one machine logged | `kubernetes.pod_node_name:=node-8gb` |
 | one word anywhere, last hour (time picker) | `timeout` |
@@ -101,16 +101,24 @@ The apps used to print plain sentences. Now every line is a **JSON object**, so 
 you can filter, count and graph. A real TicketLite request, then the worker processing that order:
 
 ```json
-{"time":"2026-11-16T06:36:24.722Z","level":"INFO","logger":"ticketlite.http","message":"POST /api/orders -> 202 in 13 ms",
- "service":"ticketlite","role":"api","method":"POST","path":"/api/orders","status":202,"duration_ms":13,"request_id":"demo-req-42"}
-{"time":"2026-11-16T06:36:24.957Z","level":"INFO","logger":"ticketlite.worker","message":"order 28d9... -> CONFIRMED",
- "service":"ticketlite","role":"worker","order_id":"28d9...","order_status":"CONFIRMED","reason":"-","quantity":1,"duration_ms":238,"request_id":"demo-req-42"}
+{"time":"2026-11-16T07:21:33.478Z","level":"INFO","logger":"ticketlite.http","message":"POST /api/orders -> 202 in 84 ms",
+ "service.name":"ticketlite-api","service.namespace":"ticketlite","http.request.method":"POST","url.path":"/api/orders",
+ "http.response.status_code":202,"duration_ms":84,"request_id":"trace-demo-1",
+ "trace_id":"6571ab6e74c37e8cb6408496f38739e2","span_id":"e001ee546d6f5a6d"}
+{"time":"2026-11-16T07:21:33.867Z","level":"INFO","logger":"ticketlite.worker","message":"order 9a71... -> CONFIRMED",
+ "service.name":"ticketlite-worker","order.id":"9a71...","order.status":"CONFIRMED","order.reason":"-","order.quantity":1,
+ "concert.id":2,"duration_ms":352,"request_id":"trace-demo-1","trace_id":"6571ab6e74c37e8cb6408496f38739e2","span_id":"b2e661d14eb7e003"}
 ```
+
+Field names follow the **OpenTelemetry semantic conventions** (`service.name`, `http.request.method`,
+`url.path`, `http.response.status_code`, ...): the same names as in the traces ([chapter 10](10-tracing.md)),
+and the names any OpenTelemetry-aware tool expects. Only TicketLite's own things are ours
+(`order.*`, `concert.id`).
 
 | Who | How | Fields |
 |---|---|---|
-| TicketLite api + worker | logback + `logstash-logback-encoder` (`backend/src/main/resources/logback*.xml`, `RequestLog.kt`) | `time level logger message service role` + `method path status duration_ms request_id` per request, `order_id order_status reason quantity` per order, `stack_trace` on errors |
-| landing, notes, ticketlite-web | nginx `log_format json` (their `nginx.conf*`) | the same request fields, plus `bytes client_ip user_agent referer` |
+| TicketLite api + worker | logback + `logstash-logback-encoder` (`backend/src/main/resources/logback*.xml`, `RequestLog.kt`) | `time level logger message service.name service.namespace trace_id span_id` + `http.request.method url.path http.response.status_code duration_ms request_id` per request, `order.id order.status order.reason order.quantity concert.id` per order, `stack_trace` on errors |
+| landing, notes, ticketlite-web | nginx `log_format json` (their `nginx.conf*`) | the same request fields, plus `http.response.body.size client.address user_agent.original http.request.header.referer` (no traces: static files) |
 | Postgres, Traefik, Flux, ... | not ours | their own format (search words) |
 
 ### Log levels: one rule for every app
@@ -137,12 +145,13 @@ Cloudflare's `CF-Ray` (also visible in Cloudflare's dashboard), else a new rando
 
 So `request_id:="..."` shows the whole story of one purchase across two programs (and from the
 browser: DevTools → Network → the request → Response headers → `X-Request-ID`). Real systems call
-this a **correlation id**; full **tracing** (OpenTelemetry) adds timings for every step on top.
+this a **correlation id**. Since tracing ([chapter 10](10-tracing.md)) every line also has a
+`trace_id`: the internal id, which opens the trace with the timing of every step.
 
 ### Guarded by a test
 
 `LoggingTest.kt` (runs in every image build) fails if a field name the queries above rely on changes
-(`level`, `message`, `request_id`, `status`, `duration_ms`, ...) or the level rule changes, the same
+(`level`, `message`, `request_id`, `http.response.status_code`, `duration_ms`, ...) or the level rule changes, the same
 way `MetricsTest` protects the dashboard.
 
 ## `kubectl logs`

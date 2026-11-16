@@ -1,6 +1,6 @@
 # Rendered by the nginx image entrypoint (envsubst replaces only defined env vars, e.g. API_UPSTREAM).
-# JSON access log, one object per line, same fields and level rule as TicketLite's backend
-# (docs/learn/9-monitoring-grafana.md). Same block in landing, notes and ticketlite/web.
+# JSON access log, one object per line, same fields (OpenTelemetry names) and level rule as
+# TicketLite's backend (docs/learn/9-monitoring-grafana.md). Same block in landing, notes and ticketlite/web.
 #   level: 5xx -> ERROR, slower than 1 s -> WARN, else INFO (4xx are correct answers: INFO)
 #   path: what the visitor asked for, without the ?query (not the file nginx served)
 #   request_id: X-Request-ID from the caller, else Cloudflare's CF-Ray, else nginx's own random id
@@ -34,9 +34,11 @@ map $http_user_agent $loggable {
 }
 log_format json escape=json '{"time":"$time_iso8601","level":"$log_level","logger":"nginx",'
     '"message":"$request_method $req_path -> $status in $duration_ms ms",'
-    '"service":"ticketlite-web","method":"$request_method","path":"$req_path","status":$status,'
-    '"duration_ms":$duration_ms,"bytes":$body_bytes_sent,"request_id":"$req_id",'
-    '"client_ip":"$http_cf_connecting_ip","user_agent":"$http_user_agent","referer":"$http_referer"}';
+    '"service.name":"ticketlite-web","http.request.method":"$request_method","url.path":"$req_path",'
+    '"http.response.status_code":$status,"duration_ms":$duration_ms,'
+    '"http.response.body.size":$body_bytes_sent,"request_id":"$req_id",'
+    '"client.address":"$http_cf_connecting_ip","user_agent.original":"$http_user_agent",'
+    '"http.request.header.referer":"$http_referer"}';
 
 server {
     listen 8080;

@@ -26,7 +26,10 @@ class LoggingTest {
             as OutputStreamAppender<ILoggingEvent>
         val event = LoggingEvent(
             "test", ctx.getLogger("ticketlite.http"), Level.INFO, "{} {} -> {} in {} ms", null,
-            arrayOf(v("method", "GET"), v("path", "/api/concerts"), v("status", 200), v("duration_ms", 13L), kv("request_id", "abc-1")),
+            arrayOf(
+                v("http.request.method", "GET"), v("url.path", "/api/concerts"), v("http.response.status_code", 200),
+                v("duration_ms", 13L), kv("request_id", "abc-1"),
+            ),
         )
         val line = String(appender.encoder.encode(event)).trim()
         assertTrue('\n' !in line, "one JSON object per line")
@@ -35,12 +38,12 @@ class LoggingTest {
         assertEquals("INFO", json["level"]!!.jsonPrimitive.content)
         assertEquals("ticketlite.http", json["logger"]!!.jsonPrimitive.content)
         assertEquals("GET /api/concerts -> 200 in 13 ms", json["message"]!!.jsonPrimitive.content)
-        assertEquals("ticketlite", json["service"]!!.jsonPrimitive.content)
+        assertEquals("ticketlite", json["service.namespace"]!!.jsonPrimitive.content)
         assertEquals("abc-1", json["request_id"]!!.jsonPrimitive.content)
-        assertEquals(200, json["status"]!!.jsonPrimitive.int)
+        assertEquals(200, json["http.response.status_code"]!!.jsonPrimitive.int)
         assertEquals(13, json["duration_ms"]!!.jsonPrimitive.int)
         assertTrue(json["time"]!!.jsonPrimitive.content.endsWith("Z"), "time in UTC, RFC 3339")
-        listOf("role", "path", "method").forEach { assertTrue(it in json, "missing field $it") }
+        listOf("service.name", "url.path", "http.request.method").forEach { assertTrue(it in json, "missing field $it") }
     }
 
     @Test

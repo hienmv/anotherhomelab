@@ -17,6 +17,7 @@ start here.
 | 7 | [Git workflow](7-git-workflow.md) | branches and pull requests, why `main` is protected, deploy keys, how a change gets in |
 | 8 | [Surviving a node failure](8-surviving-a-node-failure.md) | 2 copies per site, spreading over nodes, disruption budgets; what is still single |
 | 9 | [Monitoring with Grafana](9-monitoring-grafana.md) | metrics and central logs: where each is stored, searching logs in Grafana, what a node shutdown loses |
+| 10 | [Tracing](10-tracing.md) | traces and spans, OpenTelemetry (agent, collector), following one purchase through api, queue and worker |
 | – | [Glossary](glossary.md) | every term used in these pages, in one place |
 
 ## Golden rules (learned the hard way, see the [postmortem](../postmortems/2026-11-11-phase2-migration.md))
