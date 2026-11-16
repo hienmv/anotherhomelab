@@ -7,4 +7,4 @@ resources:
 images:
   - name: landing
     newName: ${IMAGE_REGISTRY}/landing
-    newTag: sha-8271f05
+    newTag: sha-36c3cc8
