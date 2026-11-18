@@ -1,0 +1,28 @@
+# Alertmanager config, rendered by playbooks/alerting.yml into Secret monitoring/alertmanager-config.
+# Values come from {{ alerting_env }} (never in git). docs/learn/11-slo.md.
+route:
+  receiver: blackhole                  # default: not sent anywhere (visible in vmalert's UI)
+  group_by: [alertname, slo, site]
+  group_wait: 30s                      # collect alerts that start together into one message
+  group_interval: 5m
+  repeat_interval: 6h                  # same reminder rhythm as homelab-check.sh
+  routes:
+    - matchers: ['slo=~".+"']          # SLO burn-rate alerts -> Telegram
+      receiver: telegram
+inhibit_rules:
+  # a fast burn already says it all: no extra slow-burn message for the same site + SLO
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [slo, site]
+receivers:
+  - name: blackhole
+  - name: telegram
+    telegram_configs:
+      - bot_token: "{{ alerting.TELEGRAM_BOT_TOKEN }}"
+        chat_id: {{ alerting.TELEGRAM_CHAT_ID }}
+        parse_mode: ""
+        send_resolved: true
+        message: |-{% raw %}
+          {{ if eq .Status "firing" }}🔴{{ else }}🟢 resolved:{{ end }} {{ range .Alerts }}{{ .Annotations.summary }}
+          {{ if eq $.Status "firing" }}{{ .Annotations.description }}{{ end }}
+          {{ end }}{% endraw %}

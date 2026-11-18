@@ -47,3 +47,20 @@ spec:
   podMetricsEndpoints:
     - port: http
       path: /metrics
+---
+# Traefik (k3s' router, :9100 /metrics): every visitor request passes it, so it is where the SLOs
+# are measured (traefik_service_requests_total, traefik_service_request_duration_seconds;
+# k8s/monitoring/slo-rules.yaml, docs/learn/11-slo.md).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
+metadata:
+  name: traefik
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [kube-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  podMetricsEndpoints:
+    - port: metrics

@@ -72,6 +72,10 @@
   ansible.builtin.import_playbook: restore.yml
   tags: [restore]
 
+- name: Alertmanager config (from alerting.env, not in the backup)
+  ansible.builtin.import_playbook: alerting.yml
+  tags: [restore]
+
 - name: Health check
   ansible.builtin.import_playbook: verify.yml
   tags: [verify]

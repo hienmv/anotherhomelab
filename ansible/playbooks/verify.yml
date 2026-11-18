@@ -339,6 +339,32 @@
         problems: "{{ problems + ['traces: ' ~ item] }}"
       loop: "{{ tracing.stdout_lines }}"
 
+    # SLOs (docs/learn/11-slo.md): the measurement works (Traefik metrics arrive), Alertmanager has its
+    # config, and which SLO alerts fire right now (Telegram gets them too, this is the second channel).
+    - name: SLOs (Traefik metrics arriving, Alertmanager config, firing SLO alerts)
+      tags: [apps]
+      ansible.builtin.shell: |
+        q() { kubectl get --raw "/api/v1/namespaces/monitoring/services/vmsingle-vm-victoria-metrics-k8s-stack:8428/proxy/api/v1/query?query=$1" 2>&1; }
+        n=$(q 'count(traefik_service_requests_total)' | grep -oE '"value":\[[^,]+,"[0-9]+' | grep -oE '[0-9]+$')
+        [ "${n:-0}" -gt 0 ] || echo "no Traefik request metrics in VictoriaMetrics: SLOs cannot be measured (VMPodScrape traefik, Traefik metrics port)"
+        kubectl -n monitoring get secret alertmanager-config >/dev/null 2>&1 \
+          || echo "Secret monitoring/alertmanager-config missing: run ansible-playbook playbooks/alerting.yml"
+        # ALERTS{alertstate="firing",slo!=""} -> one line per alert: name site slo window
+        q 'ALERTS%7Balertstate%3D%22firing%22%2Cslo!%3D%22%22%7D' | python3 -c '
+        import json, sys
+        for r in json.load(sys.stdin).get("data", {}).get("result", []):
+            m = r["metric"]; print("firing: %s %s %s (%s)" % (m.get("alertname"), m.get("site"), m.get("slo"), m.get("window")))
+        ' 2>/dev/null
+      register: slo
+      changed_when: false
+      failed_when: false
+
+    - name: SLO result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['slo: ' ~ item] }}"
+      loop: "{{ slo.stdout_lines }}"
+
     # 2-copy deployments only survive a node failure if the copies sit on different nodes. The
     # spread is soft, so after a node outage both copies can stay on one node until a restart.
     - name: 2-copy deployments with all copies on one node

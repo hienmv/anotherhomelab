@@ -1,0 +1,246 @@
+# Service level objectives (SLOs) for the public sites: docs/learn/11-slo.md.
+# Each SLO: one recording rule per window (error ratio), the budget left, then 4 burn-rate alerts.
+# Threshold = burn rate x budget (e.g. 14.4 x 0.005 = 0.072). After any change: scripts/test-slo-rules.sh
+#
+#   availability  every site (landing, notes, ticketlite): 99.5 % of requests answered without 5xx
+#   latency       ticketlite api: 99 % of requests answered within 300 ms
+#   window        30 days. Error budget = 1 - objective (0.5 % / 1 % of requests)
+#
+# Measured at Traefik (every visitor request passes it): traefik_service_* metrics, scraped by
+# vmagent (scrapes.yaml). Evaluated by vmalert every 20 s; alerts go to Alertmanager -> Telegram.
+# A double dollar is Flux's escape (the rule gets a single one, used by label_replace).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: slo
+  namespace: monitoring
+spec:
+  groups:
+    - name: slo-availability-sli
+      interval: 1m
+      rules:
+        # error ratio = share of requests that broke the objective, over each window
+        - record: slo:error_ratio:rate5m
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[5m]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[5m]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate30m
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[30m]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[30m]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate1h
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate2h
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[2h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[2h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate6h
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[6h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[6h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate1d
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[1d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[1d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate3d
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[3d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[3d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        - record: slo:error_ratio:rate30d
+          expr: |
+            sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+",code=~"5.."}[30d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+            / sum by (site) (label_replace(rate(traefik_service_requests_total{service=~"apps-.+"}[30d]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+"))
+          labels: { slo: availability, objective: "0.995" }
+        # share of the 30-day error budget still left (1 = untouched, 0 = used up, < 0 = SLO missed)
+        - record: slo:error_budget_remaining:ratio
+          expr: 1 - (slo:error_ratio:rate30d{slo="availability"} / 0.005)
+          labels: { slo: availability, objective: "0.995" }
+    - name: slo-availability-alerts
+      rules:
+        - alert: SLOErrorBudgetBurnFast
+          # burning the budget 14.4x faster than allowed, over 1h AND still over the last 5m
+          expr: |
+            (
+              slo:error_ratio:rate1h{slo="availability"} > 0.072
+              and slo:error_ratio:rate5m{slo="availability"} > 0.072
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: critical, slo: availability, window: "1h/5m" }
+          annotations:
+            summary: "{{ $$labels.site }}: availability SLO error budget burning 14.4x too fast (1h window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 1h
+              (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in
+              2.1 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnFast
+          # burning the budget 6x faster than allowed, over 6h AND still over the last 30m
+          expr: |
+            (
+              slo:error_ratio:rate6h{slo="availability"} > 0.03
+              and slo:error_ratio:rate30m{slo="availability"} > 0.03
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: critical, slo: availability, window: "6h/30m" }
+          annotations:
+            summary: "{{ $$labels.site }}: availability SLO error budget burning 6x too fast (6h window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 6h
+              (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in
+              5.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnSlow
+          # burning the budget 3x faster than allowed, over 1d AND still over the last 2h
+          expr: |
+            (
+              slo:error_ratio:rate1d{slo="availability"} > 0.015
+              and slo:error_ratio:rate2h{slo="availability"} > 0.015
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: warning, slo: availability, window: "1d/2h" }
+          annotations:
+            summary: "{{ $$labels.site }}: availability SLO error budget burning 3x too fast (1d window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 1d
+              (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in
+              10.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnSlow
+          # burning the budget 1x faster than allowed, over 3d AND still over the last 6h
+          expr: |
+            (
+              slo:error_ratio:rate3d{slo="availability"} > 0.005
+              and slo:error_ratio:rate6h{slo="availability"} > 0.005
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: warning, slo: availability, window: "3d/6h" }
+          annotations:
+            summary: "{{ $$labels.site }}: availability SLO error budget burning 1x too fast (3d window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 3d
+              (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in
+              30.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+    - name: slo-latency-sli
+      interval: 1m
+      rules:
+        # error ratio = share of requests that broke the objective, over each window
+        - record: slo:error_ratio:rate5m
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[5m]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[5m]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate30m
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[30m]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[30m]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate1h
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[1h]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[1h]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate2h
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[2h]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[2h]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate6h
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[6h]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[6h]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate1d
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[1d]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[1d]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate3d
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[3d]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[3d]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        - record: slo:error_ratio:rate30d
+          expr: |
+            1 - (sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_bucket{service=~"apps-ticketlite-api-.+",le="0.3"}[30d]), "site", "ticketlite", "", ""))
+            / sum by (site) (label_replace(rate(traefik_service_request_duration_seconds_count{service=~"apps-ticketlite-api-.+"}[30d]), "site", "ticketlite", "", "")))
+          labels: { slo: latency, objective: "0.99" }
+        # share of the 30-day error budget still left (1 = untouched, 0 = used up, < 0 = SLO missed)
+        - record: slo:error_budget_remaining:ratio
+          expr: 1 - (slo:error_ratio:rate30d{slo="latency"} / 0.01)
+          labels: { slo: latency, objective: "0.99" }
+    - name: slo-latency-alerts
+      rules:
+        - alert: SLOErrorBudgetBurnFast
+          # burning the budget 14.4x faster than allowed, over 1h AND still over the last 5m
+          expr: |
+            (
+              slo:error_ratio:rate1h{slo="latency"} > 0.144
+              and slo:error_ratio:rate5m{slo="latency"} > 0.144
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: critical, slo: latency, window: "1h/5m" }
+          annotations:
+            summary: "{{ $$labels.site }}: latency SLO error budget burning 14.4x too fast (1h window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 1h
+              (objective 0.99, allowed 0.01). At this rate the 30-day budget is gone in
+              2.1 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnFast
+          # burning the budget 6x faster than allowed, over 6h AND still over the last 30m
+          expr: |
+            (
+              slo:error_ratio:rate6h{slo="latency"} > 0.06
+              and slo:error_ratio:rate30m{slo="latency"} > 0.06
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: critical, slo: latency, window: "6h/30m" }
+          annotations:
+            summary: "{{ $$labels.site }}: latency SLO error budget burning 6x too fast (6h window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 6h
+              (objective 0.99, allowed 0.01). At this rate the 30-day budget is gone in
+              5.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnSlow
+          # burning the budget 3x faster than allowed, over 1d AND still over the last 2h
+          expr: |
+            (
+              slo:error_ratio:rate1d{slo="latency"} > 0.03
+              and slo:error_ratio:rate2h{slo="latency"} > 0.03
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: warning, slo: latency, window: "1d/2h" }
+          annotations:
+            summary: "{{ $$labels.site }}: latency SLO error budget burning 3x too fast (1d window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 1d
+              (objective 0.99, allowed 0.01). At this rate the 30-day budget is gone in
+              10.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.
+        - alert: SLOErrorBudgetBurnSlow
+          # burning the budget 1x faster than allowed, over 3d AND still over the last 6h
+          expr: |
+            (
+              slo:error_ratio:rate3d{slo="latency"} > 0.01
+              and slo:error_ratio:rate6h{slo="latency"} > 0.01
+            )
+            and on (site) sum by (site) (label_replace(increase(traefik_service_requests_total{service=~"apps-.+"}[1h]), "site", "$${1}", "service", "apps-(landing|notes|ticketlite)-.+")) >= 10
+          for: 2m
+          labels: { severity: warning, slo: latency, window: "3d/6h" }
+          annotations:
+            summary: "{{ $$labels.site }}: latency SLO error budget burning 1x too fast (3d window)"
+            description: >-
+              {{ $$labels.site }} has {{ $$value | humanizePercentage }} bad requests over 3d
+              (objective 0.99, allowed 0.01). At this rate the 30-day budget is gone in
+              30.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.

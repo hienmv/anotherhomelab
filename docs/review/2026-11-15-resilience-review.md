@@ -115,7 +115,8 @@ RTO = time until service is back. RPO = how much data can be lost.
   (vmalert + Alertmanager, a channel); an external uptime probe (node-1gb or a free service);
   later central logs (VictoriaLogs) and a simple SLO per site.
 - **Done 2026-11-15/16**: `verify.yml` on timers with Telegram + healthchecks.io (step 2); **central logs**:
-  vlagent on every node → VictoriaLogs (14 days), searchable in Grafana. Still open: an SLO per site.
+  vlagent on every node → VictoriaLogs (14 days), searchable in Grafana. **SLOs 2026-11-18**: availability 99.5 % (all
+  sites) + latency 99 % < 300 ms (TicketLite api), burn-rate alerts to Telegram, rules unit-tested in CI.
 
 ### Operations & disaster recovery (4)
 - **Real systems**: runbooks, game days / DR drills, blameless postmortems, change history,

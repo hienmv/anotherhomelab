@@ -125,7 +125,7 @@ and the names any OpenTelemetry-aware tool expects. Only TicketLite's own things
 
 | Level | Means | Examples here | Who reacts |
 |---|---|---|---|
-| **ERROR** | the service **failed**; someone should look | 5xx answer, unhandled exception, crash at start | you (later: an alert) |
+| **ERROR** | the service **failed**; someone should look | 5xx answer, unhandled exception, crash at start | you (many 5xx trigger the SLO alert, [chapter 11](11-slo.md)) |
 | **WARN** | **degraded**, but it still works or recovers by itself | request slower than 1 s, worker retrying after a Redis error | look if it repeats |
 | **INFO** | **normal** events | every request (also 4xx), order confirmed or failed, start/stop | nobody; for investigating |
 | **DEBUG** | details for a bug hunt | off; `LOG_LEVEL=DEBUG` on the Deployment to switch on | – |

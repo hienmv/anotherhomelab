@@ -4,6 +4,7 @@
 |---|---|
 | **age** | a small encryption tool; encrypts the backups. Its key: `~/.config/sops/age/keys.txt` on node-workstation + password manager |
 | **agent (ssh-agent)** | keeps unlocked SSH keys in memory so you type the passphrase once (8 h here) |
+| **Alertmanager / vmalert** | sends alerts (groups, repeats, Telegram) / evaluates the alert and recording rules every 20 s |
 | **Ansible** | sets up machines from a description over SSH (chapter 2) |
 | **AppArmor** | a Linux security layer that limits what programs may do; Ubuntu 26.04's default broke containers (postmortem) |
 | **authorized_keys** | file on a server listing the public keys allowed to log in |
@@ -11,6 +12,7 @@
 | **become** | Ansible for "run as root via sudo" |
 | **branch** | a separate line of commits; only `main` is deployed |
 | **break-glass** | emergency access, used only when everything else fails (e.g. keyboard on the Pi) |
+| **burn rate** | how fast the error budget is spent; 1 = exactly used up in 30 days, 14.4 = in ~2 days (chapter 11) |
 | **canary** | try something on one small target first (one node, one pod) before everything |
 | **CI** | Continuous Integration: GitHub Actions builds and tests on every push |
 | **cloudflared / tunnel** | program in the cluster that connects out to Cloudflare, so no router ports are open |
@@ -50,6 +52,7 @@
 | **postmortem** | written review after an incident: what, why, what changes (no blame) |
 | **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
 | **required check** | a CI job that must pass before a PR may be merged |
+| **recording rule** | a query computed regularly and stored as a new metric (`slo:error_ratio:rate1h`), so alerts and dashboards stay cheap |
 | **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
 | **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
 | **OpenTelemetry (OTel)** | the industry standard for producing and sending metrics, logs and traces: libraries/agent in the app, the Collector, standard field names (chapter 10) |
@@ -57,6 +60,7 @@
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
+| **SLI / SLO / error budget** | measured share of good requests / its target (99.5 % in 30 days) / what may fail (0.5 %) |
 | **SOPS** | encrypts secrets so they can live in git (planned) |
 | **span** | one timed step of a trace (an HTTP request, one SQL query, ...), with a `span_id` and a parent |
 | **structured logs** | log lines as JSON objects (`{"level":"INFO","status":200,...}`): every part is a searchable field |
