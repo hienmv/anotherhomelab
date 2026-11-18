@@ -29,6 +29,7 @@ env:
   FLUX_VERSION: 2.10.0          # same as the cluster (ansible/group_vars/all.yml)
   KUBECONFORM_VERSION: v0.8.0
   GITLEAKS_VERSION: 8.30.1
+  ANSIBLE_VERSION: 9.2.0         # = Ubuntu 24.04 apt package on node-workstation (core 2.16)
 
 jobs:
   config-and-manifests:
@@ -75,19 +76,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Ansible
-        run: pipx install --include-deps ansible
+      # The SAME version node-workstation runs (Ubuntu 24.04's apt package: ansible 9.2.0 = core 2.16):
+      # a playbook that only works on a newer Ansible must fail here, not on the workstation.
+      - name: Install Ansible (as on node-workstation)
+        run: pipx install --include-deps "ansible==${ANSIBLE_VERSION}"
 
-      - name: Syntax check every playbook
+      # Loads every task (catches bad YAML, unknown modules, unparsable shell text). Any failure
+      # fails the job: before 2026-11-18 a `cmd && echo ok` loop silently ignored failures.
+      - name: Syntax check + task loading, every playbook
         working-directory: ansible
         env:
           ANSIBLE_BECOME_ASK_PASS: "false"
           ANSIBLE_LOG_PATH: /dev/null
         run: |
-          set -e
+          set -euo pipefail
+          ansible --version | head -1
+          failed=0
           for f in playbooks/*.yml; do
-            ansible-playbook "$f" --syntax-check > /dev/null && echo "ok $f"
+            if ansible-playbook "$f" --syntax-check > /dev/null && ansible-playbook "$f" --list-tasks > /dev/null; then
+              echo "ok   $f"
+            else
+              echo "FAIL $f"; failed=1
+            fi
           done
+          exit $failed
 
   secrets:
     runs-on: ubuntu-24.04

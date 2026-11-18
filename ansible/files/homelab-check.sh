@@ -29,8 +29,13 @@ export ANSIBLE_LOG_PATH=/dev/null
 # Check with the current main (docs/learn/12-gitops-secrets.md): fast-forward only, so local
 # changes are never overwritten; if it cannot, that is reported as a problem. (Safe while running:
 # git writes new files, this bash keeps reading the old one.)
+# Fetched anonymously over HTTPS (the repo is public): a timer has no ssh-agent for the
+# passphrase-protected GitHub key, and reading needs no key at all. origin/main is updated as usual.
 pull_problem=""
-if ! pull_out="$(git -C "$repo_ansible/.." pull --ff-only -q 2>&1)"; then
+repo="$repo_ansible/.."
+https_url="$(git -C "$repo" remote get-url origin | sed -E 's#^git@github\.com:#https://github.com/#')"
+if ! pull_out="$(git -C "$repo" fetch -q "$https_url" "+refs/heads/main:refs/remotes/origin/main" 2>&1 \
+                 && git -C "$repo" merge -q --ff-only origin/main 2>&1)"; then
   pull_problem="- repo on $(hostname -s) not updated from GitHub (checked with the old code): $(printf '%s' "$pull_out" | tr '\n' ' ' | cut -c1-160)"
 fi
 

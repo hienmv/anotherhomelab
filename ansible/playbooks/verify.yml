@@ -343,21 +343,24 @@
     # config, and which SLO alerts fire right now (Telegram gets them too, this is the second channel).
     - name: SLOs (Traefik metrics arriving, Alertmanager config, firing SLO alerts)
       tags: [apps]
-      ansible.builtin.shell: |
-        q() { kubectl get --raw "/api/v1/namespaces/monitoring/services/vmsingle-vm-victoria-metrics-k8s-stack:8428/proxy/api/v1/query?query=$1" 2>&1; }
-        n=$(q 'count(traefik_service_requests_total)' | grep -oE '"value":\[[^,]+,"[0-9]+' | grep -oE '[0-9]+$')
-        [ "${n:-0}" -gt 0 ] || echo "no Traefik request metrics in VictoriaMetrics: SLOs cannot be measured (VMPodScrape traefik, Traefik metrics port)"
-        kubectl -n monitoring get secret alertmanager-config >/dev/null 2>&1 \
-          || echo "Secret monitoring/alertmanager-config missing: playbooks/alerting.yml writes it into k8s/secrets (commit + PR)"
-        # GitOps secrets (docs/learn/12): Flux's decryption key present
-        kubectl -n flux-system get secret sops-age >/dev/null 2>&1 \
-          || echo "Secret flux-system/sops-age missing: Flux cannot decrypt k8s/secrets (scripts/secrets/bootstrap.sh or restore.yml)"
-        # ALERTS{alertstate="firing",slo!=""} -> one line per alert: name site slo window
-        q 'ALERTS%7Balertstate%3D%22firing%22%2Cslo!%3D%22%22%7D' | python3 -c '
-        import json, sys
-        for r in json.load(sys.stdin).get("data", {}).get("result", []):
-            m = r["metric"]; print("firing: %s %s %s (%s)" % (m.get("alertname"), m.get("site"), m.get("slo"), m.get("window")))
-        ' 2>/dev/null
+      # cmd: form: Ansible does not try to split this text into its own key=value options (the
+      # free form failed on it: "failed at splitting arguments", 2026-11-18)
+      ansible.builtin.shell:
+        cmd: |
+          q() { kubectl get --raw "/api/v1/namespaces/monitoring/services/vmsingle-vm-victoria-metrics-k8s-stack:8428/proxy/api/v1/query?query=$1" 2>&1; }
+          n=$(q 'count(traefik_service_requests_total)' | grep -oE '"value":\[[^,]+,"[0-9]+' | grep -oE '[0-9]+$')
+          [ "${n:-0}" -gt 0 ] || echo "no Traefik request metrics in VictoriaMetrics: SLOs cannot be measured (VMPodScrape traefik, Traefik metrics port)"
+          kubectl -n monitoring get secret alertmanager-config >/dev/null 2>&1 \
+            || echo "Secret monitoring/alertmanager-config missing: playbooks/alerting.yml writes it into k8s/secrets (commit + PR)"
+          # GitOps secrets (docs/learn/12): Flux's decryption key present
+          kubectl -n flux-system get secret sops-age >/dev/null 2>&1 \
+            || echo "Secret flux-system/sops-age missing: Flux cannot decrypt k8s/secrets (scripts/secrets/bootstrap.sh or restore.yml)"
+          # ALERTS{alertstate="firing",slo!=""} -> one line per alert: name site slo window
+          q 'ALERTS%7Balertstate%3D%22firing%22%2Cslo!%3D%22%22%7D' | python3 -c '
+          import json, sys
+          for r in json.load(sys.stdin).get("data", {}).get("result", []):
+              m = r["metric"]; print("firing: %s %s %s (%s)" % (m.get("alertname"), m.get("site"), m.get("slo"), m.get("window")))
+          ' 2>/dev/null
       register: slo
       changed_when: false
       failed_when: false
