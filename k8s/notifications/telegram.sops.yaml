@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: telegram
+    namespace: flux-system
+stringData:
+    token: ENC[AES256_GCM,data:Mz1lip5rb0SJ89wO1c7SXSqbEb0N8E4zjMJCFbShkqQ7fbSNQtRQHApsCHwBKA==,iv:pWdmVHQ8Eyi+7YrgA+ZGZWd5sXFEMbtWnJCcxJgJlqg=,tag:ALlPsPnHF9uoVRvgk0sm7Q==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIbUU0ditBQzdjUUNWWEZx
+            UzJzNTdDZzlQbUJyQ29Kd3NnN25OVyswK21RCmVDRm1aZUtpZTkzK0lJbDBwcEdN
+            dDUvOUV4emkwSWxDQSt1SFJZUTVuZTAKLS0tIEZFeXQ0MnVNVm9lVVBKN3ZGYzZ4
+            M0l1THRXd2MrUjQ2UGFYUUJHZkM3eUkKBoNOR5lsUsOcA5hgy2QEXfvRM/tvM8eI
+            qKEggJ0GzoI5eLHVDjIAr/Z6HisFOImjw4xFLHcbX4sJ+o5wqy5HEA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1w56q3v5s45lw0m525dkpngnzmytzty8env94nsy7ftxefsf3te0skghpdr
+    encrypted_regex: ^(data|stringData|channel)$
+    lastmodified: "2026-11-18T02:24:27Z"
+    mac: ENC[AES256_GCM,data:15XWq7wODlwszQdoZL4kUU335uUFEiwqdlqvNLgoaORG6w1HBt9dNca24+bjT6fmjCfyCHyzDSCfdgmFuDWbq8844zjyYTSiVVPnoZPfX04E+SapcBrkSSsDKTuyDsKIWvOM/fevBSDc2ZDnfYfKjedkGVvoqncjZL4az7FgXQI=,iv:w//A46AHn2ECXP6CxZvl0njlpG5LMxeTiLnFT+g3XvE=,tag:ASvtB8/TpmCr76kORxvBqg==,type:str]
+    version: 3.13.3
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+    name: telegram
+    namespace: flux-system
+spec:
+    channel: ENC[AES256_GCM,data:ZpXovEqxG31hZQ==,iv:0y9Bc0LYCxizrJbAKIICnyPyRTQ57DWEi0GQd1T+9I4=,tag:zb6yUgZksKC5teM8FCs2sg==,type:str]
+    secretRef:
+        name: telegram
+    type: telegram
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIbUU0ditBQzdjUUNWWEZx
+            UzJzNTdDZzlQbUJyQ29Kd3NnN25OVyswK21RCmVDRm1aZUtpZTkzK0lJbDBwcEdN
+            dDUvOUV4emkwSWxDQSt1SFJZUTVuZTAKLS0tIEZFeXQ0MnVNVm9lVVBKN3ZGYzZ4
+            M0l1THRXd2MrUjQ2UGFYUUJHZkM3eUkKBoNOR5lsUsOcA5hgy2QEXfvRM/tvM8eI
+            qKEggJ0GzoI5eLHVDjIAr/Z6HisFOImjw4xFLHcbX4sJ+o5wqy5HEA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1w56q3v5s45lw0m525dkpngnzmytzty8env94nsy7ftxefsf3te0skghpdr
+    encrypted_regex: ^(data|stringData|channel)$
+    lastmodified: "2026-11-18T02:24:27Z"
+    mac: ENC[AES256_GCM,data:15XWq7wODlwszQdoZL4kUU335uUFEiwqdlqvNLgoaORG6w1HBt9dNca24+bjT6fmjCfyCHyzDSCfdgmFuDWbq8844zjyYTSiVVPnoZPfX04E+SapcBrkSSsDKTuyDsKIWvOM/fevBSDc2ZDnfYfKjedkGVvoqncjZL4az7FgXQI=,iv:w//A46AHn2ECXP6CxZvl0njlpG5LMxeTiLnFT+g3XvE=,tag:ASvtB8/TpmCr76kORxvBqg==,type:str]
+    version: 3.13.3
