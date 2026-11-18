@@ -44,11 +44,47 @@ for its **serial number** and only touches the one in the inventory, and only er
 that serial (`-e confirm_wipe=...`). It mounts by **label** with `nofail`: if the SSD is unplugged
 or dead, node-8gb still boots, and `verify.yml` reports the missing mount.
 
+## Part B: the backup store (S3 on the SSD)
+
+```text
+ node-workstation                                    node-8gb, SSD /mnt/ssd
+ backup.yml (nightly 03:30) ── rclone, S3 ─────────► Garage (systemd service, not a pod)
+   age-encrypted archive                              bucket archives  (key: workstation)
+ Postgres (part C) ─────────── S3 ─────────────────►  bucket cnpg      (key: cnpg-backup)
+                                                      data: /mnt/ssd/backup/garage
+```
+
+| Piece | What | Why |
+|---|---|---|
+| **S3** | the object-storage API made by AWS, now the standard: put / get / list files ("objects") in "buckets" over HTTP | every backup tool speaks it (CNPG's Barman, rclone), and so do clouds (R2): the same backups can move to a cloud unchanged |
+| **Garage** v2.5.0 | a small S3 server for self-hosting, ~50 MB RAM | one binary; fine on a Pi |
+| **outside Kubernetes** | a plain systemd service on node-8gb | if the cluster breaks, the store you restore it from still works |
+| `RequiresMountsFor=/mnt/ssd` | the service only starts when the SSD is mounted | never quietly fills the Pi's SD card |
+| **one key per user** | `workstation` may use only `archives`, `cnpg-backup` only `cnpg` | least privilege: one leaked key exposes one bucket. Tested: the workstation key is refused on `cnpg` |
+| keys | Postgres': `k8s/secrets/data/backup-s3.sops.yaml` (git, encrypted). Workstation's: `~/.config/homelab/backup-s3.env` (mode 600, not in git) | each where it is used |
+| **nightly** | `homelab-backup.timer` runs `backup.yml` at 03:30: archive, copy to `ssd:archives`, delete copies older than 30 days (store and local) | before: only by hand |
+| checked by | `verify.yml`: Garage running + healthy; newest archive < 26 h old, also in the store | a failed night is a Telegram message the next morning |
+
+Trust, without a checksum file: Garage publishes none, so the binary's sha256 was pinned after
+comparing the download with the binary inside Garage's official container image (two channels,
+same hash). A supply-chain habit: verify what you run, from two independent sources if you can.
+
+Honest limit: inside the LAN the store speaks plain HTTP, protected by the keys but not encrypted on
+the wire. The archives are age-encrypted anyway; the off-site copy (part D) is encrypted end to end.
+
+Useful commands:
+
+```bash
+ssh node-8gb sudo garage status                 # the store, its node, capacity
+ssh node-8gb sudo garage bucket info archives   # size, number of objects
+set -a; . ~/.config/homelab/backup-s3.env; set +a; rclone ls ssd:archives   # as ops on node-workstation
+systemctl list-timers homelab-backup; journalctl -u homelab-backup -n 50
+```
+
 ## Next parts
 
 | Part | What |
 |---|---|
-| B | an S3 store on the SSD (outside Kubernetes, so a broken cluster cannot take its backups with it) |
 | C | Postgres: continuous WAL archive + nightly base backup to it (point-in-time restore), and a restore drill |
 | D | nightly encrypted copy to Cloudflare R2 (off-site: survives fire or theft) |
 

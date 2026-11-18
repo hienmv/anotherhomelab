@@ -88,6 +88,24 @@
         problems: "{{ problems + ['ssd: ' ~ item] }}"
       loop: "{{ ssd_check.stdout_lines | default([]) }}"
 
+    # Backup store (playbooks/backup-store.yml): Garage running and healthy on its node
+    - name: Backup store (Garage)
+      when: inventory_hostname == backup_store.host
+      become: true
+      ansible.builtin.shell:
+        cmd: |
+          systemctl is-active --quiet garage || { echo "garage service not running (systemctl status garage)"; exit 0; }
+          curl -sf -m 5 http://127.0.0.1:3903/health >/dev/null || echo "garage not healthy (curl 127.0.0.1:3903/health)"
+      register: store_check
+      changed_when: false
+      failed_when: false
+
+    - name: Backup store result
+      when: inventory_hostname == backup_store.host
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['backup-store: ' ~ item] }}"
+      loop: "{{ store_check.stdout_lines | default([]) }}"
+
     - name: Container AppArmor denials since boot (Ubuntu 26.04 bug, K3S-GUIDE 10.3)
       ansible.builtin.shell: journalctl -k -b --no-pager 2>/dev/null | grep 'apparmor="DENIED"' | grep -c cri-containerd || true
       register: aa_denied
@@ -472,8 +490,26 @@
     - name: Backup result
       tags: [backup]
       ansible.builtin.set_fact:
-        problems: "{{ problems + ['backup: ' ~ ((backup_age.stderr | truncate(200)) if backup_age.rc != 0 else ('newest is ' ~ backup_age.stdout.split()[0] ~ ' h old (' ~ backup_age.stdout.split()[1] ~ '), run backup.yml'))] }}"
-      when: backup_age.rc != 0 or (backup_age.stdout.split()[0] | int) > 168
+        problems: "{{ problems + ['backup: ' ~ ((backup_age.stderr | truncate(200)) if backup_age.rc != 0 else ('newest is ' ~ backup_age.stdout.split()[0] ~ ' h old (' ~ backup_age.stdout.split()[1] ~ '): nightly backup failed? journalctl -u homelab-backup'))] }}"
+      when: backup_age.rc != 0 or (backup_age.stdout.split()[0] | int) > 26   # nightly (homelab-backup.timer)
+
+    - name: Newest archive also in the backup store (SSD), under 26 h old
+      tags: [backup]
+      ansible.builtin.shell:
+        cmd: |
+          [ -f {{ backup_store_env | quote }} ] || { echo "no backup store configured (playbooks/backup-store.yml)"; exit 0; }
+          set -a; . {{ backup_store_env | quote }}; set +a
+          out=$(rclone lsf --max-age 26h ssd:archives 2>&1) || { echo "store unreachable: $(echo "$out" | tail -1 | cut -c1-120)"; exit 0; }
+          [ -n "$out" ] || echo "no archive younger than 26 h in ssd:archives (nightly upload failed? journalctl -u homelab-backup)"
+      register: store_copy
+      changed_when: false
+      failed_when: false
+
+    - name: Store copy result
+      tags: [backup]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['backup: ' ~ item] }}"
+      loop: "{{ store_copy.stdout_lines }}"
 
     # ---------- expiry dates (nothing else warns about these) ----------
     - name: Expiry dates from group_vars (days left)

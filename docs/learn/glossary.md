@@ -27,6 +27,7 @@
 | **drain** | `kubectl drain <node>`: move every pod off a node before maintenance (respects PDBs) |
 | **drill** | practising a procedure on purpose (e.g. a full rebuild) to prove it works |
 | **Flux** | GitOps tool inside the cluster: applies what is in git (chapter 3) |
+| **Garage** | a small S3 server; the backup store on node-8gb's SSD (chapter 13) |
 | **GHCR** | GitHub Container Registry: where the app images are stored (`ghcr.io/<owner>/...`) |
 | **GitHub Actions secret** | an encrypted value stored in the repo's settings; workflows can use it, nobody can read it back (e.g. `CI_DEPLOY_KEY`) |
 | **gitleaks** | a scanner that looks for secrets (keys, tokens) in the git history; runs in CI |
@@ -59,6 +60,7 @@
 | **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |
 | **Provider / Alert (Flux)** | where Flux sends messages (Telegram) / which events (changes, failures) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
+| **S3 / bucket / object** | the standard object-storage API / a named container / one stored file (Garage on the SSD, later R2) |
 | **S.M.A.R.T.** | a disk's own health log (`smartctl`): failing sectors, transfer errors, age |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |

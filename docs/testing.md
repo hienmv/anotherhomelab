@@ -60,6 +60,9 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Identity | hostname and static IP match the inventory | `verify.yml --tags nodes` | always | ✅ |
 | Disk space | root filesystem ≥ 15 % free | `verify.yml --tags nodes` | always | ✅ |
+| Backup store (Garage) | service running + healthy on node-8gb | `verify.yml --tags nodes` (`backup-store:`) | always | ✅ |
+| Backup in the store | newest archive < 26 h old locally AND in `ssd:archives` | `verify.yml --tags backup` | always | ✅ |
+| Store + rclone + least privilege (local) | upload, list, age filter, retention, key refused on the other bucket | Garage v2.5.0 + rclone v1.75.2 containers (manual, 2026-11-18) | after changing `backup-store.yml` | ✅ manual |
 | USB SSD (node-8gb) | mounted, SMART PASSED with 0 failing sectors / CRC errors, < 80 % full, ≤ 2 USB resets since boot | `verify.yml --tags nodes` (`ssd:` problems); setup `playbooks/ssd.yml` | always | ✅ |
 | Pi power | no under-voltage, throttling or temperature limit, now **or since boot** (`vcgencmd get_throttled` as root; an unreadable state is a problem too) | `verify.yml --tags nodes` | always | ✅ |
 | Hardware after an SD swap | name, IP, RAM size and SD size per board | `phase2-migrate.yml` step 6 (`ram_gb`, `sd_gb` in the inventory) | after moving SD cards | ✅ |
@@ -87,10 +90,10 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Postgres healthy | CNPG `Cluster in healthy state`, query works, row counts printed | `verify.yml --tags data` | always | ✅ |
 | Redis answers | `PING` → `PONG` with the password | `verify.yml --tags data` | always | ✅ |
 | Data on the data node | every `data` pod runs on the `role=data` node | `verify.yml --tags data` | always | ✅ |
-| Backup is fresh and decryptable | newest backup decrypts with the age key; warns when older than 7 days | `verify.yml --tags backup` | always | ✅ |
+| Backup is fresh and decryptable | newest backup decrypts with the age key; warns when older than 26 h (nightly timer) | `verify.yml --tags backup` | always | ✅ |
 | Backup content | each dump starts with `PGDMP`; exact row counts recorded | `backup.yml` (fails on a bad dump) | every backup | ✅ |
 | **Rebuild drill** | the whole cluster rebuilds from git + config + backup, row counts match, everything healthy | `rebuild.yml` (K3S-GUIDE section 11, drill log there) | every ~3 months, after big changes | ✅ playbook, ❌ schedule |
-| Scheduled backups | backups happen without a human | CNPG → R2 (WAL + base), roadmap stage 1 | – | ❌ |
+| Scheduled backups | backups happen without a human | `homelab-backup.timer` nightly (archive → SSD store); Postgres WAL archive: part C | nightly | 🟡 archive ✅, Postgres continuous: next |
 
 ## 6. Applications (running system)
 

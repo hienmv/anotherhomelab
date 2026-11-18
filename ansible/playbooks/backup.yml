@@ -54,6 +54,37 @@
       ansible.builtin.debug:
         msg: "{{ backup.stdout_lines | reject('match', '^BACKUP_FILE=') | list }}"
 
+    # Second copy on another machine: the S3 store on node-8gb's SSD (playbooks/backup-store.yml,
+    # docs/learn/13-ssd-and-backups.md). The archive is already age-encrypted.
+    - name: Backup store settings present?
+      ansible.builtin.stat:
+        path: "{{ backup_store_env }}"
+      register: store_env
+
+    - name: Copy to the backup store (bucket archives) and drop copies older than {{ backup_keep_days }} days
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          set -a; . {{ backup_store_env | quote }}; set +a
+          f={{ backup.stdout_lines | select('match', '^BACKUP_FILE=') | first | regex_replace('^BACKUP_FILE=', '') | quote }}
+          rclone copyto "$f" "ssd:archives/$(basename "$f")"
+          rclone lsf "ssd:archives/$(basename "$f")" | grep -q . || { echo "upload not found in the store" >&2; exit 1; }
+          rclone delete --min-age {{ backup_keep_days }}d ssd:archives
+          echo "stored ssd:archives/$(basename "$f")"
+        executable: /bin/bash
+      register: stored
+      when: store_env.stat.exists
+
+    - name: Store result
+      ansible.builtin.debug:
+        msg: "{{ stored.stdout | default('no backup store configured yet (playbooks/backup-store.yml): archive kept locally only') }}"
+
+    - name: Local archives older than {{ backup_keep_days }} days removed (the store keeps its own copies)
+      ansible.builtin.shell:
+        cmd: find {{ backup_dir | quote }} -maxdepth 1 -name '{{ cluster_name }}-*.tar.gz.age' -mtime +{{ backup_keep_days }} -print -delete
+      register: pruned
+      changed_when: pruned.stdout | length > 0
+
     - name: Copy the encrypted backup to the machine running Ansible (second copy)
       ansible.builtin.fetch:
         src: "{{ backup.stdout_lines | select('match', '^BACKUP_FILE=') | first | regex_replace('^BACKUP_FILE=', '') }}"

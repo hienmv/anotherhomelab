@@ -1,0 +1,237 @@
+# Backup store: Garage (S3) on the SSD of backup_store.host (docs/learn/13-ssd-and-backups.md).
+#
+#   cd ansible && ansible-playbook playbooks/backup-store.yml
+#   then: git diff --stat (an encrypted k8s/secrets/data/backup-s3.sops.yaml), commit, PR
+#
+# A plain systemd service, not a Kubernetes pod: backups must not depend on the cluster they back up.
+# Idempotent: layout, buckets and keys are created once; later runs only check them.
+- name: Garage S3 store on the SSD
+  hosts: pis
+  gather_facts: false
+  become: true
+  vars:
+    garage: /usr/local/bin/garage
+  tasks:
+    - name: Only the backup store host
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != backup_store.host
+
+    - name: The SSD is mounted (playbooks/ssd.yml first)
+      ansible.builtin.command: findmnt -n {{ ssd.mount }}
+      changed_when: false
+
+    - name: System user garage (no login)
+      ansible.builtin.user:
+        name: garage
+        system: true
+        shell: /usr/sbin/nologin
+        home: /nonexistent
+        create_home: false
+
+    - name: Garage {{ garage_version }} binary (sha256 pinned in group_vars)
+      ansible.builtin.get_url:
+        url: "https://garagehq.deuxfleurs.fr/_releases/{{ garage_version }}/aarch64-unknown-linux-musl/garage"
+        dest: "{{ garage }}"
+        checksum: "sha256:{{ garage_sha256 }}"
+        mode: "0755"
+      notify: Restart garage
+
+    - name: Data folders on the SSD (only garage can read them)
+      ansible.builtin.file:
+        path: "{{ backup_store.data_dir }}/{{ item }}"
+        state: directory
+        owner: garage
+        group: garage
+        mode: "0700"
+      loop: [meta, data, meta-snapshots]
+
+    - name: RPC secret (made once, kept on this node)
+      ansible.builtin.shell:
+        cmd: umask 077 && openssl rand -hex 32 > /etc/garage.rpc_secret
+        creates: /etc/garage.rpc_secret
+
+    - name: Read the RPC secret
+      ansible.builtin.slurp:
+        src: /etc/garage.rpc_secret
+      register: rpc_secret
+      no_log: true
+
+    # /etc/garage.toml is the default path: `sudo garage status` works without -c
+    - name: Config /etc/garage.toml
+      ansible.builtin.copy:
+        dest: /etc/garage.toml
+        owner: root
+        group: garage
+        mode: "0640"
+        content: |
+          # Managed by ansible/playbooks/backup-store.yml. Single node: replication 1 (the off-site copy
+          # to R2 is the second copy). docs/learn/13-ssd-and-backups.md
+          metadata_dir = "{{ backup_store.data_dir }}/meta"
+          data_dir = "{{ backup_store.data_dir }}/data"
+          metadata_snapshots_dir = "{{ backup_store.data_dir }}/meta-snapshots"
+          metadata_auto_snapshot_interval = "6h"   # a copy of the index, in case the live one breaks
+          db_engine = "lmdb"
+          replication_factor = 1
+          rpc_bind_addr = "127.0.0.1:3901"
+          rpc_public_addr = "127.0.0.1:3901"
+          rpc_secret = "{{ rpc_secret.content | b64decode | trim }}"
+
+          [s3_api]
+          s3_region = "{{ backup_store.region }}"
+          api_bind_addr = "0.0.0.0:{{ backup_store.port }}"
+
+          [admin]
+          api_bind_addr = "127.0.0.1:3903"          # /health for checks, this node only
+      no_log: true
+      notify: Restart garage
+
+    - name: systemd service (starts only with the SSD mounted)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/garage.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Garage S3 backup store (docs/learn/13-ssd-and-backups.md)
+          After=network-online.target
+          Wants=network-online.target
+          # without the SSD: do not start (never fill the SD card with backups)
+          RequiresMountsFor={{ ssd.mount }}
+          [Service]
+          User=garage
+          Group=garage
+          ExecStart={{ garage }} server
+          Restart=always
+          RestartSec=10
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          ReadWritePaths={{ backup_store.data_dir }}
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart garage
+
+    - name: Flush handlers (start with the current config)
+      ansible.builtin.meta: flush_handlers
+
+    - name: Garage running
+      ansible.builtin.systemd_service:
+        name: garage
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait until it answers
+      ansible.builtin.command: "{{ garage }} status"
+      register: status
+      until: status.rc == 0
+      retries: 10
+      delay: 3
+      changed_when: false
+
+    - name: "Storage layout (once - this node, {{ backup_store.capacity }})"
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          id=$({{ garage }} node id -q | cut -d@ -f1)
+          {{ garage }} layout assign -z homelab -c {{ backup_store.capacity }} "$id"
+          {{ garage }} layout apply --version 1
+        executable: /bin/bash
+      when: "'NO ROLE ASSIGNED' in status.stdout"
+
+    - name: Buckets
+      ansible.builtin.shell:
+        cmd: "{{ garage }} bucket info {{ item.name }} >/dev/null 2>&1 && echo exists || {{ garage }} bucket create {{ item.name }}"
+      loop: "{{ backup_store.buckets }}"
+      loop_control: { label: "{{ item.name }}" }
+      register: buckets
+      changed_when: "'exists' not in buckets.stdout"
+
+    - name: Keys (one per user) with read+write on their bucket only
+      ansible.builtin.shell:
+        cmd: |
+          {{ garage }} key info {{ item.key }} >/dev/null 2>&1 || { {{ garage }} key create {{ item.key }} >/dev/null && echo created; }
+          {{ garage }} bucket allow --read --write --key {{ item.key }} {{ item.name }} >/dev/null
+      loop: "{{ backup_store.buckets }}"
+      loop_control: { label: "{{ item.key }} -> {{ item.name }}" }
+      register: keys
+      changed_when: "'created' in keys.stdout"
+
+    - name: Read the keys (id + secret)
+      ansible.builtin.shell:
+        cmd: >-
+          {{ garage }} key info {{ item.key }} --show-secret 2>/dev/null
+          | awk -F': *' '/^Key ID:/ {id=$2} /^Secret key:/ {s=$2} END {print id; print s}'
+      loop: "{{ backup_store.buckets }}"
+      loop_control: { label: "{{ item.key }}" }
+      register: key_info
+      changed_when: false
+      no_log: true
+
+    - name: Keys by user
+      ansible.builtin.set_fact:
+        store_keys: "{{ dict(backup_store.buckets | map(attribute='key') | zip(key_info.results | map(attribute='stdout_lines'))) }}"
+      no_log: true
+
+  handlers:
+    - name: Restart garage
+      ansible.builtin.systemd_service:
+        name: garage
+        state: restarted
+        daemon_reload: true
+
+# The keys go where they are used. Postgres's: into git, encrypted (Flux applies it to namespace data).
+# The workstation's: a local file only ops can read (rclone settings for the nightly upload).
+- name: Store keys for their users
+  hosts: workstation
+  gather_facts: false
+  vars:
+    store: "{{ hostvars[backup_store.host] }}"
+    endpoint: "http://{{ store.static_ip }}:{{ backup_store.port }}"
+  environment:
+    SOPS_AGE_KEY_FILE: "{{ age_key }}"
+  tasks:
+    - name: rclone settings for the workstation key ({{ backup_store_env }}, mode 600)
+      ansible.builtin.copy:
+        dest: "{{ backup_store_env }}"
+        mode: "0600"
+        content: |
+          # Backup store (Garage S3 on {{ backup_store.host }}), written by playbooks/backup-store.yml.
+          # rclone reads these: remote "ssd" -> `rclone ls ssd:archives`
+          RCLONE_CONFIG_SSD_TYPE=s3
+          RCLONE_CONFIG_SSD_PROVIDER=Other
+          RCLONE_CONFIG_SSD_ENDPOINT={{ endpoint }}
+          RCLONE_CONFIG_SSD_REGION={{ backup_store.region }}
+          RCLONE_CONFIG_SSD_FORCE_PATH_STYLE=true
+          RCLONE_CONFIG_SSD_ACCESS_KEY_ID={{ store.store_keys.workstation[0] }}
+          RCLONE_CONFIG_SSD_SECRET_ACCESS_KEY={{ store.store_keys.workstation[1] }}
+      no_log: true
+
+    - name: Postgres' key into git, encrypted (k8s/secrets/data/backup-s3.sops.yaml)
+      ansible.builtin.command:
+        cmd: scripts/secrets/write-sops.sh k8s/secrets/data/backup-s3.sops.yaml
+        chdir: "{{ repo_root }}"
+        stdin: "{{ {'apiVersion': 'v1', 'kind': 'Secret',
+                    'metadata': {'name': 'backup-s3', 'namespace': 'data'},
+                    'stringData': {'ACCESS_KEY_ID': store.store_keys['cnpg-backup'][0],
+                                   'ACCESS_SECRET_KEY': store.store_keys['cnpg-backup'][1],
+                                   'ENDPOINT': endpoint, 'REGION': backup_store.region}} | to_nice_yaml }}"
+      register: sealed
+      changed_when: "'written' in sealed.stdout"
+      no_log: true
+
+    - name: Kustomization file lists
+      ansible.builtin.command: scripts/secrets/index.sh
+      args: { chdir: "{{ repo_root }}" }
+      changed_when: false
+
+    - name: Store answers with the workstation key (list the archives bucket)
+      ansible.builtin.shell:
+        cmd: set -a; . {{ backup_store_env }}; set +a; rclone lsf ssd:archives >/dev/null && echo ok
+      changed_when: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: >-
+          Store {{ endpoint }} ready. k8s/secrets/data/backup-s3.sops.yaml
+          {{ 'written: commit + PR' if sealed is changed else 'unchanged' }}.
