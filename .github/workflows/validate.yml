@@ -79,7 +79,12 @@ jobs:
       # The SAME version node-workstation runs (Ubuntu 24.04's apt package: ansible 9.2.0 = core 2.16):
       # a playbook that only works on a newer Ansible must fail here, not on the workstation.
       - name: Install Ansible (as on node-workstation)
-        run: pipx install --include-deps "ansible==${ANSIBLE_VERSION}"
+        # --force: the runner image already has a (newer) Ansible, which pipx would otherwise keep
+        run: |
+          pipx install --force --include-deps "ansible==${ANSIBLE_VERSION}"
+          v="$(pipx runpip ansible show ansible | sed -n 's/^Version: //p')"
+          [ "$v" = "$ANSIBLE_VERSION" ] || { echo "expected ansible $ANSIBLE_VERSION, got $v" >&2; exit 1; }
+          ansible --version | head -1
 
       # Loads every task (catches bad YAML, unknown modules, unparsable shell text). Any failure
       # fails the job: before 2026-11-18 a `cmd && echo ok` loop silently ignored failures.
