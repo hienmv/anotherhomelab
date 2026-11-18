@@ -128,6 +128,12 @@
         | jq -r '.items[] | (.status.conditions // [] | map(select(.type == "Ready")) | first) as $r
         | select(($r.status // "Unknown") != "True") | "\(.kind)/\(.metadata.name): \($r.message // "no status")"'
       register: flux
+      # Right after a merge Flux applies the chain step by step (each waits for the one before:
+      # "dependency ... revision is not up to date"), ~1-2 min. A snapshot then is a false alarm, so
+      # wait up to 3 min for everything to settle; only what is still not Ready is a problem.
+      until: flux.stdout | length == 0
+      retries: 12
+      delay: 15
       changed_when: false
       failed_when: false
 
