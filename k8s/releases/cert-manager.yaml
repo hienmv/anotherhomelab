@@ -1,0 +1,35 @@
+# cert-manager: issues and renews TLS certificates inside the cluster. Needed by the Barman Cloud
+# plugin (it talks to the CNPG operator over mutual TLS with certificates from cert-manager).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 1h
+  releaseName: cert-manager
+  targetNamespace: cert-manager
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.3
+      sourceRef: { kind: HelmRepository, name: jetstack, namespace: flux-system }
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    crds:
+      enabled: true      # the chart installs and upgrades its CRDs
+      keep: true         # never delete them (would delete every certificate) on uninstall
+    resources:
+      requests: { cpu: 10m, memory: 48Mi }
+      limits: { memory: 160Mi }
+    webhook:
+      resources:
+        requests: { cpu: 10m, memory: 24Mi }
+        limits: { memory: 64Mi }
+    cainjector:
+      resources:
+        requests: { cpu: 10m, memory: 48Mi }
+        limits: { memory: 160Mi }

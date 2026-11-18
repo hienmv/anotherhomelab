@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - repositories.yaml
   - cnpg.yaml
+  - cert-manager.yaml   # for the Barman Cloud plugin (mTLS to the CNPG operator)
+  - barman-cloud.yaml   # Postgres continuous backup (docs/learn/13-ssd-and-backups.md)
   - vm-stack.yaml
 configMapGenerator:
   - name: vm-stack-values

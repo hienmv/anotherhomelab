@@ -1,5 +1,6 @@
 # PostgreSQL via CloudNativePG, pinned to the role=data node (node-workstation).
 # Storage: local-path on its NVMe SSD (since 2026-11-12). HA later: a second instance on another node.
+# Backup: continuous to the S3 store on node-8gb's SSD (Barman Cloud plugin), see objectstore.yaml.
 # Creates secret `pg-app` (username/password/uri) for database `app`, owner `app`.
 # In-cluster host: pg-rw.data.svc:5432 (read-write), pg-ro / pg-r for replicas.
 apiVersion: postgresql.cnpg.io/v1
@@ -32,5 +33,12 @@ spec:
     initdb:
       database: app
       owner: app
+  # Continuous backup (WAL archiving + nightly base backups): k8s/data/objectstore.yaml.
+  # Adding this restarts the Postgres pod once (CNPG adds the plugin's sidecar container).
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: ssd
   monitoring:
     enablePodMonitor: false

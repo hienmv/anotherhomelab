@@ -324,6 +324,29 @@
         problems: "{{ problems + ['postgres: ' ~ ((pg_rows.stdout_lines | select('match', '^PHASE') | first | default('', true)) or (pg_rows.stderr | truncate(200)))] }}"
       when: pg_rows.rc != 0
 
+    # Postgres continuous backup (k8s/data/objectstore.yaml, docs/learn/13-ssd-and-backups.md part C):
+    # WAL archiving works (CNPG condition) and the newest base backup is < 26 h old (nightly)
+    - name: Postgres continuous backup (WAL archiving, newest base backup)
+      tags: [data, backup]
+      ansible.builtin.shell:
+        cmd: |
+          arch=$(kubectl -n data get cluster.postgresql.cnpg.io pg -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status} {.status.conditions[?(@.type=="ContinuousArchiving")].message}' 2>&1)
+          case "$arch" in True*) ;; *) echo "WAL archiving not working: $(echo "$arch" | cut -c1-160)";; esac
+          newest=$(kubectl -n data get backups.postgresql.cnpg.io -o json 2>/dev/null \
+            | jq -r '[.items[] | select(.status.phase == "completed") | .status.stoppedAt] | max // empty')
+          if [ -z "$newest" ]; then echo "no completed base backup yet (kubectl -n data get backups)"; exit 0; fi
+          age=$(( ($(date +%s) - $(date -d "$newest" +%s)) / 3600 ))
+          [ "$age" -le 26 ] || echo "newest base backup is ${age} h old ($newest): kubectl -n data get backups"
+      register: pg_backup
+      changed_when: false
+      failed_when: false
+
+    - name: Postgres backup result
+      tags: [data, backup]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['pg-backup: ' ~ item] }}"
+      loop: "{{ pg_backup.stdout_lines }}"
+
     - name: Redis answers PING
       tags: [data]
       ansible.builtin.shell: |
