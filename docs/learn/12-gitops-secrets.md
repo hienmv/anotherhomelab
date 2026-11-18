@@ -93,9 +93,19 @@ when nothing changed, so it stays quiet.
 
 ## 4. The checks always run the newest code
 
-`homelab-check.sh` (the 15-minute timer) starts with `git pull --ff-only`: `verify.yml` and the
-Ansible code on node-workstation always match `main`. `--ff-only` never overwrites local changes; if
+`homelab-check.sh` (the 15-minute timer) starts by updating the repo, fast-forward only: `verify.yml`
+and the Ansible code on node-workstation always match `main`. It never overwrites local changes; if
 it cannot update, that is reported as a problem (Telegram), and the check runs with the old code.
+
+It fetches **anonymously over HTTPS** (the repo is public). The first version used `git pull` over
+SSH and failed (2026-11-18: `Permission denied (publickey)`): ops' GitHub key has a passphrase and
+works only through the ssh-agent of a logged-in session, which a systemd timer does not have.
+Reading a public repo needs no key: least privilege. (If the repo ever becomes private, the timer
+needs its own read-only deploy key without passphrase.)
+
+Lesson from the same day: CI's Ansible check had silently passed broken playbooks (a `cmd && echo ok`
+loop ignores failures under `set -e`), and it used a newer Ansible than node-workstation. Now it
+fails on any error, also loads every task (`--list-tasks`), and runs the workstation's version.
 
 ## The one-time switch (2026-11-18)
 
