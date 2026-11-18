@@ -511,6 +511,26 @@
         problems: "{{ problems + ['backup: ' ~ item] }}"
       loop: "{{ store_copy.stdout_lines }}"
 
+    # Host GitOps (files/homelab-apply.sh): last run succeeded and is recent (it re-applies every 6 h)
+    - name: Host apply healthy
+      tags: [cluster]
+      ansible.builtin.shell:
+        cmd: |
+          f={{ automation_home }}/.local/state/homelab/apply.state
+          [ -f "$f" ] || { echo "host apply never ran (systemctl list-timers homelab-apply)"; exit 0; }
+          read -r commit last status _ < "$f"
+          [ "$status" = ok ] || echo "host apply FAILING at $commit (less ~/.local/state/homelab/last-apply.log)"
+          [ $(( $(date +%s) - last )) -lt 25200 ] || echo "host apply has not run for $(( ($(date +%s) - last) / 3600 )) h (timer stopped?)"
+      register: apply_check
+      changed_when: false
+      failed_when: false
+
+    - name: Host apply result
+      tags: [cluster]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['gitops: ' ~ item] }}"
+      loop: "{{ apply_check.stdout_lines }}"
+
     # ---------- expiry dates (nothing else warns about these) ----------
     - name: Expiry dates from group_vars (days left)
       tags: [apps]

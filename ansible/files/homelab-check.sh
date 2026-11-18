@@ -4,7 +4,7 @@
 #   homelab-check.sh          quick: verify.yml without the canary pods   (every 15 min)
 #   homelab-check.sh --full   everything, canary included                 (once a day)
 #
-# First `git pull --ff-only` of the repo it lives in: checks always run the code of main.
+# First updates the repo it lives in to main (lib-homelab.sh): checks always run main's code.
 # - Telegram message only when the state CHANGES (new problems / all good again), plus a reminder
 #   every 6 h while it stays broken.
 # - healthchecks.io: ping on success, /fail on problems. If the pings STOP (homelab, power or
@@ -13,31 +13,18 @@
 #   TELEGRAM_BOT_TOKEN=...  TELEGRAM_CHAT_ID=...  HEALTHCHECK_URL=https://hc-ping.com/<uuid>
 # Missing settings = the check still runs and logs, it just cannot notify.
 set -uo pipefail
+. "$(dirname "$0")/lib-homelab.sh"      # repo, settings, send(), take_lock(), update_repo()
 
-repo_ansible="$(cd "$(dirname "$0")/.." && pwd)"
-conf="${HOME}/.config/homelab/alerting.env"
-state_dir="${HOME}/.local/state/homelab"; mkdir -p "$state_dir"
 state="$state_dir/check.state"          # "<ok|fail> <epoch of last message> <hash of problems>"
-[ -f "$conf" ] && . "$conf"
-
 args=(--skip-tags containers); [ "${1:-}" = "--full" ] && args=()
 # Scheduled runs (~100 a day) stay out of ansible/logs/ansible.log, which is for runs by a person.
 # The latest output is kept instead (overwritten each run): ~/.local/state/homelab/last-check.log
 out="$state_dir/last-check.log"
-export ANSIBLE_LOG_PATH=/dev/null
 
-# Check with the current main (docs/learn/12-gitops-secrets.md): fast-forward only, so local
-# changes are never overwritten; if it cannot, that is reported as a problem. (Safe while running:
-# git writes new files, this bash keeps reading the old one.)
-# Fetched anonymously over HTTPS (the repo is public): a timer has no ssh-agent for the
-# passphrase-protected GitHub key, and reading needs no key at all. origin/main is updated as usual.
-pull_problem=""
-repo="$repo_ansible/.."
-https_url="$(git -C "$repo" remote get-url origin | sed -E 's#^git@github\.com:#https://github.com/#')"
-if ! pull_out="$(git -C "$repo" fetch -q "$https_url" "+refs/heads/main:refs/remotes/origin/main" 2>&1 \
-                 && git -C "$repo" merge -q --ff-only origin/main 2>&1)"; then
-  pull_problem="- repo on $(hostname -s) not updated from GitHub (checked with the old code): $(printf '%s' "$pull_out" | tr '\n' ' ' | cut -c1-160)"
-fi
+# Never check while the host apply (or the backup) changes machines: wait for it (max 25 min).
+take_lock || { echo "another Ansible job still running after 25 min; skipped"; exit 0; }
+update_repo                             # checks always run main's code
+[ -n "$pull_problem" ] && pull_problem="- $pull_problem (checked with the old code)"
 
 cd "$repo_ansible"
 ansible-playbook playbooks/verify.yml "${args[@]}" > "$out" 2>&1
@@ -57,11 +44,6 @@ last_status=ok last_sent=0 last_hash=-
 [ -f "$state" ] && read -r last_status last_sent last_hash < "$state"
 hash=$(printf '%s' "$problems" | sha256sum | cut -c1-16)
 
-send() {   # Telegram, if configured
-  [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || return 0
-  curl -sS -m 20 -o /dev/null "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=$1" || true
-}
 ping_hc() {   # healthchecks.io, if configured ($1 = "" or "/fail")
   [ -n "${HEALTHCHECK_URL:-}" ] || return 0
   curl -sS -m 15 -o /dev/null --retry 3 --data-raw "${2:-ok}" "${HEALTHCHECK_URL}$1" || true

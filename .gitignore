@@ -21,6 +21,10 @@ k8s/secrets/**
 !k8s/secrets/kustomization.yaml
 !k8s/secrets/**/*.sops.yaml
 !scripts/secrets/
+# ansible/secrets: only encrypted files (machine secrets, e.g. the backup store's keys)
+!ansible/secrets/
+ansible/secrets/**
+!ansible/secrets/*.sops.yaml
 
 # Backups / archives
 *.tgz

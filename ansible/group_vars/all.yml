@@ -51,6 +51,7 @@ lan_names: [grafana.lan]
 # Scheduled checks + alerting (files/homelab-check.sh, systemd timers as the automation user).
 check_quick_every: "*:0/15"          # systemd OnCalendar: verify.yml without the canary
 check_full_at: "*-*-* 04:15:00"      # once a day, everything (canary included)
+apply_every: "*:5/15"               # host GitOps (homelab-apply.sh): new commit -> apply; else every 6 h
 # Expiry dates nothing else warns about; verify.yml reports a problem 30 days before.
 expiry_warn_days: 30
 expiry_dates:

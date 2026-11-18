@@ -60,6 +60,8 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Identity | hostname and static IP match the inventory | `verify.yml --tags nodes` | always | ✅ |
 | Disk space | root filesystem ≥ 15 % free | `verify.yml --tags nodes` | always | ✅ |
+| Host GitOps apply | last `site.yml` run ok and < 7 h old | `verify.yml --tags cluster` (`gitops:`) | always | ✅ |
+| Apply decisions (local) | change → 🔧 message; same commit skipped; failure → one message, retried silently; recovery → 🟢; new commit without changes → silent | simulation with fake ansible/curl (manual, 2026-11-18) | after changing `homelab-apply.sh` | ✅ manual |
 | Backup store (Garage) | service running + healthy on node-8gb | `verify.yml --tags nodes` (`backup-store:`) | always | ✅ |
 | Backup in the store | newest archive < 26 h old locally AND in `ssd:archives` | `verify.yml --tags backup` | always | ✅ |
 | Store + rclone + least privilege (local) | upload, list, age filter, retention, key refused on the other bucket | Garage v2.5.0 + rclone v1.75.2 containers (manual, 2026-11-18) | after changing `backup-store.yml` | ✅ manual |

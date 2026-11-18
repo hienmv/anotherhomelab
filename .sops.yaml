@@ -6,3 +6,7 @@ creation_rules:
   - path_regex: k8s/(secrets|notifications)/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData|channel)$
     age: age1w56q3v5s45lw0m525dkpngnzmytzty8env94nsy7ftxefsf3te0skghpdr
+  # Secrets used by Ansible on the machines (not Kubernetes objects): every value encrypted.
+  # Decrypted on node-workstation with the same age key (sops finds ~/.config/sops/age/keys.txt).
+  - path_regex: ansible/secrets/.*\.sops\.yaml$
+    age: age1w56q3v5s45lw0m525dkpngnzmytzty8env94nsy7ftxefsf3te0skghpdr

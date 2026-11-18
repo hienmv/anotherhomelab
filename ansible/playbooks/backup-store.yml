@@ -1,7 +1,9 @@
 # Backup store: Garage (S3) on the SSD of backup_store.host (docs/learn/13-ssd-and-backups.md).
 #
-#   cd ansible && ansible-playbook playbooks/backup-store.yml
-#   then: git diff --stat (an encrypted k8s/secrets/data/backup-s3.sops.yaml), commit, PR
+#   cd ansible && ansible-playbook playbooks/backup-store.yml        (also run by homelab-apply.timer)
+#
+# Keys are declared in git, encrypted (k8s/secrets/data/backup-s3.sops.yaml for Postgres,
+# ansible/secrets/backup-store.sops.yaml for the workstation) and imported into Garage once.
 #
 # A plain systemd service, not a Kubernetes pod: backups must not depend on the cluster they back up.
 # Idempotent: layout, buckets and keys are created once; later runs only check them.
@@ -147,31 +149,58 @@
       register: buckets
       changed_when: "'exists' not in buckets.stdout"
 
-    - name: Keys (one per user) with read+write on their bucket only
+    # The keys are DECLARED in git, encrypted (docs/learn/13-ssd-and-backups.md):
+    #   cnpg-backup -> k8s/secrets/data/backup-s3.sops.yaml (Flux also gives it to Postgres)
+    #   workstation -> ansible/secrets/backup-store.sops.yaml
+    # Decrypted here on node-workstation (a lookup runs on the machine running Ansible), imported once.
+    - name: Keys from git (decrypted on node-workstation)
+      ansible.builtin.set_fact:
+        store_keys:
+          cnpg-backup:
+            id: "{{ k8s_keys.stringData.ACCESS_KEY_ID }}"
+            secret: "{{ k8s_keys.stringData.ACCESS_SECRET_KEY }}"
+          workstation:
+            id: "{{ ws_keys.workstation.id }}"
+            secret: "{{ ws_keys.workstation.secret }}"
+      vars:
+        k8s_keys: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ repo_root ~ '/k8s/secrets/data/backup-s3.sops.yaml') | from_json }}"
+        ws_keys: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ repo_root ~ '/ansible/secrets/backup-store.sops.yaml') | from_json }}"
+      no_log: true
+
+    - name: Keys imported once, each with read+write on its own bucket only
       ansible.builtin.shell:
         cmd: |
-          {{ garage }} key info {{ item.key }} >/dev/null 2>&1 || { {{ garage }} key create {{ item.key }} >/dev/null && echo created; }
-          {{ garage }} bucket allow --read --write --key {{ item.key }} {{ item.name }} >/dev/null
+          if info=$({{ garage }} key info "$KID" --show-secret 2>/dev/null); then
+            have=$(printf '%s\n' "$info" | awk -F': *' '/^Secret key:/ {print $2}')
+            [ "$have" = "$KSECRET" ] || { echo "MISMATCH"; exit 0; }
+          else
+            {{ garage }} key import --yes "$KID" "$KSECRET" -n {{ item.key }} >/dev/null && echo imported
+          fi
+          {{ garage }} bucket allow --read --write --key "$KID" {{ item.name }} >/dev/null && echo allowed
+      environment:
+        KID: "{{ store_keys[item.key].id }}"
+        KSECRET: "{{ store_keys[item.key].secret }}"
       loop: "{{ backup_store.buckets }}"
       loop_control: { label: "{{ item.key }} -> {{ item.name }}" }
       register: keys
-      changed_when: "'created' in keys.stdout"
-
-    - name: Read the keys (id + secret)
-      ansible.builtin.shell:
-        cmd: >-
-          {{ garage }} key info {{ item.key }} --show-secret 2>/dev/null
-          | awk -F': *' '/^Key ID:/ {id=$2} /^Secret key:/ {s=$2} END {print id; print s}'
-      loop: "{{ backup_store.buckets }}"
-      loop_control: { label: "{{ item.key }}" }
-      register: key_info
-      changed_when: false
+      changed_when: "'imported' in keys.stdout"
+      failed_when: false
       no_log: true
 
-    - name: Keys by user
-      ansible.builtin.set_fact:
-        store_keys: "{{ dict(backup_store.buckets | map(attribute='key') | zip(key_info.results | map(attribute='stdout_lines'))) }}"
-      no_log: true
+    # no_log hides the output above (it contains secrets): report the outcome without them
+    - name: Keys result
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - "'MISMATCH' not in item.stdout"
+          - "'allowed' in item.stdout"
+        fail_msg: >-
+          key {{ item.item.key }}: {{ 'Garage holds a DIFFERENT secret than git (the id was used before;
+          a new key needs a new id in the .sops.yaml file)' if 'MISMATCH' in item.stdout
+          else 'import or bucket permission failed (sudo garage key list; sudo garage bucket info ' ~ item.item.name ~ ')' }}
+        quiet: true
+      loop: "{{ keys.results }}"
+      loop_control: { label: "{{ item.item.key }}" }
 
   handlers:
     - name: Restart garage
@@ -180,58 +209,31 @@
         state: restarted
         daemon_reload: true
 
-# The keys go where they are used. Postgres's: into git, encrypted (Flux applies it to namespace data).
-# The workstation's: a local file only ops can read (rclone settings for the nightly upload).
-- name: Store keys for their users
+# The workstation's key -> rclone settings for the nightly upload (local file, only ops can read it).
+- name: Backup store settings on the workstation
   hosts: workstation
   gather_facts: false
   vars:
     store: "{{ hostvars[backup_store.host] }}"
     endpoint: "http://{{ store.static_ip }}:{{ backup_store.port }}"
-  environment:
-    SOPS_AGE_KEY_FILE: "{{ age_key }}"
   tasks:
-    - name: rclone settings for the workstation key ({{ backup_store_env }}, mode 600)
+    - name: rclone settings ({{ backup_store_env }}, mode 600)
       ansible.builtin.copy:
         dest: "{{ backup_store_env }}"
         mode: "0600"
         content: |
-          # Backup store (Garage S3 on {{ backup_store.host }}), written by playbooks/backup-store.yml.
-          # rclone reads these: remote "ssd" -> `rclone ls ssd:archives`
+          # Backup store (Garage S3 on {{ backup_store.host }}), written by playbooks/backup-store.yml from
+          # ansible/secrets/backup-store.sops.yaml. rclone remote "ssd" -> `rclone ls ssd:archives`
           RCLONE_CONFIG_SSD_TYPE=s3
           RCLONE_CONFIG_SSD_PROVIDER=Other
           RCLONE_CONFIG_SSD_ENDPOINT={{ endpoint }}
           RCLONE_CONFIG_SSD_REGION={{ backup_store.region }}
           RCLONE_CONFIG_SSD_FORCE_PATH_STYLE=true
-          RCLONE_CONFIG_SSD_ACCESS_KEY_ID={{ store.store_keys.workstation[0] }}
-          RCLONE_CONFIG_SSD_SECRET_ACCESS_KEY={{ store.store_keys.workstation[1] }}
+          RCLONE_CONFIG_SSD_ACCESS_KEY_ID={{ store.store_keys.workstation.id }}
+          RCLONE_CONFIG_SSD_SECRET_ACCESS_KEY={{ store.store_keys.workstation.secret }}
       no_log: true
-
-    - name: Postgres' key into git, encrypted (k8s/secrets/data/backup-s3.sops.yaml)
-      ansible.builtin.command:
-        cmd: scripts/secrets/write-sops.sh k8s/secrets/data/backup-s3.sops.yaml
-        chdir: "{{ repo_root }}"
-        stdin: "{{ {'apiVersion': 'v1', 'kind': 'Secret',
-                    'metadata': {'name': 'backup-s3', 'namespace': 'data'},
-                    'stringData': {'ACCESS_KEY_ID': store.store_keys['cnpg-backup'][0],
-                                   'ACCESS_SECRET_KEY': store.store_keys['cnpg-backup'][1],
-                                   'ENDPOINT': endpoint, 'REGION': backup_store.region}} | to_nice_yaml }}"
-      register: sealed
-      changed_when: "'written' in sealed.stdout"
-      no_log: true
-
-    - name: Kustomization file lists
-      ansible.builtin.command: scripts/secrets/index.sh
-      args: { chdir: "{{ repo_root }}" }
-      changed_when: false
 
     - name: Store answers with the workstation key (list the archives bucket)
       ansible.builtin.shell:
         cmd: set -a; . {{ backup_store_env }}; set +a; rclone lsf ssd:archives >/dev/null && echo ok
       changed_when: false
-
-    - name: Result
-      ansible.builtin.debug:
-        msg: >-
-          Store {{ endpoint }} ready. k8s/secrets/data/backup-s3.sops.yaml
-          {{ 'written: commit + PR' if sealed is changed else 'unchanged' }}.
