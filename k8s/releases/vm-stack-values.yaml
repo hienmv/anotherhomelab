@@ -117,11 +117,32 @@ defaultDatasources:
             customQuery: true
             query: 'trace_id:="$${__trace.traceId}"'
 
-# Alerting: off for now (no notification channel yet)
-alertmanager:
-  enabled: false
+# Alerting (since 2026-11-18, docs/learn/11-slo.md): vmalert evaluates the rules every 20 s (our SLO rules,
+# k8s/monitoring/slo-rules.yaml, plus the chart's default Kubernetes rules), Alertmanager groups the
+# alerts and sends the SLO ones to Telegram. Its config is a Secret made from
+# ~/.config/homelab/alerting.env by ansible/playbooks/alerting.yml (bot token never in git).
+# Default-rule alerts are not sent (only visible in vmalert): verify.yml covers those failures.
 vmalert:
-  enabled: false
+  enabled: true
+  spec:
+    nodeSelector: { role: data }
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 256Mi }
+alertmanager:
+  enabled: true
+  spec:
+    configSecret: alertmanager-config   # key alertmanager.yaml; created by ansible/playbooks/alerting.yml
+    nodeSelector: { role: data }
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          resources:
+            requests: { storage: 1Gi }   # silences + notification log survive a restart
 
 # Grafana on a role=apps node: public via the tunnel (behind Cloudflare Access) + LAN-only grafana.lan
 grafana:

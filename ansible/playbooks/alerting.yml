@@ -1,0 +1,48 @@
+# Alertmanager's config as a Kubernetes Secret, made from the same settings file the scheduled checks
+# use (docs/learn/11-slo.md). Run as the automation user on node-workstation:
+#   ansible-playbook playbooks/alerting.yml
+# Again after changing the Telegram bot or chat, and after a rebuild (rebuild.yml imports it).
+- name: Alertmanager config (Telegram) from alerting.env
+  hosts: workstation
+  gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  vars:
+    alerting_env: "{{ automation_home }}/.config/homelab/alerting.env"
+  tasks:
+    - name: Read alerting.env (KEY=value lines)
+      ansible.builtin.slurp:
+        src: "{{ alerting_env }}"
+      register: env_file
+      no_log: true
+
+    - name: Parse it
+      ansible.builtin.set_fact:
+        alerting: "{{ dict(env_lines | map('regex_search', '^\\s*([A-Z_]+)=\"?([^\"]*)\"?\\s*$', '\\1', '\\2') | select | list) }}"
+      vars:
+        env_lines: "{{ (env_file.content | b64decode).splitlines() }}"
+      no_log: true
+
+    - name: Telegram settings present
+      ansible.builtin.assert:
+        that:
+          - alerting.TELEGRAM_BOT_TOKEN | default('') | length > 0
+          - alerting.TELEGRAM_CHAT_ID | default('') is match('^-?[0-9]+$')
+        fail_msg: "{{ alerting_env }} needs TELEGRAM_BOT_TOKEN and a numeric TELEGRAM_CHAT_ID (K3S-GUIDE section 12)"
+        quiet: true
+
+    - name: Secret monitoring/alertmanager-config
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl -n monitoring create secret generic alertmanager-config \
+          --from-file=alertmanager.yaml=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+        stdin: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../templates/alertmanager.yml.j2') }}"
+      register: secret
+      changed_when: "'configured' in secret.stdout or 'created' in secret.stdout"
+      no_log: true
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "alertmanager-config {{ 'updated' if secret is changed else 'unchanged' }}; Alertmanager reloads it within a minute"

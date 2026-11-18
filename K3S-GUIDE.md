@@ -249,6 +249,7 @@ Todo: encrypt them into git with SOPS + age so a rebuilt cluster needs no manual
 | vlagent (log collector) | all 4 nodes (DaemonSet) | reads `/var/log/pods`, ships each line within seconds; [docs/learn/9](docs/learn/9-monitoring-grafana.md) |
 | VictoriaTraces single (`vtsingle`) | node-workstation (`role=data`) | traces since 2026-11-16: 7 days or 4 GiB, 5Gi volume; Grafana Explore → VictoriaTraces (Jaeger API), linked to logs by `trace_id` |
 | otel-collector | node-workstation (`role=data`) | OpenTelemetry Collector 0.164.0: OTLP in (`otel-collector.monitoring:4318`), tail sampling drops probes/scrapes/housekeeping, retry queue; `k8s/monitoring/otel-collector*.yaml`; [docs/learn/10](docs/learn/10-tracing.md) |
+| vmalert + Alertmanager | node-workstation (`role=data`) | SLO rules `k8s/monitoring/slo-rules.yaml` (+ chart defaults, not notified); SLO alerts → Telegram; config Secret from `playbooks/alerting.yml`; [docs/learn/11](docs/learn/11-slo.md) |
 | OpenTelemetry Java agent | in ticketlite-api / -worker | 2.33.1, in the image; `OTEL_*` env in `k8s/apps/ticketlite/backend.yaml` |
 
 Not scraped: scheduler, controller-manager, etcd, kube-proxy (k3s binds them to localhost).
@@ -563,6 +564,7 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 | full check | everything incl. the canary pods, daily 04:15 | timer `homelab-check-full` |
 | messages | Telegram, **only on change** (🔴 new problems, 🟢 all good again) + a reminder every 6 h while broken | `ansible/files/homelab-check.sh` |
 | dead man's switch | every successful check pings healthchecks.io; **if the pings stop** (homelab, power or internet down), healthchecks.io alerts from outside | healthchecks.io check (period 15 min, grace 30 min) |
+| SLO alerts (since 2026-11-18) | error budget burning too fast (availability 99.5 % all sites, latency 99 % < 300 ms TicketLite api), vmalert → Alertmanager → Telegram | `k8s/monitoring/slo-rules.yaml`, `ansible-playbook playbooks/alerting.yml` once (and after a bot change) |
 | expiry reminders | problem 30 days before: GHCR pull token (`expiry_dates` in `group_vars/all.yml`), `grafana.lan` certificate | `verify.yml` |
 
 Live since 2026-11-16: timers installed by `workstation-prepare.yml`, first manual run `all checks passed`.

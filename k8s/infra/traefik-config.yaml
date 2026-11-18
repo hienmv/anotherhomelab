@@ -26,6 +26,13 @@ spec:
         whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels: { app.kubernetes.io/name: traefik }
+    # Prometheus metrics on :9100 (port "metrics"), scraped by vmagent: the SLOs are measured here
+    # (docs/learn/11-slo.md). Buckets explicit: the latency SLO counts requests under 0.3 s.
+    metrics:
+      prometheus:
+        entryPoint: metrics
+        addServicesLabels: true
+        buckets: "0.1,0.3,1.2,5.0"
     ports:
       web:
         forwardedHeaders:

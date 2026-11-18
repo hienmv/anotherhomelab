@@ -2,6 +2,7 @@
 #   - site-settings.yaml: schema, consistency, matches this repository (scripts/validate-config.py)
 #   - every k8s/ folder renders like Flux, strict substitution (scripts/render-k8s.py)
 #   - rendered manifests are valid Kubernetes (kubeconform; CRDs from the datree catalog)
+#   - SLO alert rules behave as intended (scripts/test-slo-rules.sh: fake traffic in, expected alerts out)
 #   - every Ansible playbook parses (syntax check)
 #   - no secret anywhere in the git history (gitleaks; false positives in .gitleaks.toml)
 # A failure here blocks a PR; on main it marks the commit red (Flux would hit the same error).
@@ -57,6 +58,9 @@ jobs:
 
       - name: Render k8s/ like Flux (strict substitution)
         run: python3 scripts/render-k8s.py "$CLUSTER" > "$RUNNER_TEMP/rendered.yaml"
+
+      - name: SLO alert rules unit tests (vmalert-tool)
+        run: scripts/test-slo-rules.sh
 
       - name: Kubernetes schemas (kubeconform)
         run: |

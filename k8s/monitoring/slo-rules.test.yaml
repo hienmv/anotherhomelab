@@ -1,0 +1,75 @@
+# Unit tests for slo-rules.yaml (docs/learn/11-slo.md). Not a Kubernetes object: CI runs them with
+# vmalert-tool (scripts/test-slo-rules.sh), the same idea as Prometheus' `promtool test rules`.
+# Fake Traefik counters go in, the test says which alerts must (or must not) fire.
+rule_files: [/tmp/slo-rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # 1. landing answers 10 % of requests with 500 for 2 h: far over the 0.5 % budget -> fast burn alerts
+  - interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="apps-landing-http@kubernetes",code="200"}'
+        values: '0+90x180'
+      - series: 'traefik_service_requests_total{service="apps-landing-http@kubernetes",code="500"}'
+        values: '0+10x180'
+    alert_rule_test:
+      - eval_time: 2h
+        groupname: slo-availability-alerts
+        alertname: SLOErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: critical, slo: availability, objective: "0.995", site: landing, window: "1h/5m" }
+            exp_annotations:
+              summary: "landing: availability SLO error budget burning 14.4x too fast (1h window)"
+              description: 'landing has 10% bad requests over 1h (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in 2.1 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.'
+          - exp_labels: { severity: critical, slo: availability, objective: "0.995", site: landing, window: "6h/30m" }
+            exp_annotations:
+              summary: "landing: availability SLO error budget burning 6x too fast (6h window)"
+              description: 'landing has 10% bad requests over 6h (objective 0.995, allowed 0.005). At this rate the 30-day budget is gone in 5.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.'
+
+  # 2. healthy: notes, no 5xx at all -> nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="apps-notes-http@kubernetes",code="200"}'
+        values: '0+100x180'
+    alert_rule_test:
+      - eval_time: 2h
+        groupname: slo-availability-alerts
+        alertname: SLOErrorBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 2h
+        groupname: slo-availability-alerts
+        alertname: SLOErrorBudgetBurnSlow
+        exp_alerts: []
+
+  # 4. ticketlite api: 10 % of requests slower than 300 ms for 2 h (budget 1 %): over the 6h threshold
+  #    (6 x 1 % = 6 %), under the 1h one (14.4 %) -> exactly one alert
+  - interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="apps-ticketlite-api-http@kubernetes",code="200"}'
+        values: '0+100x180'
+      - series: 'traefik_service_request_duration_seconds_bucket{service="apps-ticketlite-api-http@kubernetes",code="200",le="0.3"}'
+        values: '0+90x180'
+      - series: 'traefik_service_request_duration_seconds_count{service="apps-ticketlite-api-http@kubernetes",code="200"}'
+        values: '0+100x180'
+    alert_rule_test:
+      - eval_time: 2h
+        groupname: slo-latency-alerts
+        alertname: SLOErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: critical, slo: latency, objective: "0.99", site: ticketlite, window: "6h/30m" }
+            exp_annotations:
+              summary: "ticketlite: latency SLO error budget burning 6x too fast (6h window)"
+              description: 'ticketlite has 10% bad requests over 6h (objective 0.99, allowed 0.01). At this rate the 30-day budget is gone in 5.0 days. Check Grafana: dashboard "SLOs", then logs level:=ERROR.'
+
+  # 3. too little traffic to judge: 1 request in 3 is a 500, but only ~6 requests per hour -> silent
+  - interval: 10m
+    input_series:
+      - series: 'traefik_service_requests_total{service="apps-ticketlite-web-http@kubernetes",code="200"}'
+        values: '0+0.66x18'
+      - series: 'traefik_service_requests_total{service="apps-ticketlite-web-http@kubernetes",code="500"}'
+        values: '0+0.33x18'
+    alert_rule_test:
+      - eval_time: 3h
+        groupname: slo-availability-alerts
+        alertname: SLOErrorBudgetBurnFast
+        exp_alerts: []
