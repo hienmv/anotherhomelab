@@ -66,11 +66,17 @@ if repo and slug and repo.lower() != slug.lower():
 if owner and data.get("IMAGE_REGISTRY") and data["IMAGE_REGISTRY"] != f"ghcr.io/{owner.lower()}":
     problems.append(f"{settings_path}: IMAGE_REGISTRY={data['IMAGE_REGISTRY']} but CI pushes to ghcr.io/{owner.lower()}")
 
-# every Kustomization in platform.yaml substitutes from site-settings
+# every Kustomization in platform.yaml substitutes from site-settings, except the SOPS ones
+# (secrets, notifications: decrypted and applied exactly as written; docs/learn/12-gitops-secrets.md)
 platform = f"clusters/{cluster}/platform.yaml"
 for doc in yaml.safe_load_all((root / platform).read_text()):
     if doc and doc.get("kind") == "Kustomization":
-        sf = (doc.get("spec", {}).get("postBuild") or {}).get("substituteFrom") or []
+        spec = doc.get("spec", {})
+        if (spec.get("decryption") or {}).get("provider") == "sops":
+            if spec.get("postBuild"):
+                problems.append(f"{platform}: Kustomization {doc['metadata']['name']} decrypts SOPS: it must not substitute")
+            continue
+        sf = (spec.get("postBuild") or {}).get("substituteFrom") or []
         if not any(s.get("name") == "site-settings" for s in sf):
             problems.append(f"{platform}: Kustomization {doc['metadata']['name']} has no substituteFrom site-settings")
 
