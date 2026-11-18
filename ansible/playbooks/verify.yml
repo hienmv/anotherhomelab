@@ -29,20 +29,36 @@
       loop_control: { label: "{{ item.mount }}" }
       when: (item.size_available / item.size_total) <= 0.15
 
-    - name: Pi power (bit 0 of get_throttled = under-voltage now)
+    # vcgencmd get_throttled bits: 0 under-voltage NOW, 2 throttled now, 3 temperature limit now,
+    # 16 under-voltage HAS HAPPENED since boot, 18 throttled since boot, 19 temperature limit since boot.
+    # The "since boot" bits catch short dips (2026-11-18: an SSD start dropped node-8gb's voltage for
+    # 6 s, invisible to a "now" check); they clear only at a reboot.
+    # become: /dev/vcio needs root. Before 2026-11-18 this ran without it, failed, and was skipped.
+    - name: Pi power and temperature (vcgencmd get_throttled)
       ansible.builtin.command: vcgencmd get_throttled
+      become: true
       register: throttled
       changed_when: false
       failed_when: false
       when: inventory_hostname in groups['pis']
 
-    - name: Under-voltage
+    - name: Power result
+      vars:
+        bits: "{{ throttled.stdout | default('') | regex_replace('^throttled=', '') }}"
+        flags: "{{ (bits | int(base=16)) if bits is match('^0x[0-9a-fA-F]+$') else -1 }}"
+        found: >-
+          {{ (['cannot read the power state: ' ~ (throttled.stderr | default('') | truncate(80))] if flags | int < 0 else [])
+             + (['under-voltage NOW'] if (flags | int >= 0 and (flags | int) // 1 % 2 == 1) else [])
+             + (['throttled now'] if (flags | int >= 0 and (flags | int) // 4 % 2 == 1) else [])
+             + (['temperature limit now'] if (flags | int >= 0 and (flags | int) // 8 % 2 == 1) else [])
+             + (['under-voltage happened since boot'] if (flags | int >= 0 and (flags | int) // 65536 % 2 == 1) else [])
+             + (['throttled since boot'] if (flags | int >= 0 and (flags | int) // 262144 % 2 == 1) else [])
+             + (['temperature limit since boot'] if (flags | int >= 0 and (flags | int) // 524288 % 2 == 1) else []) }}
       ansible.builtin.set_fact:
-        problems: "{{ problems + ['power: ' ~ throttled.stdout ~ ' (under-voltage now, check the power supply)'] }}"
+        problems: "{{ problems + ['power: ' ~ (found | join(', ')) ~ ' (' ~ throttled.stdout | default('?') ~ '; check the power supply / cooling; since-boot flags clear at a reboot)'] }}"
       when:
         - inventory_hostname in groups['pis']
-        - throttled.rc | default(1) == 0
-        - (throttled.stdout | regex_replace('^throttled=', '') | int(base=16)) % 2 == 1
+        - found | length > 0
 
     - name: Container AppArmor denials since boot (Ubuntu 26.04 bug, K3S-GUIDE 10.3)
       ansible.builtin.shell: journalctl -k -b --no-pager 2>/dev/null | grep 'apparmor="DENIED"' | grep -c cri-containerd || true

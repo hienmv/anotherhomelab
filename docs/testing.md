@@ -60,7 +60,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Identity | hostname and static IP match the inventory | `verify.yml --tags nodes` | always | ✅ |
 | Disk space | root filesystem ≥ 15 % free | `verify.yml --tags nodes` | always | ✅ |
-| Pi power | no under-voltage right now (`vcgencmd get_throttled`) | `verify.yml --tags nodes` | always | ✅ |
+| Pi power | no under-voltage, throttling or temperature limit, now **or since boot** (`vcgencmd get_throttled` as root; an unreadable state is a problem too) | `verify.yml --tags nodes` | always | ✅ |
 | Hardware after an SD swap | name, IP, RAM size and SD size per board | `phase2-migrate.yml` step 6 (`ram_gb`, `sd_gb` in the inventory) | after moving SD cards | ✅ |
 | Node-to-node network | every node reaches every node and the gateway (10 pings: >= 50 % loss fails, any loss is reported); HTTPS to the internet | `verify.yml --tags network` | always | ✅ |
 | Workstation base setup | static IP, never sleeps, SSH keys only, tools, keys | `workstation-prepare.yml` is idempotent: a re-run must report no changes | after a reinstall or config change | ✅ |
