@@ -75,7 +75,7 @@ and `🟢 resolved: ...` when it is over. That is exactly the case in the unit t
 | rules | `k8s/monitoring/slo-rules.yaml` (VMRule) | **recording rules** `slo:error_ratio:rate5m … rate30d` (one per window, per SLO and site), `slo:error_budget_remaining:ratio`, then the alerts above |
 | tests | `k8s/monitoring/slo-rules.test.yaml`, `scripts/test-slo-rules.sh` | fake traffic in, expected alerts out (CI, every PR) |
 | evaluate | vmalert (`vm-stack-values.yaml`) | runs all rules every 20 s; also the chart's default Kubernetes rules (not sent to Telegram) |
-| notify | Alertmanager; config **Secret** from `ansible/templates/alertmanager.yml.j2` by `playbooks/alerting.yml` | SLO alerts → Telegram; same site + SLO: a critical silences the warning; reminder every 6 h; `resolved` message |
+| notify | Alertmanager; config **Secret** from `ansible/templates/alertmanager.yml.j2`, encrypted into git by `playbooks/alerting.yml` ([chapter 12](12-gitops-secrets.md)) | SLO alerts → Telegram; same site + SLO: a critical silences the warning; reminder every 6 h; `resolved` message |
 | see | Grafana dashboard **Apps → SLOs** (`k8s/monitoring/dashboards/slo.json`) | availability over 30 days, budget left, burn rate, traffic, latency, alerts firing |
 | check | `verify.yml` (`slo:` problems) | Traefik metrics arrive, Alertmanager config exists, which SLO alerts fire |
 
@@ -104,7 +104,8 @@ Proved once on purpose: lowering the guard to 1 request made test 3 fail.
 - A **warning**: look today; something degrades slowly.
 - **Budget below 0** at the end of a month: the SLO was missed. Write a short postmortem, make
   reliability work the next task before new features.
-- After changing the Telegram bot or chat: `ansible-playbook playbooks/alerting.yml` (as `ops`).
+- After changing the Telegram bot or chat: `ansible-playbook playbooks/alerting.yml` (as `ops`), then commit
+  the changed `*.sops.yaml` files and open a PR ([chapter 12](12-gitops-secrets.md)).
 
 ## Changing an SLO
 

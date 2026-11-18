@@ -120,7 +120,8 @@ defaultDatasources:
 # Alerting (since 2026-11-18, docs/learn/11-slo.md): vmalert evaluates the rules every 20 s (our SLO rules,
 # k8s/monitoring/slo-rules.yaml, plus the chart's default Kubernetes rules), Alertmanager groups the
 # alerts and sends the SLO ones to Telegram. Its config is a Secret made from
-# ~/.config/homelab/alerting.env by ansible/playbooks/alerting.yml (bot token never in git).
+# ~/.config/homelab/alerting.env by ansible/playbooks/alerting.yml, encrypted into
+# k8s/secrets/monitoring/alertmanager-config.sops.yaml (SOPS; docs/learn/12-gitops-secrets.md).
 # Default-rule alerts are not sent (only visible in vmalert): verify.yml covers those failures.
 vmalert:
   enabled: true
@@ -132,7 +133,7 @@ vmalert:
 alertmanager:
   enabled: true
   spec:
-    configSecret: alertmanager-config   # key alertmanager.yaml; created by ansible/playbooks/alerting.yml
+    configSecret: alertmanager-config   # key alertmanager.yaml; from git (k8s/secrets, SOPS)
     nodeSelector: { role: data }
     resources:
       requests: { cpu: 10m, memory: 32Mi }

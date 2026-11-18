@@ -1,8 +1,14 @@
 # What Flux deploys from this repo, and in which order.
 #
-#   namespaces ─┬─> releases (Helm: cnpg, vm stack) ─┬─> data (Postgres, Redis) ─> apps
-#               │                                    └─> monitoring (scrapes, grafana https)
-#               └─> infra (cloudflared)
+#   namespaces ─> secrets ─┬─> releases (Helm: cnpg, vm stack) ─┬─> data (Postgres, Redis) ─> apps
+#   (SOPS, decrypted)      │                                    └─> monitoring (scrapes, rules, ...)
+#                          ├─> infra (cloudflared, traefik config)
+#                          └─> notifications (Flux -> Telegram)
+#
+# secrets / notifications: files encrypted with SOPS + age (docs/learn/12-gitops-secrets.md),
+# decrypted by Flux with the key in Secret flux-system/sops-age (made once by
+# scripts/secrets/bootstrap.sh, and by restore.yml on a rebuild). No postBuild there: secrets are
+# applied exactly as encrypted.
 #
 # postBuild: every Kustomization gets ${DOMAIN}, ${IMAGE_REGISTRY}, ... from the ConfigMap
 # site-settings (clusters/homelab/site-settings.yaml). Escape a literal ${x} as $${x}.
@@ -22,13 +28,46 @@ spec:
   postBuild:
     substituteFrom: [{ kind: ConfigMap, name: site-settings }]
 ---
+# prune: false: removing a file must not delete a live secret (and break an app) by accident.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: secrets
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: namespaces }]
+  interval: 10m
+  retryInterval: 1m
+  path: ./k8s/secrets
+  prune: false
+  sourceRef: { kind: GitRepository, name: flux-system }
+  decryption:
+    provider: sops
+    secretRef: { name: sops-age }
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: notifications
+  namespace: flux-system
+spec:
+  dependsOn: [{ name: namespaces }]
+  interval: 10m
+  retryInterval: 1m
+  path: ./k8s/notifications
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system }
+  decryption:
+    provider: sops
+    secretRef: { name: sops-age }
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: releases
   namespace: flux-system
 spec:
-  dependsOn: [{ name: namespaces }]
+  dependsOn: [{ name: namespaces }, { name: secrets }]
   interval: 10m
   retryInterval: 2m
   path: ./k8s/releases
@@ -45,7 +84,7 @@ metadata:
   name: infra
   namespace: flux-system
 spec:
-  dependsOn: [{ name: namespaces }]
+  dependsOn: [{ name: namespaces }, { name: secrets }]
   interval: 10m
   retryInterval: 2m
   path: ./k8s/infra

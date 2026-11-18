@@ -168,7 +168,7 @@ How changes reach the cluster.
 │ kubectl helm k9s flux sops age     │                  │   then bump tag in k8s/ (commit) │
 │ kubeconfig ~/.kube/homelab.yaml    │                  └─────────────────┬────────────────┘
 │ ssh ops key -> Pis (IP-locked)     │               pull every 1m (SSH)  │
-│ age key: backups (+ SOPS later)    │              read-only deploy key  │
+│ age key: backups + SOPS secrets    │              read-only deploy key  │
 │ Mac / laptop: ssh in, nothing else │                                    │
 └───────┬─────────────────┬──────────┘                                    │
         │ kubectl         │ Ansible                                       │
