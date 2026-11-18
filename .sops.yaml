@@ -1,0 +1,8 @@
+# SOPS: which files are encrypted, which fields, for whom (docs/learn/12-gitops-secrets.md).
+# age public key = recipient; the private key is in the password manager + on node-workstation
+# (~/.config/sops/age/keys.txt) + in the cluster (Secret flux-system/sops-age). Written by
+# scripts/secrets/bootstrap.sh.
+creation_rules:
+  - path_regex: k8s/(secrets|notifications)/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData|channel)$
+    age: age1w56q3v5s45lw0m525dkpngnzmytzty8env94nsy7ftxefsf3te0skghpdr
