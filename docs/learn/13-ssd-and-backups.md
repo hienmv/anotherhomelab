@@ -88,11 +88,52 @@ set -a; . ~/.config/homelab/backup-s3.env; set +a; rclone ls ssd:archives   # as
 systemctl list-timers homelab-backup; journalctl -u homelab-backup -n 50
 ```
 
+## Part C: Postgres, continuously, and a restore drill
+
+```text
+ Postgres (pg-1, node-workstation)
+   every change -> WAL (write-ahead log, 16 MB segments) ──► Barman Cloud plugin ──► ssd:cnpg/postgres/wals
+   every night 02:00 (Tokyo) -> base backup (a full copy) ─────────────────────────► ssd:cnpg/postgres/base
+ restore = newest base backup before T + replay the WAL up to T  ->  the database exactly as it was at T
+```
+
+| Word | Meaning |
+|---|---|
+| **WAL** | Postgres writes every change to its write-ahead log first; replaying it reproduces the changes |
+| **WAL archiving** | copying each finished WAL segment off the machine. Postgres closes a segment at least every 5 min, so at most ~5 min of changes can be lost (the **RPO**) |
+| **base backup** | a full copy of the database files at one moment |
+| **PITR** | point-in-time recovery: base backup + WAL up to any chosen moment ("yesterday 14:05, just before the bad import") |
+| **Barman Cloud plugin** | CNPG's add-on that uploads WAL and base backups to S3 (`k8s/releases/barman-cloud.yaml`, needs cert-manager) |
+
+Configured in `k8s/data/objectstore.yaml` (ObjectStore `ssd`: bucket `cnpg`, endpoint from site-settings
+`BACKUP_STORE_URL`, key from the encrypted Secret `backup-s3`, 30 days kept; ScheduledBackup nightly)
+and `k8s/data/postgres.yaml` (`plugins:` turns the archiving on).
+
+Checked by `verify.yml` (`pg-backup:`): WAL archiving works (CNPG's `ContinuousArchiving` condition),
+newest base backup < 26 h old.
+
+### The drill: a backup is only real once it has been restored
+
+`ansible-playbook playbooks/pitr-drill.yml` (as `ops`), touching nothing live:
+
+1. one snapshot of the live database gives a time **T** and the row count of every table
+2. close the current WAL segment and wait until it is in the store
+3. restore into a **new, temporary** cluster `pg-drill`: newest base backup + WAL up to exactly T
+4. compare the row counts with step 1 (must be identical), report how long the restore took
+5. delete `pg-drill`
+
+`pg-drill` only reads the backups: it has no WAL archiver, so it can never write into them.
+
+### Drill log
+
+| Date | Target T | Restore took | Result |
+|---|---|---|---|
+| | | | (first drill after part C is deployed) |
+
 ## Next parts
 
 | Part | What |
 |---|---|
-| C | Postgres: continuous WAL archive + nightly base backup to it (point-in-time restore), and a restore drill |
 | D | nightly encrypted copy to Cloudflare R2 (off-site: survives fire or theft) |
 
 Back to: [README](README.md)

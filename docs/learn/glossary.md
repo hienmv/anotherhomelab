@@ -49,6 +49,7 @@
 | **manifest** | a YAML file describing Kubernetes objects |
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
+| **PITR / WAL / base backup** | point-in-time recovery / Postgres' change log / a full copy; together: restore to any moment (chapter 13) |
 | **passphrase** | password that encrypts a private key file |
 | **PodDisruptionBudget (PDB)** | "keep at least N copies running" during voluntary disruptions (drain, upgrade) |
 | **playbook / play / task / module** | Ansible file / a list of tasks for some hosts / one step / the tool doing the step |
@@ -56,6 +57,7 @@
 | **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
 | **required check** | a CI job that must pass before a PR may be merged |
 | **recording rule** | a query computed regularly and stored as a new metric (`slo:error_ratio:rate1h`), so alerts and dashboards stay cheap |
+| **RPO / RTO** | how much data can be lost / how long until service is back (here: RPO ~5 min with WAL archiving) |
 | **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
 | **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
 | **OpenTelemetry (OTel)** | the industry standard for producing and sending metrics, logs and traces: libraries/agent in the app, the Collector, standard field names (chapter 10) |

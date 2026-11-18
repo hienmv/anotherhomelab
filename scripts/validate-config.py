@@ -31,6 +31,7 @@ schema = {
     "IMAGE_REGISTRY": (r"^ghcr\.io/[a-z0-9-]+$", "ghcr.io/<lowercase owner>"),
     "CLOUDFLARE_TUNNEL_ID": (r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "UUID"),
     "TIMEZONE": (r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$", "IANA zone, e.g. Asia/Tokyo"),
+    "BACKUP_STORE_URL": (r"^https?://[A-Za-z0-9.-]+:[0-9]{1,5}$", "http(s)://host:port of the S3 backup store"),
 }
 for key, (rx, desc) in schema.items():
     value = str(data.get(key, ""))
@@ -50,6 +51,26 @@ if slug and data.get("GIT_REPO_SSH") and data["GIT_REPO_SSH"] != f"git@github.co
 tz = data.get("TIMEZONE")
 if tz and pathlib.Path("/usr/share/zoneinfo").is_dir() and not (pathlib.Path("/usr/share/zoneinfo") / tz).is_file():
     problems.append(f"{settings_path}: TIMEZONE={tz} is not a known time zone")
+
+# The backup store's URL (used by Postgres in k8s/data) must match where Ansible runs it
+# (ansible/group_vars/all.yml backup_store + the host's static_ip in ansible/inventory.yml).
+gv = load("ansible/group_vars/all.yml") or {}
+store = gv.get("backup_store") or {}
+def find_host(node, name):
+    if isinstance(node, dict):
+        hosts = node.get("hosts") or {}
+        if name in hosts and isinstance(hosts[name], dict):
+            return hosts[name]
+        for v in node.values():
+            found = find_host(v, name)
+            if found:
+                return found
+    return None
+host = find_host(load("ansible/inventory.yml"), store.get("host", "")) or {}
+want = f"http://{host.get('static_ip')}:{store.get('port')}" if host.get("static_ip") and store.get("port") else None
+if want and data.get("BACKUP_STORE_URL") and data["BACKUP_STORE_URL"] != want:
+    problems.append(f"{settings_path}: BACKUP_STORE_URL={data['BACKUP_STORE_URL']} but Ansible runs the store at {want} "
+                    f"(backup_store in ansible/group_vars/all.yml, {store.get('host')} in ansible/inventory.yml)")
 
 # Flux bootstrap: the only place the Git URL is written out (read before any variable exists)
 sync_path = f"clusters/{cluster}/flux-system/gotk-sync.yaml"

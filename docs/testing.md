@@ -94,8 +94,10 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Data on the data node | every `data` pod runs on the `role=data` node | `verify.yml --tags data` | always | ✅ |
 | Backup is fresh and decryptable | newest backup decrypts with the age key; warns when older than 26 h (nightly timer) | `verify.yml --tags backup` | always | ✅ |
 | Backup content | each dump starts with `PGDMP`; exact row counts recorded | `backup.yml` (fails on a bad dump) | every backup | ✅ |
+| Postgres continuous backup | WAL archiving works, newest base backup < 26 h | `verify.yml --tags data` (`pg-backup:`) | always | ✅ |
+| **PITR drill** | restore to a chosen moment T into a temporary cluster, row counts identical to the live database at T | `playbooks/pitr-drill.yml` (log in docs/learn/13) | monthly, after backup changes | ✅ playbook, ❌ not run yet |
 | **Rebuild drill** | the whole cluster rebuilds from git + config + backup, row counts match, everything healthy | `rebuild.yml` (K3S-GUIDE section 11, drill log there) | every ~3 months, after big changes | ✅ playbook, ❌ schedule |
-| Scheduled backups | backups happen without a human | `homelab-backup.timer` nightly (archive → SSD store); Postgres WAL archive: part C | nightly | 🟡 archive ✅, Postgres continuous: next |
+| Scheduled backups | backups happen without a human | `homelab-backup.timer` nightly (archive → SSD store); Postgres WAL continuously + base nightly (CNPG) | continuous / nightly | ✅ |
 
 ## 6. Applications (running system)
 

@@ -1,0 +1,54 @@
+# Postgres backup target: the Garage S3 store on node-8gb's SSD (bucket cnpg), via the Barman Cloud
+# plugin (k8s/releases/barman-cloud.yaml). docs/learn/13-ssd-and-backups.md, part C.
+#
+#   continuous: every finished WAL segment (Postgres' change log) is uploaded at once; Postgres closes
+#               a segment at least every 5 min (CNPG's archive_timeout), so at most ~5 min can be lost
+#   nightly:    a full base backup (ScheduledBackup below)
+#   together:   restore to ANY moment of the last 30 days (point-in-time recovery)
+#
+# Endpoint: site-settings BACKUP_STORE_URL (checked in CI against the Ansible inventory). Key: Secret
+# data/backup-s3 (k8s/secrets/data/backup-s3.sops.yaml, the same key Ansible imports into Garage).
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: ssd
+  namespace: data
+spec:
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: s3://cnpg/postgres
+    endpointURL: ${BACKUP_STORE_URL}
+    s3Credentials:
+      accessKeyId: { name: backup-s3, key: ACCESS_KEY_ID }
+      secretAccessKey: { name: backup-s3, key: ACCESS_SECRET_KEY }
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+  instanceSidecarConfiguration:
+    env:
+      # Garage checks the region in every request's signature (backup_store.region in Ansible)
+      - { name: AWS_DEFAULT_REGION, value: garage }
+      # newer AWS SDKs add checksums Garage does not need: only when required
+      - { name: AWS_REQUEST_CHECKSUM_CALCULATION, value: when_required }
+      - { name: AWS_RESPONSE_CHECKSUM_VALIDATION, value: when_required }
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { memory: 256Mi }
+---
+# Nightly base backup (the WAL is archived continuously in between). CNPG cron has a seconds field
+# and runs in UTC: 17:00 UTC = 02:00 in Tokyo, before the archive backup at 03:30.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: pg-nightly
+  namespace: data
+spec:
+  schedule: "0 0 17 * * *"
+  immediate: true               # also one right after it is created: recovery possible from day one
+  backupOwnerReference: self
+  cluster: { name: pg }
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

@@ -1,0 +1,157 @@
+# Point-in-time restore drill (docs/learn/13-ssd-and-backups.md, part C): proves the Postgres backups
+# on the SSD store can bring the data back to a chosen moment. The LIVE database is never touched:
+# the restore goes into a separate, temporary cluster `pg-drill`, which is deleted at the end.
+#
+#   cd ansible && ansible-playbook playbooks/pitr-drill.yml
+#
+# 1. In ONE snapshot of the live database: the time T and the row count of every table
+# 2. Close the current WAL segment, wait until it is archived (so T is in the backup)
+# 3. pg-drill: restore the newest base backup + WAL up to exactly T
+# 4. Same row counts in pg-drill as in the live database at T? Then the backups work.
+# 5. Delete pg-drill. Report how long the restore took.
+#
+# pg-drill only READS the backups: it has no WAL archiver, so it can never write into them.
+- name: Point-in-time restore drill
+  hosts: workstation
+  gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  vars:
+    ns: data
+    drill: pg-drill
+  tasks:
+    - name: A completed base backup exists (the first one comes right after part C is deployed)
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl -n {{ ns }} get backups.postgresql.cnpg.io -o json
+          | jq -r '[.items[] | select(.status.phase == "completed")] | length'
+      register: n_backups
+      changed_when: false
+      failed_when: n_backups.stdout | int < 1
+
+    - name: Live primary pod
+      ansible.builtin.shell:
+        cmd: kubectl -n {{ ns }} get pod -l cnpg.io/cluster=pg,cnpg.io/instanceRole=primary -o name | head -1 | cut -d/ -f2
+      register: primary
+      changed_when: false
+      failed_when: primary.stdout | length == 0
+
+    # REPEATABLE READ: the counts and now() come from the same snapshot, i.e. exactly the state at T
+    - name: Time T and row counts, from one snapshot of the live database
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          tables=$(kubectl -n {{ ns }} exec {{ primary.stdout }} -c postgres -- psql -U postgres -d app -At \
+            -c "select schemaname || '.' || relname from pg_stat_user_tables order by 1")
+          {
+            echo "begin transaction isolation level repeatable read;"
+            echo "select 'T', to_char(now() at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"');"
+            for t in $tables; do echo "select '$t', count(*) from $t;"; done
+            echo "commit;"
+          } | kubectl -n {{ ns }} exec -i {{ primary.stdout }} -c postgres -- psql -U postgres -d app -At -F' ' -q
+        executable: /bin/bash
+      register: live
+      changed_when: false
+
+    - name: Target time and live counts
+      ansible.builtin.set_fact:
+        target_time: "{{ (live.stdout_lines | select('match', '^T ') | first).split()[1] }}"
+        live_counts: "{{ live.stdout_lines | reject('match', '^T ') | list }}"
+
+    - name: Close the current WAL segment and wait until it is in the store
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          q() { kubectl -n {{ ns }} exec {{ primary.stdout }} -c postgres -- psql -U postgres -At -c "$1"; }
+          q "select pg_switch_wal();" >/dev/null
+          for i in $(seq 1 60); do
+            ok=$(q "select coalesce(last_archived_time > '{{ target_time }}'::timestamptz, false) from pg_stat_archiver;")
+            [ "$ok" = t ] && exit 0
+            sleep 5
+          done
+          echo "WAL covering {{ target_time }} not archived within 5 min (kubectl -n {{ ns }} get cluster pg)" >&2; exit 1
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Live image (the drill uses the same Postgres version)
+      ansible.builtin.command: kubectl -n {{ ns }} get cluster.postgresql.cnpg.io pg -o jsonpath={.status.image}
+      register: image
+      changed_when: false
+
+    - name: Restore
+      block:
+        - name: Start time
+          ansible.builtin.command: date +%s
+          register: t0
+          changed_when: false
+
+        - name: Cluster {{ drill }} restored to {{ target_time }} from the SSD store
+          ansible.builtin.command: kubectl apply -f -
+          args:
+            stdin: |
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: {{ drill }}
+                namespace: {{ ns }}
+                labels: { homelab/drill: pitr }
+              spec:
+                instances: 1
+                imageName: {{ image.stdout }}
+                storage: { storageClass: local-path, size: 5Gi }
+                affinity:
+                  nodeSelector: { role: data }
+                resources:
+                  requests: { cpu: 100m, memory: 256Mi }
+                  limits: { memory: 1Gi }
+                bootstrap:
+                  recovery:
+                    source: from-backup
+                    recoveryTarget:
+                      targetTime: "{{ target_time }}"
+                externalClusters:
+                  - name: from-backup
+                    plugin:
+                      name: barman-cloud.cloudnative-pg.io
+                      parameters:
+                        barmanObjectName: ssd
+                        serverName: pg
+
+        - name: Restored and ready (up to 20 min)
+          ansible.builtin.command: kubectl -n {{ ns }} wait cluster.postgresql.cnpg.io/{{ drill }} --for=condition=Ready --timeout=1200s
+          changed_when: false
+
+        - name: Restore duration
+          ansible.builtin.shell:
+            cmd: echo $(( $(date +%s) - {{ t0.stdout }} ))
+          register: took
+          changed_when: false
+
+        - name: Row counts in the restored copy (same tables)
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              pod=$(kubectl -n {{ ns }} get pod -l cnpg.io/cluster={{ drill }},cnpg.io/instanceRole=primary -o name | head -1)
+              kubectl -n {{ ns }} exec -i "$pod" -c postgres -- psql -U postgres -d app -At -F' ' -q
+            executable: /bin/bash
+            stdin: "{% for line in live_counts %}select '{{ line.split()[0] }}', count(*) from {{ line.split()[0] }};\n{% endfor %}"
+          register: restored
+          changed_when: false
+
+        - name: Same rows as the live database at T
+          ansible.builtin.assert:
+            that: restored.stdout_lines == live_counts
+            fail_msg: "restored {{ restored.stdout_lines }} != live at {{ target_time }} {{ live_counts }}"
+            success_msg: "restored {{ restored.stdout_lines | length }} tables, identical to the live database at {{ target_time }}"
+
+      always:
+        - name: Delete {{ drill }} (its volume goes with it)
+          ansible.builtin.command: kubectl -n {{ ns }} delete cluster.postgresql.cnpg.io {{ drill }} --ignore-not-found --wait=true --timeout=300s
+          changed_when: true
+
+    - name: Drill result (paste into the drill log, docs/learn/13-ssd-and-backups.md)
+      ansible.builtin.debug:
+        msg:
+          - "PITR drill {{ lookup('pipe', 'date +%Y-%m-%d') }}: target {{ target_time }}, restore took {{ (took.stdout | int) // 60 }} min {{ (took.stdout | int) % 60 }} s"
+          - "rows: {{ live_counts | join(', ') }}"
+          - "base backups available: {{ n_backups.stdout }}"

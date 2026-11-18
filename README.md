@@ -130,6 +130,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Batch CronJobs | apps | node-4gb | - | planned |
 | VictoriaMetrics (VMSingle 30d, vmagent) | monitoring | node-workstation | `vmsingle-vm-victoria-metrics-k8s-stack:8428` | running |
 | VictoriaLogs (VLSingle 14d) + vlagent on every node | monitoring | node-workstation (collector: all 4) | `vlsingle-vm-victoria-metrics-k8s-stack:9428` | since 2026-11-16 |
+| cert-manager + CNPG Barman Cloud plugin | cert-manager, cnpg-system | any node | Postgres WAL + nightly base backups → `ssd:cnpg` (PITR, 30 days) | since 2026-11-18 |
 | Garage S3 backup store (systemd, not k8s) | node-8gb host | node-8gb SSD `/mnt/ssd` | `http://<node-8gb>:3900`, buckets `archives`, `cnpg` | since 2026-11-18 |
 | vmalert + Alertmanager (SLO alerts → Telegram) | monitoring | node-workstation | `k8s/monitoring/slo-rules.yaml`, dashboard Apps → SLOs | since 2026-11-18 |
 | VictoriaTraces (VTSingle 7d) + OpenTelemetry Collector | monitoring | node-workstation | `otel-collector:4318` (OTLP in) -> `vtsingle-vm-victoria-metrics-k8s-stack:10428` | since 2026-11-16 |
