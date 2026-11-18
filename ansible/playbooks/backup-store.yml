@@ -72,7 +72,10 @@
           data_dir = "{{ backup_store.data_dir }}/data"
           metadata_snapshots_dir = "{{ backup_store.data_dir }}/meta-snapshots"
           metadata_auto_snapshot_interval = "6h"   # a copy of the index, in case the live one breaks
-          db_engine = "lmdb"
+          # sqlite, not the default lmdb: lmdb reserves 1 TiB of virtual address space, the Raspberry Pi
+          # kernel allows 512 GiB per process ("OutOfMemory ... LMDB", 2026-11-18). sqlite also survives
+          # power cuts better (lmdb can corrupt on an unclean shutdown).
+          db_engine = "sqlite"
           replication_factor = 1
           rpc_bind_addr = "127.0.0.1:3901"
           rpc_public_addr = "127.0.0.1:3901"

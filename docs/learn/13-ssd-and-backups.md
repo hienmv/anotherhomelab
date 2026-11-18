@@ -65,6 +65,13 @@ or dead, node-8gb still boots, and `verify.yml` reports the missing mount.
 | **nightly** | `homelab-backup.timer` runs `backup.yml` at 03:30: archive, copy to `ssd:archives`, delete copies older than 30 days (store and local) | before: only by hand |
 | checked by | `verify.yml`: Garage running + healthy; newest archive < 26 h old, also in the store | a failed night is a Telegram message the next morning |
 
+First start failed (2026-11-18): `OutOfMemory error while trying to open LMDB database`. Garage's
+default metadata engine, LMDB, reserves 1 TiB of *virtual address space* (not memory) up front; the
+Raspberry Pi kernel gives a process only 512 GiB. Locally (Docker on the Mac, a different kernel) it
+had worked. Fixed by `db_engine = "sqlite"`, which also copes better with power cuts. Lesson: test on
+the real target (same kernel, same CPU) when you can; host GitOps reported the failure and retried
+by itself after the fix.
+
 Trust, without a checksum file: Garage publishes none, so the binary's sha256 was pinned after
 comparing the download with the binary inside Garage's official container image (two channels,
 same hash). A supply-chain habit: verify what you run, from two independent sources if you can.
