@@ -53,6 +53,13 @@ all:
           nm_profile: netplan-eth0
           k3s_labels: [role=apps]
           k3s_reserved: cpu=250m,memory=512Mi
+          # USB SSD (2.5" SATA, powered USB hub): backups + later a Postgres replica (ansible/playbooks/ssd.yml,
+          # docs/learn/13-ssd-and-backups.md). Identified by the DRIVE's serial (smartctl), never by /dev/sdX.
+          ssd:
+            model: VETESA-64G
+            serial: 2108ZD0R024E0181
+            label: homelab-ssd
+            mount: /mnt/ssd
         node-4gb:   # Raspberry Pi 4B 4 GB
           static_ip: 192.168.40.251
           ram_gb: 4

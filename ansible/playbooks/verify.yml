@@ -60,6 +60,34 @@
         - inventory_hostname in groups['pis']
         - found | length > 0
 
+    # USB SSD (inventory `ssd:`, playbooks/ssd.yml, docs/learn/13-ssd-and-backups.md): mounted, healthy
+    # (SMART: failing flash shows as reallocated/pending/uncorrectable sectors; a bad cable as CRC
+    # errors), not too full, and the USB link stable (resets = cable, adapter or power).
+    - name: USB SSD health
+      when: ssd is defined
+      become: true
+      ansible.builtin.shell:
+        cmd: |
+          mp={{ ssd.mount | quote }}
+          findmnt -n -o SOURCE "$mp" >/dev/null || { echo "{{ ssd.mount }} not mounted (SSD missing? ansible-playbook playbooks/ssd.yml)"; exit 0; }
+          used=$(df --output=pcent "$mp" | tail -1 | tr -dc 0-9)
+          [ "$used" -lt 80 ] || echo "{{ ssd.mount }} is ${used}% full"
+          dev=$(findmnt -n -o SOURCE "$mp" | sed -E 's/[0-9]+$//')
+          smart=$(smartctl -H -A -d sat "$dev" 2>&1)
+          echo "$smart" | grep -q "overall-health self-assessment test result: PASSED" || echo "SMART health not PASSED on $dev"
+          echo "$smart" | awk '$2 ~ /^(Reallocated_Sector_Ct|Current_Pending_Sector|Reported_Uncorrect|Offline_Uncorrectable|UDMA_CRC_Error_Count)$/ && $10 > 0 {print "SMART " $2 " = " $10}'
+          resets=$(journalctl -k -b --no-pager 2>/dev/null | grep -cE "usb .*: reset|usb .*: USB disconnect" || true)
+          [ "${resets:-0}" -le 2 ] || echo "${resets} USB resets/disconnects since boot (cable, adapter or power)"
+      register: ssd_check
+      changed_when: false
+      failed_when: false
+
+    - name: USB SSD result
+      when: ssd is defined
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['ssd: ' ~ item] }}"
+      loop: "{{ ssd_check.stdout_lines | default([]) }}"
+
     - name: Container AppArmor denials since boot (Ubuntu 26.04 bug, K3S-GUIDE 10.3)
       ansible.builtin.shell: journalctl -k -b --no-pager 2>/dev/null | grep 'apparmor="DENIED"' | grep -c cri-containerd || true
       register: aa_denied

@@ -59,6 +59,7 @@
 | **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |
 | **Provider / Alert (Flux)** | where Flux sends messages (Telegram) / which events (changes, failures) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
+| **S.M.A.R.T.** | a disk's own health log (`smartctl`): failing sectors, transfer errors, age |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SLI / SLO / error budget** | measured share of good requests / its target (99.5 % in 30 days) / what may fail (0.5 %) |

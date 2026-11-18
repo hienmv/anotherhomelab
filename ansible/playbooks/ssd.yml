@@ -1,0 +1,105 @@
+# USB SSD on a node (inventory: `ssd:` on node-8gb): find it by the DRIVE's serial, format it ONCE
+# (only after you confirm), mount it so a missing SSD never blocks the boot. docs/learn/13-ssd-and-backups.md
+#
+#   cd ansible && ansible-playbook playbooks/ssd.yml                          # check / mount (no erase)
+#   ... -e confirm_wipe=<serial from the inventory>                           # first time: ERASES the SSD
+#
+# Idempotent: once a filesystem labelled ssd.label exists on that drive it is never formatted again.
+- name: USB SSD (find, format once, mount)
+  hosts: pis
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Only nodes with an SSD in the inventory
+      ansible.builtin.meta: end_host
+      when: ssd is not defined
+
+    - name: Tools (smartctl reads the drive's serial through the USB adapter; parted partitions)
+      ansible.builtin.apt:
+        name: [smartmontools, parted]
+        state: present
+
+    - name: Find the drive by its serial (never trust /dev/sdX, it can change at every boot)
+      ansible.builtin.shell:
+        cmd: |
+          for b in /sys/block/sd*; do
+            [ -e "$b" ] || continue
+            dev="/dev/${b##*/}"
+            smartctl -i -d sat "$dev" 2>/dev/null | grep -qE "^Serial Number: +{{ ssd.serial }}$" && echo "$dev"
+          done
+      register: found
+      changed_when: false
+      failed_when: found.stdout_lines | length != 1
+
+    - name: Drive
+      ansible.builtin.set_fact:
+        disk: "{{ found.stdout_lines[0] }}"
+
+    - name: Is it already set up? (a filesystem labelled {{ ssd.label }} on this drive)
+      ansible.builtin.shell:
+        cmd: lsblk -nr -o NAME,LABEL {{ disk }} | awk '$2 == "{{ ssd.label }}" {print "/dev/" $1}'
+      register: labelled
+      changed_when: false
+
+    - name: Format (only once, only when confirmed)
+      when: labelled.stdout | length == 0
+      block:
+        - name: What is on the drive now
+          ansible.builtin.command: lsblk -f {{ disk }}
+          register: contents
+          changed_when: false
+
+        - name: Confirmation required
+          ansible.builtin.assert:
+            that: confirm_wipe | default('') == ssd.serial
+            fail_msg: |
+              {{ inventory_hostname }}: {{ disk }} ({{ ssd.model }}, serial {{ ssd.serial }}) is not set up yet.
+              Setting it up ERASES everything on it. Now on it:
+              {{ contents.stdout }}
+              If that may be erased, run again with:  -e confirm_wipe={{ ssd.serial }}
+            quiet: true
+
+        - name: Erase, one GPT partition, ext4 labelled {{ ssd.label }}
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              wipefs -a {{ disk }}
+              parted -s {{ disk }} mklabel gpt mkpart {{ ssd.label }} ext4 1MiB 100%
+              udevadm settle
+              part="$(lsblk -nr -o NAME,TYPE {{ disk }} | awk '$2 == "part" {print "/dev/" $1; exit}')"
+              mkfs.ext4 -q -F -L {{ ssd.label }} -m 1 "$part"   # -m 1: 1 % reserved for root, not 5 %
+              udevadm settle
+              echo "$part"
+            executable: /bin/bash
+          register: formatted
+
+    # nofail + device timeout: if the SSD is missing or dead, the node still boots (without it)
+    - name: Mount {{ ssd.mount }} (by label; nofail)
+      ansible.posix.mount:
+        path: "{{ ssd.mount }}"
+        src: "LABEL={{ ssd.label }}"
+        fstype: ext4
+        opts: defaults,noatime,nofail,x-systemd.device-timeout=30s
+        state: mounted
+
+    - name: Folders (backup = S3 store, k8s = volumes for the Postgres replica later)
+      ansible.builtin.file:
+        path: "{{ ssd.mount }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [backup, k8s]
+
+    - name: Weekly TRIM (keeps SSD writes fast; harmless if the USB adapter does not pass it on)
+      ansible.builtin.systemd_service:
+        name: fstrim.timer
+        enabled: true
+        state: started
+
+    - name: Result
+      ansible.builtin.command: df -h {{ ssd.mount }}
+      register: df
+      changed_when: false
+
+    - name: Show
+      ansible.builtin.debug:
+        msg: "{{ df.stdout_lines }}"
