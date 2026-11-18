@@ -1,0 +1,21 @@
+# Host GitOps (docs/learn/14-host-gitops.md): everything about the MACHINES that should simply follow
+# main. Applied by homelab-apply.timer (ansible/files/homelab-apply.sh) after every new commit and
+# every 6 h (drift: undoes hand changes). By hand: ansible-playbook playbooks/site.yml -e key_passphrase=
+#
+# Only playbooks that are safe unattended and change nothing when everything is already right:
+#   workstation-prepare  node-workstation: packages, tools, timers, keys/repo (never recreates them)
+#   access               accounts, SSH keys, sshd on the Pis (sshd -t validates before reloading)
+#   ssd                  mounts the SSD; erasing still needs -e confirm_wipe=<serial> by a person
+#   backup-store         Garage on the SSD, buckets, keys from git
+# NOT here, on purpose (planned, by a person):
+#   k3s.yml              a version or config change restarts k3s on ALL nodes at once = an outage.
+#                        Needs node-by-node upgrades with drains first (roadmap).
+#   rebuild / restore / backup / phase2-migrate / verify   procedures or checks, not desired state
+- name: Workstation
+  ansible.builtin.import_playbook: workstation-prepare.yml
+- name: Accounts and SSH
+  ansible.builtin.import_playbook: access.yml
+- name: SSD
+  ansible.builtin.import_playbook: ssd.yml
+- name: Backup store
+  ansible.builtin.import_playbook: backup-store.yml

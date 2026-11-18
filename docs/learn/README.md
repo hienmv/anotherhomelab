@@ -21,6 +21,7 @@ start here.
 | 11 | [SLOs](11-slo.md) | SLI, SLO, error budget, burn-rate alerts to Telegram, testing alerts like code |
 | 12 | [Everything through git](12-gitops-secrets.md) | secrets encrypted in git (SOPS + age), instant chart upgrades, Flux messages, checks with the newest code |
 | 13 | [The SSD and backups](13-ssd-and-backups.md) | a USB SSD on a Pi (power, health, safe formatting); backups that survive a dead disk |
+| 14 | [Host GitOps](14-host-gitops.md) | the machines follow main too: the apply timer, what is applied and what not, secrets declared in git |
 | – | [Glossary](glossary.md) | every term used in these pages, in one place |
 
 ## Golden rules (learned the hard way, see the [postmortem](../postmortems/2026-11-11-phase2-migration.md))

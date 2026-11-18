@@ -61,7 +61,7 @@ or dead, node-8gb still boots, and `verify.yml` reports the missing mount.
 | **outside Kubernetes** | a plain systemd service on node-8gb | if the cluster breaks, the store you restore it from still works |
 | `RequiresMountsFor=/mnt/ssd` | the service only starts when the SSD is mounted | never quietly fills the Pi's SD card |
 | **one key per user** | `workstation` may use only `archives`, `cnpg-backup` only `cnpg` | least privilege: one leaked key exposes one bucket. Tested: the workstation key is refused on `cnpg` |
-| keys | Postgres': `k8s/secrets/data/backup-s3.sops.yaml` (git, encrypted). Workstation's: `~/.config/homelab/backup-s3.env` (mode 600, not in git) | each where it is used |
+| keys | **declared in git, encrypted**: Postgres' in `k8s/secrets/data/backup-s3.sops.yaml` (Flux gives it to Postgres), the workstation's in `ansible/secrets/backup-store.sops.yaml`. `backup-store.yml` imports them into Garage once and writes the workstation's into `~/.config/homelab/backup-s3.env` (mode 600) for rclone | one source of truth; nobody copies keys from a server ([chapter 14](14-host-gitops.md)) |
 | **nightly** | `homelab-backup.timer` runs `backup.yml` at 03:30: archive, copy to `ssd:archives`, delete copies older than 30 days (store and local) | before: only by hand |
 | checked by | `verify.yml`: Garage running + healthy; newest archive < 26 h old, also in the store | a failed night is a Telegram message the next morning |
 

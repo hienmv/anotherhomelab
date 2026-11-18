@@ -25,6 +25,7 @@
 | **deploy key** | an SSH key that may access **one** repository (read, or read + write); here for Flux, the workstation and CI's tag bumps |
 | **Deployment / Pod** | "run N copies of this image" / one running copy |
 | **drain** | `kubectl drain <node>`: move every pod off a node before maintenance (respects PDBs) |
+| **drift** | a machine or cluster no longer matching git (e.g. a change made by hand); GitOps undoes it |
 | **drill** | practising a procedure on purpose (e.g. a full rebuild) to prove it works |
 | **Flux** | GitOps tool inside the cluster: applies what is in git (chapter 3) |
 | **Garage** | a small S3 server; the backup store on node-8gb's SSD (chapter 13) |
@@ -32,6 +33,7 @@
 | **GitHub Actions secret** | an encrypted value stored in the repo's settings; workflows can use it, nobody can read it back (e.g. `CI_DEPLOY_KEY`) |
 | **gitleaks** | a scanner that looks for secrets (keys, tokens) in the git history; runs in CI |
 | **GitOps** | the cluster runs what is in git; changes happen by commits |
+| **host GitOps / pull model** | each machine applies the desired state from git itself (here: `homelab-apply.timer` runs `site.yml`) |
 | **Helm / HelmRelease** | packages of Kubernetes manifests ("charts") / Flux's object that installs one |
 | **idempotent** | running it again changes nothing if it is already right |
 | **Ingress / Traefik** | rule "this hostname goes to that app" / the program that applies those rules |

@@ -203,7 +203,8 @@
             User={{ automation_user }}
             WorkingDirectory={{ repo_dest }}/ansible
             Environment=ANSIBLE_LOG_PATH=/dev/null
-            ExecStart=/usr/bin/ansible-playbook playbooks/backup.yml
+            # one Ansible job at a time (shared with the check and the host apply)
+            ExecStart=/usr/bin/flock -w 3600 {{ automation_home }}/.local/state/homelab/ansible.lock /usr/bin/ansible-playbook playbooks/backup.yml
             TimeoutStartSec=1h
         - ext: timer
           content: |
@@ -224,6 +225,53 @@
         enabled: true
         state: started
         daemon_reload: "{{ backup_units is changed }}"
+
+    # Host GitOps (files/homelab-apply.sh, docs/learn/14-host-gitops.md): applies playbooks/site.yml
+    # after every new commit on main and every 6 h. Check: journalctl -u homelab-apply -n 50
+    - name: Host apply service + timer
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/homelab-apply.{{ item.ext }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - ext: service
+          content: |
+            [Unit]
+            Description=homelab host GitOps (site.yml follows main)
+            Wants=network-online.target
+            After=network-online.target
+            [Service]
+            Type=oneshot
+            User={{ automation_user }}
+            ExecStart={{ repo_dest }}/ansible/files/homelab-apply.sh
+            TimeoutStartSec=45min
+        - ext: timer
+          content: |
+            [Unit]
+            Description=homelab host GitOps every 15 min
+            [Timer]
+            OnCalendar={{ apply_every }}
+            Persistent=true
+            RandomizedDelaySec=1min
+            [Install]
+            WantedBy=timers.target
+      loop_control: { label: "homelab-apply.{{ item.ext }}" }
+      register: apply_units
+
+    - name: Host apply timer enabled and started
+      ansible.builtin.systemd_service:
+        name: homelab-apply.timer
+        enabled: true
+        state: started
+        daemon_reload: "{{ apply_units is changed }}"
+
+    - name: State folder of the timers (lock file, last logs)
+      ansible.builtin.file:
+        path: "{{ automation_home }}/.local/state/homelab"
+        state: directory
+        owner: "{{ automation_user }}"
+        group: "{{ automation_user }}"
+        mode: "0700"
 
     - name: Folder for the alerting settings (file itself is created by hand)
       ansible.builtin.file:
