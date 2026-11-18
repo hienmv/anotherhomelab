@@ -1,4 +1,4 @@
-# Alertmanager config, rendered by playbooks/alerting.yml into Secret monitoring/alertmanager-config.
+# Alertmanager config, rendered by playbooks/alerting.yml into k8s/secrets/monitoring/alertmanager-config.sops.yaml (encrypted).
 # Values come from {{ alerting_env }} (never in git). docs/learn/11-slo.md.
 route:
   receiver: blackhole                  # default: not sent anywhere (visible in vmalert's UI)

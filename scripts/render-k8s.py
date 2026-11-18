@@ -13,10 +13,13 @@ root = pathlib.Path(__file__).resolve().parent.parent
 cluster = sys.argv[1] if len(sys.argv) > 1 else "homelab"
 env = dict(os.environ)
 env.update(yaml.safe_load((root / f"clusters/{cluster}/site-settings.yaml").read_text())["data"])
-paths = [d["spec"]["path"] for d in yaml.safe_load_all((root / f"clusters/{cluster}/platform.yaml").read_text())
+# (path, substitute?) per Flux Kustomization: only those with postBuild get ${VAR} substitution
+# (secrets/notifications have none: SOPS files are applied exactly as decrypted).
+paths = [(d["spec"]["path"], "postBuild" in d["spec"])
+         for d in yaml.safe_load_all((root / f"clusters/{cluster}/platform.yaml").read_text())
          if d and d.get("kind") == "Kustomization"]
 failed = False
-for path in paths:
+for path, substitute in paths:
     build = subprocess.run(["kubectl", "kustomize", str(root / path)], capture_output=True, text=True)
     if build.returncode:
         print(f"{path}: kustomize build failed:\n{build.stderr}", file=sys.stderr); failed = True; continue
@@ -26,7 +29,7 @@ for path in paths:
             continue
         ann = (doc.get("metadata") or {}).get("annotations") or {}
         text = yaml.safe_dump(doc, sort_keys=True)
-        if ann.get("kustomize.toolkit.fluxcd.io/substitute") != "disabled":
+        if substitute and ann.get("kustomize.toolkit.fluxcd.io/substitute") != "disabled":
             sub = subprocess.run(["flux", "envsubst", "--strict"], input=text, capture_output=True, text=True, env=env)
             if sub.returncode:
                 name = f"{doc.get('kind')}/{(doc.get('metadata') or {}).get('name')}"

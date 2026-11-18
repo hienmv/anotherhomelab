@@ -223,7 +223,7 @@ def draw_ops():
         "kubectl helm k9s flux sops age",
         "kubeconfig ~/.kube/homelab.yaml",
         "ssh ops key -> Pis (IP-locked)",
-        "age key: backups (+ SOPS later)",
+        "age key: backups + SOPS secrets",
         "Mac / laptop: ssh in, nothing else",
     ])
     c.box(56, 0, 36, 5, title="GitHub", lines=[

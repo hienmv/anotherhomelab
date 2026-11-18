@@ -57,11 +57,12 @@
 | **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
 | **OpenTelemetry (OTel)** | the industry standard for producing and sending metrics, logs and traces: libraries/agent in the app, the Collector, standard field names (chapter 10) |
 | **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |
+| **Provider / Alert (Flux)** | where Flux sends messages (Telegram) / which events (changes, failures) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SLI / SLO / error budget** | measured share of good requests / its target (99.5 % in 30 days) / what may fail (0.5 %) |
-| **SOPS** | encrypts secrets so they can live in git (planned) |
+| **SOPS** | encrypts only the values of YAML files so secrets can live in git; Flux decrypts them with the age key (chapter 12) |
 | **span** | one timed step of a trace (an HTTP request, one SQL query, ...), with a `span_id` and a parent |
 | **structured logs** | log lines as JSON objects (`{"level":"INFO","status":200,...}`): every part is a searchable field |
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
@@ -73,4 +74,5 @@
 | **trace / trace_id** | everything one request caused, across programs / its id, also on every log line (`traceparent` header between programs) |
 | **VictoriaTraces** | the trace database (`vtsingle`, 7 days) |
 | **UID / GID** | the number Linux uses for a user / group; file owners are stored as numbers |
+| **watch label** | `reconcile.fluxcd.io/watch: Enabled` on a ConfigMap: the HelmRelease using it upgrades at once when it changes |
 | **verify.yml** | the read-only health check of the whole homelab |

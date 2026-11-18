@@ -9,5 +9,10 @@ configMapGenerator:
     namespace: flux-system
     files:
       - values.yaml=vm-stack-values.yaml
+    options:
+      labels:
+        # helm-controller upgrades the release as soon as this ConfigMap changes, instead of at
+        # its next hourly check (docs/learn/12-gitops-secrets.md): no `flux reconcile` needed.
+        reconcile.fluxcd.io/watch: Enabled
 generatorOptions:
   disableNameSuffixHash: true

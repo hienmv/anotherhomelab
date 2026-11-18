@@ -4,6 +4,7 @@
 #   homelab-check.sh          quick: verify.yml without the canary pods   (every 15 min)
 #   homelab-check.sh --full   everything, canary included                 (once a day)
 #
+# First `git pull --ff-only` of the repo it lives in: checks always run the code of main.
 # - Telegram message only when the state CHANGES (new problems / all good again), plus a reminder
 #   every 6 h while it stays broken.
 # - healthchecks.io: ping on success, /fail on problems. If the pings STOP (homelab, power or
@@ -25,6 +26,14 @@ args=(--skip-tags containers); [ "${1:-}" = "--full" ] && args=()
 out="$state_dir/last-check.log"
 export ANSIBLE_LOG_PATH=/dev/null
 
+# Check with the current main (docs/learn/12-gitops-secrets.md): fast-forward only, so local
+# changes are never overwritten; if it cannot, that is reported as a problem. (Safe while running:
+# git writes new files, this bash keeps reading the old one.)
+pull_problem=""
+if ! pull_out="$(git -C "$repo_ansible/.." pull --ff-only -q 2>&1)"; then
+  pull_problem="- repo on $(hostname -s) not updated from GitHub (checked with the old code): $(printf '%s' "$pull_out" | tr '\n' ' ' | cut -c1-160)"
+fi
+
 cd "$repo_ansible"
 ansible-playbook playbooks/verify.yml "${args[@]}" > "$out" 2>&1
 rc=$?
@@ -33,6 +42,9 @@ rc=$?
 problems="$(grep -oE '"[0-9]+ problem\(s\) on [^"]+"' "$out" | tr -d '"' | sed 's/^/- /')"
 if [ $rc -ne 0 ] && [ -z "$problems" ]; then
   problems="- verify.yml failed before its checks finished (exit $rc): $(grep -m1 -E 'ERROR|fatal' "$out" | cut -c1-200)"
+fi
+if [ -n "$pull_problem" ]; then
+  problems="$(printf '%s\n%s' "$pull_problem" "$problems" | sed '/^$/d')"; rc=1
 fi
 
 now=$(date +%s)

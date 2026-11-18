@@ -1,14 +1,17 @@
-# Alertmanager's config as a Kubernetes Secret, made from the same settings file the scheduled checks
-# use (docs/learn/11-slo.md). Run as the automation user on node-workstation:
-#   ansible-playbook playbooks/alerting.yml
-# Again after changing the Telegram bot or chat, and after a rebuild (rebuild.yml imports it).
-- name: Alertmanager config (Telegram) from alerting.env
+# Alerting secrets into git, encrypted with SOPS (docs/learn/12-gitops-secrets.md), made from the same
+# settings file the scheduled checks use (~/.config/homelab/alerting.env, never in git):
+#   k8s/secrets/monitoring/alertmanager-config.sops.yaml   Alertmanager -> Telegram (SLO alerts)
+#   k8s/notifications/telegram.sops.yaml                   Flux -> Telegram (deploys, failures)
+# Run as the automation user on node-workstation after changing the bot or chat, then commit + PR:
+#   cd ansible && ansible-playbook playbooks/alerting.yml && git diff --stat
+# Nothing is applied to the cluster: Flux applies the files after the merge.
+- name: Alerting secrets (Telegram) from alerting.env, encrypted into the repo
   hosts: workstation
   gather_facts: false
-  environment:
-    KUBECONFIG: "{{ kubeconfig }}"
   vars:
     alerting_env: "{{ automation_home }}/.config/homelab/alerting.env"
+  environment:
+    SOPS_AGE_KEY_FILE: "{{ age_key }}"
   tasks:
     - name: Read alerting.env (KEY=value lines)
       ansible.builtin.slurp:
@@ -31,18 +34,59 @@
         fail_msg: "{{ alerting_env }} needs TELEGRAM_BOT_TOKEN and a numeric TELEGRAM_CHAT_ID (K3S-GUIDE section 12)"
         quiet: true
 
-    - name: Secret monitoring/alertmanager-config
+    - name: .sops.yaml present (made by scripts/secrets/bootstrap.sh)
+      ansible.builtin.stat:
+        path: "{{ repo_root }}/.sops.yaml"
+      register: sops_cfg
+      failed_when: not sops_cfg.stat.exists
+
+    - name: Encrypted files (unchanged content = file left as is, so git shows no diff)
       ansible.builtin.shell: |
         set -euo pipefail
-        kubectl -n monitoring create secret generic alertmanager-config \
-          --from-file=alertmanager.yaml=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
+        out={{ item.out | quote }}
+        tmp="$(mktemp -d "${XDG_RUNTIME_DIR:-/dev/shm}/alerting.XXXXXX")"; trap 'rm -rf "$tmp"' EXIT
+        cat > "$tmp/plain.yaml"
+        if [ -f "$out" ] && sops --decrypt "$out" | python3 -c '
+        import sys, yaml
+        a = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d]
+        b = [d for d in yaml.safe_load_all(sys.stdin) if d]
+        sys.exit(0 if a == b else 1)' "$tmp/plain.yaml"; then
+          echo unchanged; exit 0
+        fi
+        mkdir -p "$(dirname "$out")"
+        sops --encrypt --filename-override "$out" --input-type yaml --output-type yaml "$tmp/plain.yaml" > "$out.new"
+        mv "$out.new" "$out"
+        echo written
       args:
         executable: /bin/bash
-        stdin: "{{ lookup('ansible.builtin.template', playbook_dir ~ '/../templates/alertmanager.yml.j2') }}"
-      register: secret
-      changed_when: "'configured' in secret.stdout or 'created' in secret.stdout"
+        chdir: "{{ repo_root }}"
+        stdin: "{{ item.content }}"
+      loop:
+        - out: k8s/secrets/monitoring/alertmanager-config.sops.yaml
+          content: "{{ {'apiVersion': 'v1', 'kind': 'Secret',
+                        'metadata': {'name': 'alertmanager-config', 'namespace': 'monitoring'},
+                        'stringData': {'alertmanager.yaml': lookup('ansible.builtin.template', playbook_dir ~ '/../templates/alertmanager.yml.j2')}}
+                       | to_nice_yaml(width=1000) }}"
+        - out: k8s/notifications/telegram.sops.yaml
+          content: "{{ ({'apiVersion': 'v1', 'kind': 'Secret',
+                         'metadata': {'name': 'telegram', 'namespace': 'flux-system'},
+                         'stringData': {'token': alerting.TELEGRAM_BOT_TOKEN}} | to_nice_yaml)
+                       ~ '---\n'
+                       ~ ({'apiVersion': 'notification.toolkit.fluxcd.io/v1beta3', 'kind': 'Provider',
+                           'metadata': {'name': 'telegram', 'namespace': 'flux-system'},
+                           'spec': {'type': 'telegram', 'channel': alerting.TELEGRAM_CHAT_ID | string,
+                                    'secretRef': {'name': 'telegram'}}} | to_nice_yaml) }}"
+      loop_control: { label: "{{ item.out }}" }
+      register: files
+      changed_when: "'written' in files.stdout"
       no_log: true
+
+    - name: Kustomization file lists
+      ansible.builtin.command: scripts/secrets/index.sh
+      args:
+        chdir: "{{ repo_root }}"
+      changed_when: false
 
     - name: Result
       ansible.builtin.debug:
-        msg: "alertmanager-config {{ 'updated' if secret is changed else 'unchanged' }}; Alertmanager reloads it within a minute"
+        msg: "{{ files.results | map(attribute='item.out') | zip(files.results | map(attribute='stdout')) | map('join', ': ') | list }} -> review `git diff --stat`, commit, PR"

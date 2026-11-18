@@ -6,7 +6,10 @@
 #   ... -e backup_file=<backup_dir>/<cluster_name>-<date>.tar.gz.age   (paths: group_vars/all.yml)
 #
 # Not restored on purpose: data/pg-app (CNPG creates a new one) and apps/app-env (rebuilt from the
-# new pg-app + the restored redis secret, the same way K3S-GUIDE section 5 builds it).
+# new pg-app + the redis secret, the same way K3S-GUIDE section 5 builds it).
+# Since 2026-11-18 most secrets come from git (k8s/secrets/*.sops.yaml, docs/learn/12-gitops-secrets.md):
+# those are skipped here, Flux decrypts them with the age key, given to it as Secret
+# flux-system/sops-age. From the backup only what git cannot hold: Flux's own git key.
 
 - name: Restore secrets, Flux and PostgreSQL
   hosts: workstation
@@ -17,6 +20,18 @@
     flux_dir: "{{ repo_root }}/clusters/{{ cluster_name }}/flux-system"
     skip_secrets: [data--pg-app.json, apps--app-env.json]
   tasks:
+    - name: Secrets that come from git (k8s/secrets/<ns>/<name>.sops.yaml -> <ns>--<name>.json)
+      ansible.builtin.find:
+        paths: "{{ repo_root }}/k8s/secrets"
+        patterns: "*.sops.yaml"
+        recurse: true
+      register: git_secrets
+
+    - name: Skip list = generated per cluster + managed in git
+      ansible.builtin.set_fact:
+        skip_secrets: "{{ skip_secrets + (git_secrets.files | map(attribute='path')
+                          | map('regex_replace', '^.*/k8s/secrets/([^/]+)/([^/]+)\\.sops\\.yaml$', '\\1--\\2.json') | list) }}"
+
     - name: Newest backup unless backup_file is given
       ansible.builtin.shell: ls -t {{ backup_dir }}/{{ cluster_name }}-*.tar.gz.age | head -1
       register: newest
@@ -83,6 +98,15 @@
                     | reject('search', skip_secrets | join('|')) | list }}"
           loop_control: { label: "{{ item | basename }}" }
 
+        - name: Flux's decryption key (Secret flux-system/sops-age, from the age key file)
+          ansible.builtin.shell: |
+            set -euo pipefail
+            kubectl -n flux-system create secret generic sops-age --from-file=age.agekey={{ age_key | quote }} \
+              --dry-run=client -o yaml | kubectl apply --server-side --field-manager=homelab-restore -f -
+          args:
+            executable: /bin/bash
+          no_log: true
+
         - name: Flux sync (GitRepository + root Kustomization); Flux builds everything else from git
           ansible.builtin.command: >-
             kubectl apply --server-side --field-manager=homelab-restore -k {{ work.stdout }}/flux-system
@@ -112,7 +136,12 @@
           changed_when: false
           when: pg_ready.rc != 0
 
-        - name: apps/app-env from the new pg-app and the restored redis secret
+        - name: Secrets from git applied (Flux decrypted k8s/secrets)
+          ansible.builtin.command: kubectl -n flux-system wait kustomization/secrets --for=condition=Ready --timeout=600s
+          changed_when: false
+          when: git_secrets.files | length > 0
+
+        - name: apps/app-env from the new pg-app and the redis secret
           ansible.builtin.shell: |
             set -euo pipefail
             get() { kubectl -n data get secret "$1" -o jsonpath="{.data.$2}" | base64 -d; }

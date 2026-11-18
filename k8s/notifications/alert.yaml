@@ -1,0 +1,20 @@
+# Flux tells you what it did (docs/learn/12-gitops-secrets.md): a Telegram message when a
+# Kustomization applies a change or fails, when a HelmRelease upgrades or fails.
+# The Provider (bot + chat) is encrypted: telegram.sops.yaml, written by playbooks/alerting.yml.
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: telegram
+  namespace: flux-system
+spec:
+  providerRef: { name: telegram }
+  summary: homelab
+  eventSeverity: info          # changes and errors (Flux sends no event when nothing changed)
+  eventSources:
+    - { kind: Kustomization, name: "*" }
+    - { kind: HelmRelease, name: "*" }
+    - { kind: GitRepository, name: "*" }
+    - { kind: HelmRepository, name: "*" }
+  exclusionList:
+    # GitRepository/HelmRepository info events are just "stored artifact": only their errors matter
+    - "^stored artifact"

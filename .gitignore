@@ -13,6 +13,14 @@ tunnel*.json
 .env.*
 *.secret.yaml
 secrets/
+# ...except encrypted secrets (SOPS, docs/learn/12-gitops-secrets.md) and the tooling. In k8s/secrets
+# only *.sops.yaml and the kustomization are allowed: a plain file put there stays ignored.
+!k8s/secrets/
+k8s/secrets/**
+!k8s/secrets/**/
+!k8s/secrets/kustomization.yaml
+!k8s/secrets/**/*.sops.yaml
+!scripts/secrets/
 
 # Backups / archives
 *.tgz
