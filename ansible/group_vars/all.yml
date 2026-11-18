@@ -29,6 +29,7 @@ helm_version: v4.3.1
 k9s_version: v0.51.0
 flux_version: 2.10.0
 sops_version: v3.13.3
+rclone_version: v1.75.2            # backup uploads (S3 store on the SSD, later R2); checksum from SHA256SUMS
 
 deploy_key_title: homelab-workstation-admin   # GitHub deploy key of the workstation (read/write)
 k3s_version: v1.37.2+k3s1
@@ -54,3 +55,23 @@ check_full_at: "*-*-* 04:15:00"      # once a day, everything (canary included)
 expiry_warn_days: 30
 expiry_dates:
   - { name: "ghcr-pull token (classic PAT, read:packages; K3S-GUIDE secrets)", date: "2027-02-07" }   # GitHub token page, checked 2026-11-16
+
+# Backup store (docs/learn/13-ssd-and-backups.md, playbooks/backup-store.yml): Garage, an S3 server,
+# as a plain systemd service on the node with the SSD, OUTSIDE Kubernetes (a broken cluster cannot
+# take its own backups with it). One key per user, each allowed only its own bucket.
+backup_store:
+  host: node-8gb
+  port: 3900
+  region: garage
+  capacity: 50G                      # of the 59 GB SSD; the rest: Postgres replica (stage 2), headroom
+  data_dir: /mnt/ssd/backup/garage   # requires the SSD mount (systemd RequiresMountsFor)
+  buckets:
+    - { name: cnpg, key: cnpg-backup }        # Postgres WAL archive + base backups (part C)
+    - { name: archives, key: workstation }    # nightly backup.yml archives
+garage_version: v2.5.0
+# Garage publishes no checksum file: sha256 pinned 2026-11-18 after comparing the download with the
+# binary inside the official image dxflrs/garage:v2.5.0 (two channels, same hash).
+garage_sha256: 69b6040cef428b993500c17dd0d0c1240acf2f3f667b9b05ceba4b9660db4e8c
+backup_store_env: "{{ automation_home }}/.config/homelab/backup-s3.env"   # rclone settings + key (not in git)
+backup_keep_days: 30
+backup_at: "*-*-* 03:30:00"          # systemd OnCalendar: nightly backup.yml + upload

@@ -184,6 +184,47 @@
         daemon_reload: "{{ check_services is changed or check_timers is changed }}"
       loop: ["", "-full"]
 
+    # Nightly backup (playbooks/backup.yml): archive + copy to the SSD's S3 store, 30 days kept.
+    # Check: systemctl list-timers homelab-backup; journalctl -u homelab-backup -n 50
+    - name: Nightly backup service + timer
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/homelab-backup.{{ item.ext }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - ext: service
+          content: |
+            [Unit]
+            Description=homelab nightly backup (backup.yml: archive + copy to the SSD store)
+            Wants=network-online.target
+            After=network-online.target
+            [Service]
+            Type=oneshot
+            User={{ automation_user }}
+            WorkingDirectory={{ repo_dest }}/ansible
+            Environment=ANSIBLE_LOG_PATH=/dev/null
+            ExecStart=/usr/bin/ansible-playbook playbooks/backup.yml
+            TimeoutStartSec=1h
+        - ext: timer
+          content: |
+            [Unit]
+            Description=homelab nightly backup
+            [Timer]
+            OnCalendar={{ backup_at }}
+            Persistent=true
+            RandomizedDelaySec=10min
+            [Install]
+            WantedBy=timers.target
+      loop_control: { label: "homelab-backup.{{ item.ext }}" }
+      register: backup_units
+
+    - name: Nightly backup timer enabled and started
+      ansible.builtin.systemd_service:
+        name: homelab-backup.timer
+        enabled: true
+        state: started
+        daemon_reload: "{{ backup_units is changed }}"
+
     - name: Folder for the alerting settings (file itself is created by hand)
       ansible.builtin.file:
         path: "{{ automation_home }}/.config/homelab"
@@ -257,6 +298,26 @@
         checksum: "sha256:https://github.com/getsops/sops/releases/download/{{ sops_version }}/sops-{{ sops_version }}.checksums.txt"
         dest: /usr/local/bin/sops
         mode: "0755"
+
+    # rclone: copies backups to S3 stores (the SSD's Garage; later R2). Zip with one folder inside.
+    - name: rclone {{ rclone_version }} (download, checksum from the release's SHA256SUMS)
+      ansible.builtin.get_url:
+        url: "https://github.com/rclone/rclone/releases/download/{{ rclone_version }}/rclone-{{ rclone_version }}-linux-amd64.zip"
+        checksum: "sha256:https://github.com/rclone/rclone/releases/download/{{ rclone_version }}/SHA256SUMS"
+        dest: "/var/cache/rclone-{{ rclone_version }}.zip"
+        mode: "0644"
+
+    - name: rclone into /usr/local/bin
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+          python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' /var/cache/rclone-{{ rclone_version }}.zip "$d"
+          install -m 0755 "$d"/rclone-*/rclone /usr/local/bin/rclone
+        executable: /bin/bash
+      when: >-
+        (lookup('ansible.builtin.pipe', 'rclone version 2>/dev/null | head -1 || true') | default(''))
+        is not search(rclone_version ~ '$')
 
     - name: Download tarball tools (helm, k9s, flux)
       ansible.builtin.get_url:
