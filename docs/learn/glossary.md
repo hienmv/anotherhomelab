@@ -66,6 +66,7 @@
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
 | **S3 / bucket / object** | the standard object-storage API / a named container / one stored file (Garage on the SSD, later R2) |
 | **S.M.A.R.T.** | a disk's own health log (`smartctl`): failing sectors, transfer errors, age |
+| **3-2-1 rule** | 3 copies of data, on 2 kinds of storage, 1 off-site (+1 immutable, 0 restore errors); chapter 13 |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SLI / SLO / error budget** | measured share of good requests / its target (99.5 % in 30 days) / what may fail (0.5 %) |

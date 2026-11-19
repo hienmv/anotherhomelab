@@ -4,6 +4,35 @@ Until now Postgres, metrics, logs and traces lived on **one disk** (node-worksta
 backup archives too. One dead disk = everything gone. This chapter adds a second disk on another
 machine and, step by step, real backups. (Stage 1 of the roadmap; parts B-D follow.)
 
+## The 3-2-1 rule: how many copies, where
+
+The rule backup professionals have used for decades (and still the baseline in cloud guidance):
+
+| Number | Rule | Protects against |
+|---|---|---|
+| **3** | keep **three copies** of your data: the live one + two backups | one copy failing is normal; two failing at once is rare |
+| **2** | on **two different kinds of storage** (different disks, machines, or media) | one kind of failure taking out every copy: one disk model's bug, one machine's power supply, one filesystem |
+| **1** | **one copy off-site**, somewhere else entirely | fire, flood, theft, a power surge, a burglar taking the box with both disks |
+
+Modern versions add two letters, **3-2-1-1-0**:
+
+| | Rule | Why |
+|---|---|---|
+| **1** | one copy **immutable or offline**: nobody, not even an admin or malware, can delete it before its time | ransomware deletes backups first; a mistake (`rm`, a wrong script) can too |
+| **0** | **zero errors when restoring**: test restores regularly | a backup that was never restored is a hope, not a backup (our drills) |
+
+How this homelab measures up:
+
+| | Copy | Where | Kind of storage |
+|---|---|---|---|
+| 1 | live Postgres | node-workstation, internal NVMe | |
+| 2 | WAL + nightly base backups, nightly archives | node-8gb, USB SSD (Garage) | another disk, another machine ✅ |
+| 3 | encrypted copy (part D) | Cloudflare R2, another city | another provider, **off-site** ✅ |
+| +1 | R2 only adds, never deletes; R2 itself expires objects after 35 days | | protects against deleting both local copies (close to "immutable") |
+| 0 | PITR drill (restore to a chosen second), off-site check (part D) | | tested ✅ |
+
+Before this chapter: 2 copies (live + an archive on the **same** disk), 0 off-site, never restored.
+
 ## Part A: the SSD (2026-11-18)
 
 | | |
