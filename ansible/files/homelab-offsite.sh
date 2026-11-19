@@ -18,6 +18,7 @@ state="${STATE_DIRECTORY:-/var/lib/homelab-offsite}"
 opts=(--config /dev/null --stats-one-line --stats 0 --transfers 4 --checkers 8 --retries 5 --low-level-retries 10)
 
 summary=""
+m_bytes="" m_files=""
 for b in $BUCKETS; do
   rclone copy "store:$b" "offsite:$b" --immutable "${opts[@]}"
   # proves every local file exists off-site and decrypts to the same content (hashes compared)
@@ -25,6 +26,23 @@ for b in $BUCKETS; do
   n=$(rclone lsf -R --files-only "store:$b" --config /dev/null | wc -l)
   size=$(rclone size "store:$b" --config /dev/null --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["bytes"])')
   summary="$summary $b=${n}files/$((size / 1048576))MiB"
+  m_bytes="${m_bytes}homelab_backup_offsite_bucket_bytes{bucket=\"$b\"} $size"$'\n'
+  m_files="${m_files}homelab_backup_offsite_bucket_files{bucket=\"$b\"} $n"$'\n'
 done
 echo "$(date +%s)$summary" > "$state/last-ok"
+# per-bucket size off-site, for the "Backups" dashboard (status/duration: homelab-backup-metrics)
+tf=/var/lib/node_exporter/textfile
+if [ -w "$tf" ]; then
+  tmp=$(mktemp "$tf/.tmp.XXXXXX")
+  # one block per metric (the text format wants each metric's lines together)
+  {
+    echo "# HELP homelab_backup_offsite_bucket_bytes Bytes per bucket at the last off-site copy."
+    echo "# TYPE homelab_backup_offsite_bucket_bytes gauge"
+    printf '%s' "$m_bytes"
+    echo "# HELP homelab_backup_offsite_bucket_files Files per bucket at the last off-site copy."
+    echo "# TYPE homelab_backup_offsite_bucket_files gauge"
+    printf '%s' "$m_files"
+  } > "$tmp"
+  chmod 644 "$tmp"; mv -f "$tmp" "$tf/homelab_backup_offsite_buckets.prom"
+fi
 echo "off-site copy ok:$summary"

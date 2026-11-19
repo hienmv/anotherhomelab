@@ -186,6 +186,20 @@
 
     # Nightly backup (playbooks/backup.yml): archive + copy to the SSD's S3 store, 30 days kept.
     # Check: systemctl list-timers homelab-backup; journalctl -u homelab-backup -n 50
+    - name: Metrics folder for node-exporter (backup jobs write their results there)
+      ansible.builtin.file:
+        path: /var/lib/node_exporter/textfile
+        state: directory
+        owner: root
+        group: "{{ automation_user }}"
+        mode: "0775"
+
+    - name: Metrics writer (/usr/local/bin/homelab-backup-metrics)
+      ansible.builtin.copy:
+        src: ../files/backup-metrics.sh
+        dest: /usr/local/bin/homelab-backup-metrics
+        mode: "0755"
+
     - name: Nightly backup service + timer
       ansible.builtin.copy:
         dest: "/etc/systemd/system/homelab-backup.{{ item.ext }}"
@@ -203,8 +217,11 @@
             User={{ automation_user }}
             WorkingDirectory={{ repo_dest }}/ansible
             Environment=ANSIBLE_LOG_PATH=/dev/null
+            # results as metrics (files/backup-metrics.sh -> node-exporter -> Grafana "Backups")
+            ExecStartPre=/usr/local/bin/homelab-backup-metrics start archive
             # one Ansible job at a time (shared with the check and the host apply)
             ExecStart=/usr/bin/flock -w 3600 {{ automation_home }}/.local/state/homelab/ansible.lock /usr/bin/ansible-playbook playbooks/backup.yml
+            ExecStopPost=/usr/local/bin/homelab-backup-metrics stop archive "{{ backup_dir }}/{{ cluster_name }}-*.tar.gz.age"
             TimeoutStartSec=1h
         - ext: timer
           content: |
