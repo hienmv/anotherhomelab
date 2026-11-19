@@ -31,11 +31,18 @@
       changed_when: false
       failed_when: n_backups.stdout | int < 1
 
-    - name: No restored copy left from an earlier run (keep=true)
+    - name: Is a restored copy from an earlier run (keep=true) still there?
       ansible.builtin.command: kubectl -n {{ ns }} get cluster.postgresql.cnpg.io {{ drill }} --ignore-not-found -o name
       register: leftover
       changed_when: false
-      failed_when: leftover.stdout | length > 0
+
+    - name: No restored copy left from an earlier run
+      ansible.builtin.assert:
+        that: leftover.stdout | length == 0
+        fail_msg: >-
+          {{ drill }} from an earlier run (keep=true) still exists: look at it, then delete it with
+          kubectl -n {{ ns }} delete cluster {{ drill }}   and run this again.
+        quiet: true
 
     - name: Live primary pod
       ansible.builtin.shell:
