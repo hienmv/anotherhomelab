@@ -2,7 +2,9 @@
 # on the SSD store can bring the data back to a chosen moment. The LIVE database is never touched:
 # the restore goes into a separate, temporary cluster `pg-drill`, which is deleted at the end.
 #
-#   cd ansible && ansible-playbook playbooks/pitr-drill.yml
+#   cd ansible && ansible-playbook playbooks/pitr-drill.yml                    # drill: restore to "now", compare
+#   ... -e target_time=2026-11-19T05:30:00Z -e keep=true                        # restore to a chosen moment, keep it
+#        (keep: pg-drill stays for you to look at; delete: kubectl -n data delete cluster pg-drill)
 #
 # 1. In ONE snapshot of the live database: the time T and the row count of every table
 # 2. One marker transaction after T, close the WAL segment, wait until it is archived
@@ -29,6 +31,12 @@
       changed_when: false
       failed_when: n_backups.stdout | int < 1
 
+    - name: No restored copy left from an earlier run (keep=true)
+      ansible.builtin.command: kubectl -n {{ ns }} get cluster.postgresql.cnpg.io {{ drill }} --ignore-not-found -o name
+      register: leftover
+      changed_when: false
+      failed_when: leftover.stdout | length > 0
+
     - name: Live primary pod
       ansible.builtin.shell:
         cmd: kubectl -n {{ ns }} get pod -l cnpg.io/cluster=pg,cnpg.io/instanceRole=primary -o name | head -1 | cut -d/ -f2
@@ -37,7 +45,8 @@
       failed_when: primary.stdout | length == 0
 
     # REPEATABLE READ: the counts and now() come from the same snapshot, i.e. exactly the state at T
-    - name: Time T and row counts, from one snapshot of the live database
+    - name: Time T and row counts, from one snapshot of the live database (drill mode)
+      when: target_time is not defined
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
@@ -53,7 +62,8 @@
       register: live
       changed_when: false
 
-    - name: Target time and live counts
+    - name: Target time and live counts (drill mode)
+      when: target_time is not defined
       ansible.builtin.set_fact:
         target_time: "{{ (live.stdout_lines | select('match', '^T ') | first).split()[1] }}"
         live_counts: "{{ live.stdout_lines | reject('match', '^T ') | list }}"
@@ -134,7 +144,8 @@
           register: took
           changed_when: false
 
-        - name: Row counts in the restored copy (same tables)
+        - name: Row counts in the restored copy (same tables; drill mode)
+          when: live_counts is defined
           ansible.builtin.shell:
             cmd: |
               set -euo pipefail
@@ -145,20 +156,31 @@
           register: restored
           changed_when: false
 
-        - name: Same rows as the live database at T
+        - name: Same rows as the live database at T (drill mode)
+          when: live_counts is defined
           ansible.builtin.assert:
             that: restored.stdout_lines == live_counts
             fail_msg: "restored {{ restored.stdout_lines }} != live at {{ target_time }} {{ live_counts }}"
             success_msg: "restored {{ restored.stdout_lines | length }} tables, identical to the live database at {{ target_time }}"
 
       always:
-        - name: Delete {{ drill }} (its volume goes with it)
+        - name: Delete {{ drill }} (its volume goes with it), unless keep=true
+          when: not (keep | default(false) | bool)
           ansible.builtin.command: kubectl -n {{ ns }} delete cluster.postgresql.cnpg.io {{ drill }} --ignore-not-found --wait=true --timeout=300s
           changed_when: true
 
     - name: Drill result (paste into the drill log, docs/learn/13-ssd-and-backups.md)
+      when: live_counts is defined
       ansible.builtin.debug:
         msg:
           - "PITR drill {{ lookup('pipe', 'date +%Y-%m-%d') }}: target {{ target_time }}, restore took {{ (took.stdout | int) // 60 }} min {{ (took.stdout | int) % 60 }} s"
           - "rows: {{ live_counts | join(', ') }}"
           - "base backups available: {{ n_backups.stdout }}"
+
+    - name: Restored copy ready (chosen time)
+      when: live_counts is not defined
+      ansible.builtin.debug:
+        msg:
+          - "{{ drill }} = the database as it was at {{ target_time }} (restore took {{ took.stdout | default('?') }} s)"
+          - "look:   kubectl -n {{ ns }} exec -it {{ drill }}-1 -c postgres -- psql -U postgres -d <database>"
+          - "{{ 'delete: kubectl -n ' ~ ns ~ ' delete cluster ' ~ drill if (keep | default(false) | bool) else 'already deleted (add -e keep=true to keep it)' }}"
