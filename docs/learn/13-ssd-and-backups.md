@@ -131,6 +131,29 @@ newest base backup < 26 h old.
 
 `pg-drill` only reads the backups: it has no WAL archiver, so it can never write into them.
 
+### Try it yourself: undo an "accident"
+
+Restore to a moment **you** choose, into a side copy you can look at (the live database stays as it is):
+
+```bash
+P="kubectl -n data exec -i pg-1 -c postgres -- psql -U postgres"
+$P -c "create database playground"                      # a scratch database, not TicketLite's
+$P -d playground -c "create table notes(t text); insert into notes values ('one'),('two'),('three')"
+sleep 5; date -u +%Y-%m-%dT%H:%M:%SZ                     # note this time: "before the accident"
+sleep 5; $P -d playground -c "delete from notes"         # the accident: all rows gone
+$P -d playground -c "select count(*) from notes"         # 0 in the live database
+
+cd ~/workspace/source/homelab/ansible
+ansible-playbook playbooks/pitr-drill.yml -e target_time=<the time you noted> -e keep=true
+kubectl -n data exec -i pg-drill-1 -c postgres -- psql -U postgres -d playground -c "select * from notes"   # one, two, three
+kubectl -n data delete cluster pg-drill                  # the side copy
+$P -c "drop database playground"                         # tidy up
+```
+
+In a real incident you would now copy the lost rows from the side copy back into the live database
+(`pg_dump -t notes` from `pg-drill`, `psql` into `pg`), never overwrite the live database blindly.
+The target must be after the oldest base backup still kept (`kubectl -n data get backups`).
+
 ### Drill log
 
 | Date | Target T | Restore took | Result |
