@@ -27,7 +27,7 @@ How this homelab measures up:
 |---|---|---|---|
 | 1 | live Postgres | node-workstation, internal NVMe | |
 | 2 | WAL + nightly base backups, nightly archives | node-8gb, USB SSD (Garage) | another disk, another machine ✅ |
-| 3 | encrypted copy (part D) | Cloudflare R2, another city | another provider, **off-site** ✅ |
+| 3 | encrypted copy (part D, nightly 04:30) | Cloudflare R2, another city | another provider, **off-site** ✅ (once R2 is set up) |
 | +1 | R2 only adds, never deletes; R2 itself expires objects after 35 days | | protects against deleting both local copies (close to "immutable") |
 | 0 | PITR drill (restore to a chosen second), off-site check (part D) | | tested ✅ |
 
@@ -189,10 +189,54 @@ The target must be after the oldest base backup still kept (`kubectl -n data get
 |---|---|---|---|
 | 2026-11-19 | 2026-11-19T05:39:48.749Z (14:39:48 JST) | **54 s** | ✅ 4 tables identical to the live database at T (concerts 7, flyway_schema_history 2, orders 27, users 3); 1 base backup + WAL. A first attempt the same day timed out waiting for the WAL (idle database, fixed: marker transaction) |
 
+## Part D: the off-site copy (Cloudflare R2)
+
+```text
+ node-8gb                                                          Cloudflare R2 (off-site)
+ Garage  store:cnpg, store:archives ──► rclone crypt (encrypt) ──► bucket homelab-offsite
+         (read-only key "offsite")      nightly 04:30, user offsite   scrambled content + names
+                                        then cryptcheck: every file there, identical
+```
+
+| Choice | Why |
+|---|---|
+| **R2** | your Cloudflare account exists already; free tier 10 GB storage, **no download fees** (a restore costs nothing) |
+| **encrypted before upload** (rclone crypt) | Cloudflare only ever sees scrambled data and file names (tested: the plain text appears nowhere in R2's data) |
+| **copy, never delete**; `--immutable` | if the local backups are deleted (mistake, ransomware), the off-site copy is not (tested). A file that exists off-site is never overwritten |
+| **R2 lifecycle rule: delete after 35 days** | R2 removes old copies itself, so storage stays small; a few days longer than the local 30 |
+| **read-only Garage key** | the job can read the backups, never change or delete them (Ansible re-applies exactly "read" every 6 h) |
+| **`cryptcheck` after every copy** | proves every local file exists off-site and decrypts to the same content |
+| checked by | `verify.yml` (`offsite:`): last successful copy < 26 h ago |
+
+### Setting it up (the only manual part: Cloudflare's credentials)
+
+1. **Cloudflare dashboard → R2 Object Storage.** First time: enable R2 (Cloudflare asks for a payment
+   method even for the free tier; under 10 GB nothing is charged).
+2. **Create bucket** → name `homelab-offsite`, location Automatic → Create.
+3. In the bucket → **Settings → Object lifecycle rules → Add rule**: "delete objects 35 days after
+   they were uploaded", applied to the whole bucket.
+4. R2 overview → **Manage R2 API tokens → Create API token**: permission **Object Read & Write**,
+   **Specify bucket: homelab-offsite** (only this one), no expiry or a long one → Create. Copy the
+   **Access Key ID** and **Secret Access Key** (shown once) and note the **Account ID** (R2 overview).
+5. On node-workstation as `ops`, in the repo: `scripts/secrets/set-r2.sh` (asks for the 4 values,
+   hidden input, writes `ansible/secrets/r2.sops.yaml` encrypted), then commit, push a branch, PR.
+6. After the merge: host GitOps installs the job within ~15 min and starts the first copy.
+7. **Password manager:** `sops -d ansible/secrets/offsite.sops.yaml` (as `ops`) shows the crypt
+   **password** and **salt**. Store both: if node-workstation and the SSD are gone, they and the
+   age key are what turn the R2 copy back into data.
+
+### Restoring from R2 (if both local copies are gone)
+
+```bash
+# with the env settings of the job (the crypt password/salt from the password manager):
+rclone copy offsite:cnpg     <new store>:cnpg       # Postgres WAL + base backups, decrypted
+rclone copy offsite:archives <new store>:archives   # nightly archives (still age-encrypted)
+# then: Postgres restore (pitr-drill.yml mechanism / restore.yml), archives with the age key
+```
+
 ## Next parts
 
 | Part | What |
 |---|---|
-| D | nightly encrypted copy to Cloudflare R2 (off-site: survives fire or theft) |
 
 Back to: [README](README.md)

@@ -64,6 +64,7 @@
 | **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |
 | **Provider / Alert (Flux)** | where Flux sends messages (Telegram) / which events (changes, failures) |
 | **ruleset** | GitHub's branch protection: who may change `main`, and how (`.github/rulesets/main.json`) |
+| **R2 / rclone crypt** | Cloudflare's S3 storage (the off-site copy) / rclone's encryption layer: content and names scrambled before upload |
 | **S3 / bucket / object** | the standard object-storage API / a named container / one stored file (Garage on the SSD, later R2) |
 | **S.M.A.R.T.** | a disk's own health log (`smartctl`): failing sectors, transfer errors, age |
 | **3-2-1 rule** | 3 copies of data, on 2 kinds of storage, 1 off-site (+1 immutable, 0 restore errors); chapter 13 |

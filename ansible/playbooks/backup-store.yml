@@ -146,15 +146,15 @@
 
     - name: Buckets
       ansible.builtin.shell:
-        cmd: "{{ garage }} bucket info {{ item.name }} >/dev/null 2>&1 && echo exists || {{ garage }} bucket create {{ item.name }}"
+        cmd: "{{ garage }} bucket info {{ item }} >/dev/null 2>&1 && echo exists || {{ garage }} bucket create {{ item }}"
       loop: "{{ backup_store.buckets }}"
-      loop_control: { label: "{{ item.name }}" }
       register: buckets
       changed_when: "'exists' not in buckets.stdout"
 
     # The keys are DECLARED in git, encrypted (docs/learn/13-ssd-and-backups.md):
     #   cnpg-backup -> k8s/secrets/data/backup-s3.sops.yaml (Flux also gives it to Postgres)
     #   workstation -> ansible/secrets/backup-store.sops.yaml
+    #   offsite     -> ansible/secrets/offsite.sops.yaml (READ only: the off-site job, part D)
     # Decrypted here on node-workstation (a lookup runs on the machine running Ansible), imported once.
     - name: Keys from git (decrypted on node-workstation)
       ansible.builtin.set_fact:
@@ -165,26 +165,30 @@
           workstation:
             id: "{{ ws_keys.workstation.id }}"
             secret: "{{ ws_keys.workstation.secret }}"
+          offsite:
+            id: "{{ off_keys.garage.id }}"
+            secret: "{{ off_keys.garage.secret }}"
       vars:
         k8s_keys: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ repo_root ~ '/k8s/secrets/data/backup-s3.sops.yaml') | from_json }}"
         ws_keys: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ repo_root ~ '/ansible/secrets/backup-store.sops.yaml') | from_json }}"
+        off_keys: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ repo_root ~ '/ansible/secrets/offsite.sops.yaml') | from_json }}"
       no_log: true
 
-    - name: Keys imported once, each with read+write on its own bucket only
+    - name: Keys imported once (each only the rights listed in backup_store.users)
       ansible.builtin.shell:
         cmd: |
           if info=$({{ garage }} key info "$KID" --show-secret 2>/dev/null); then
             have=$(printf '%s\n' "$info" | awk -F': *' '/^Secret key:/ {print $2}')
             [ "$have" = "$KSECRET" ] || { echo "MISMATCH"; exit 0; }
           else
-            {{ garage }} key import --yes "$KID" "$KSECRET" -n {{ item.key }} >/dev/null && echo imported
+            {{ garage }} key import --yes "$KID" "$KSECRET" -n {{ item.name }} >/dev/null && echo imported
           fi
-          {{ garage }} bucket allow --read --write --key "$KID" {{ item.name }} >/dev/null && echo allowed
+          echo ok
       environment:
-        KID: "{{ store_keys[item.key].id }}"
-        KSECRET: "{{ store_keys[item.key].secret }}"
-      loop: "{{ backup_store.buckets }}"
-      loop_control: { label: "{{ item.key }} -> {{ item.name }}" }
+        KID: "{{ store_keys[item.name].id }}"
+        KSECRET: "{{ store_keys[item.name].secret }}"
+      loop: "{{ backup_store.users }}"
+      loop_control: { label: "{{ item.name }}" }
       register: keys
       changed_when: "'imported' in keys.stdout"
       failed_when: false
@@ -196,14 +200,34 @@
         that:
           - item.rc == 0
           - "'MISMATCH' not in item.stdout"
-          - "'allowed' in item.stdout"
+          - "'ok' in item.stdout"
         fail_msg: >-
-          key {{ item.item.key }}: {{ 'Garage holds a DIFFERENT secret than git (the id was used before;
-          a new key needs a new id in the .sops.yaml file)' if 'MISMATCH' in item.stdout
-          else 'import or bucket permission failed (sudo garage key list; sudo garage bucket info ' ~ item.item.name ~ ')' }}
+          key {{ item.item.name }}: {{ 'Garage holds a DIFFERENT secret than git (the id was used before;
+          a new key needs a new id in its .sops.yaml file)' if 'MISMATCH' in item.stdout
+          else 'import failed (sudo garage key list)' }}
         quiet: true
       loop: "{{ keys.results }}"
-      loop_control: { label: "{{ item.item.key }}" }
+      loop_control: { label: "{{ item.item.name }}" }
+
+    # Exactly the listed permissions: grant them, and take away anything not listed (e.g. write for
+    # the read-only offsite key), so a hand change is undone at the next apply.
+    - name: Bucket rights per key
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          b={{ item.1.bucket }}
+          before=$({{ garage }} bucket info "$b" 2>/dev/null | awk -v k="$KID" '$2 == k {print $1}')
+          {{ garage }} bucket deny --read --write --owner --key "$KID" "$b" >/dev/null
+          {{ garage }} bucket allow {{ item.1.rights | map('regex_replace', '^', '--') | join(' ') }} --key "$KID" "$b" >/dev/null
+          after=$({{ garage }} bucket info "$b" 2>/dev/null | awk -v k="$KID" '$2 == k {print $1}')
+          [ "$after" = "$before" ] && echo unchanged || echo "changed ${before:-none} -> $after"
+        executable: /bin/bash
+      environment:
+        KID: "{{ store_keys[item.0.name].id }}"
+      loop: "{{ backup_store.users | subelements('allow') }}"
+      loop_control: { label: "{{ item.0.name }} -> {{ item.1.bucket }}: {{ item.1.rights | join('+') }}" }
+      register: rights
+      changed_when: "'changed' in rights.stdout"
 
   handlers:
     - name: Restart garage
