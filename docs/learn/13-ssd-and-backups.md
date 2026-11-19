@@ -109,6 +109,11 @@ Configured in `k8s/data/objectstore.yaml` (ObjectStore `ssd`: bucket `cnpg`, end
 `BACKUP_STORE_URL`, key from the encrypted Secret `backup-s3`, 30 days kept; ScheduledBackup nightly)
 and `k8s/data/postgres.yaml` (`plugins:` turns the archiving on).
 
+Measured 2026-11-19: a closed WAL segment is on the SSD **7 s** later (so the RPO is set by the 5-min segment
+timer, not by the upload). The first nightly base backup failed ("plugin is not available"): it
+started while Postgres was restarting with the plugin; all 9 archive failures are from those minutes,
+none since.
+
 Checked by `verify.yml` (`pg-backup:`): WAL archiving works (CNPG's `ContinuousArchiving` condition),
 newest base backup < 26 h old.
 
@@ -130,7 +135,7 @@ newest base backup < 26 h old.
 
 | Date | Target T | Restore took | Result |
 |---|---|---|---|
-| | | | (first drill after part C is deployed) |
+| 2026-11-19 | 2026-11-19T05:39:48.749Z (14:39:48 JST) | **54 s** | ✅ 4 tables identical to the live database at T (concerts 7, flyway_schema_history 2, orders 27, users 3); 1 base backup + WAL. A first attempt the same day timed out waiting for the WAL (idle database, fixed: marker transaction) |
 
 ## Next parts
 
