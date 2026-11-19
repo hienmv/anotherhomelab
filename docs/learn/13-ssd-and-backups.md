@@ -117,7 +117,9 @@ newest base backup < 26 h old.
 `ansible-playbook playbooks/pitr-drill.yml` (as `ops`), touching nothing live:
 
 1. one snapshot of the live database gives a time **T** and the row count of every table
-2. close the current WAL segment and wait until it is in the store
+2. write one tiny marker transaction (WAL only, no table touched), close the WAL segment, wait until
+   exactly that segment is in the store. First version without the marker timed out (2026-11-19): on
+   an idle database `pg_switch_wal()` closes nothing, and a restore "to T" needs a transaction after T
 3. restore into a **new, temporary** cluster `pg-drill`: newest base backup + WAL up to exactly T
 4. compare the row counts with step 1 (must be identical), report how long the restore took
 5. delete `pg-drill`

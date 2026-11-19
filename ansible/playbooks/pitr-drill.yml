@@ -5,7 +5,7 @@
 #   cd ansible && ansible-playbook playbooks/pitr-drill.yml
 #
 # 1. In ONE snapshot of the live database: the time T and the row count of every table
-# 2. Close the current WAL segment, wait until it is archived (so T is in the backup)
+# 2. One marker transaction after T, close the WAL segment, wait until it is archived
 # 3. pg-drill: restore the newest base backup + WAL up to exactly T
 # 4. Same row counts in pg-drill as in the live database at T? Then the backups work.
 # 5. Delete pg-drill. Report how long the restore took.
@@ -58,19 +58,26 @@
         target_time: "{{ (live.stdout_lines | select('match', '^T ') | first).split()[1] }}"
         live_counts: "{{ live.stdout_lines | reject('match', '^T ') | list }}"
 
-    - name: Close the current WAL segment and wait until it is in the store
+    # On an idle database pg_switch_wal() closes nothing (nothing written since the last segment), and a
+    # restore "to T" needs a committed transaction AFTER T to know where T ends ("recovery ended before
+    # target reached"). So: one tiny marker transaction (WAL only, no table touched), then close the
+    # segment and wait until exactly that segment is in the store. (Learned 2026-11-19.)
+    - name: Marker transaction after T, close the WAL segment, wait until it is in the store
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
           q() { kubectl -n {{ ns }} exec {{ primary.stdout }} -c postgres -- psql -U postgres -At -c "$1"; }
-          q "select pg_switch_wal();" >/dev/null
+          q "select pg_logical_emit_message(true, 'homelab-pitr-drill', 'after {{ target_time }}');" >/dev/null
+          seg=$(q "select pg_walfile_name(pg_switch_wal());")
           for i in $(seq 1 60); do
-            ok=$(q "select coalesce(last_archived_time > '{{ target_time }}'::timestamptz, false) from pg_stat_archiver;")
-            [ "$ok" = t ] && exit 0
+            done=$(q "select coalesce(last_archived_wal >= '$seg', false) from pg_stat_archiver;")
+            [ "$done" = t ] && { echo "archived up to $seg"; exit 0; }
             sleep 5
           done
-          echo "WAL covering {{ target_time }} not archived within 5 min (kubectl -n {{ ns }} get cluster pg)" >&2; exit 1
+          echo "WAL segment $seg not archived within 5 min. Archiver: $(q "select 'archived=' || archived_count || ' last=' || coalesce(last_archived_wal,'-') || ' failed=' || failed_count || ' last_failed=' || coalesce(last_failed_wal,'-') || ' at ' || coalesce(last_failed_time::text,'-') from pg_stat_archiver;")" >&2
+          exit 1
         executable: /bin/bash
+      register: archived
       changed_when: false
 
     - name: Live image (the drill uses the same Postgres version)
