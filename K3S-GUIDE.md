@@ -565,6 +565,7 @@ If a step fails: read its message, fix the cause, resume with tags, e.g.
 Machine changes are applied automatically too (host GitOps, `homelab-apply.timer`, since 2026-11-18):
 [docs/learn/14-host-gitops.md](docs/learn/14-host-gitops.md). Timers on node-workstation: `homelab-check` (15 min),
 `homelab-check-full` (daily), `homelab-apply` (15 min), `homelab-backup` (03:30); one shared lock.
+On node-8gb: `garage` (S3 store), `homelab-offsite` (04:30, encrypted copy to R2).
 
 
 | Part | What | Where |

@@ -62,6 +62,9 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Disk space | root filesystem ≥ 15 % free | `verify.yml --tags nodes` | always | ✅ |
 | Host GitOps apply | last `site.yml` run ok and < 7 h old | `verify.yml --tags cluster` (`gitops:`) | always | ✅ |
 | Apply decisions (local) | change → 🔧 message; same commit skipped; failure → one message, retried silently; recovery → 🟢; new commit without changes → silent | simulation with fake ansible/curl (manual, 2026-11-18) | after changing `homelab-apply.sh` | ✅ manual |
+| Off-site copy (R2) | last encrypted copy + cryptcheck < 26 h ago | `verify.yml --tags nodes` (`offsite:`) | always | ✅ (after R2 setup) |
+| Off-site job (local) | copy + cryptcheck, re-run, names unreadable, no plain text off-site, local delete does not delete off-site, decrypts | two Garage containers as store and R2 stand-in (manual, 2026-11-19) | after changing `homelab-offsite.sh` | ✅ manual |
+| Garage rights reconcile (local) | read-only key granted read; a hand-given write is taken back | Garage container (manual, 2026-11-19) | after changing key rights | ✅ manual |
 | Backup store (Garage) | service running + healthy on node-8gb | `verify.yml --tags nodes` (`backup-store:`) | always | ✅ |
 | Backup in the store | newest archive < 26 h old locally AND in `ssd:archives` | `verify.yml --tags backup` | always | ✅ |
 | Store + rclone + least privilege (local) | upload, list, age filter, retention, key refused on the other bucket | Garage v2.5.0 + rclone v1.75.2 containers (manual, 2026-11-18) | after changing `backup-store.yml` | ✅ manual |

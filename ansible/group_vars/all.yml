@@ -66,9 +66,17 @@ backup_store:
   region: garage
   capacity: 50G                      # of the 59 GB SSD; the rest: Postgres replica (stage 2), headroom
   data_dir: /mnt/ssd/backup/garage   # requires the SSD mount (systemd RequiresMountsFor)
-  buckets:
-    - { name: cnpg, key: cnpg-backup }        # Postgres WAL archive + base backups (part C)
-    - { name: archives, key: workstation }    # nightly backup.yml archives
+  buckets: [cnpg, archives]            # cnpg: Postgres WAL + base backups; archives: nightly backup.yml
+  # One key per user, each only the rights listed (least privilege). Secrets: declared in git, encrypted
+  # (playbooks/backup-store.yml imports them): cnpg-backup k8s/secrets/data/backup-s3.sops.yaml,
+  # workstation ansible/secrets/backup-store.sops.yaml, offsite ansible/secrets/offsite.sops.yaml.
+  users:                               # (not "keys": that is a built-in name of every dict in Jinja)
+    - name: cnpg-backup
+      allow: [{ bucket: cnpg, rights: [read, write] }]
+    - name: workstation
+      allow: [{ bucket: archives, rights: [read, write] }]
+    - name: offsite                    # READ only: the off-site job can never change or delete backups
+      allow: [{ bucket: cnpg, rights: [read] }, { bucket: archives, rights: [read] }]
 garage_version: v2.5.0
 # Garage publishes no checksum file: sha256 pinned 2026-11-18 after comparing the download with the
 # binary inside the official image dxflrs/garage:v2.5.0 (two channels, same hash).
@@ -76,3 +84,12 @@ garage_sha256: 69b6040cef428b993500c17dd0d0c1240acf2f3f667b9b05ceba4b9660db4e8c
 backup_store_env: "{{ automation_home }}/.config/homelab/backup-s3.env"   # rclone settings + key (not in git)
 backup_keep_days: 30
 backup_at: "*-*-* 03:30:00"          # systemd OnCalendar: nightly backup.yml + upload
+
+# Off-site copy (docs/learn/13-ssd-and-backups.md part D, playbooks/offsite.yml): nightly, encrypted
+# on backup_store.host before upload (rclone crypt), copied to Cloudflare R2. Only adds: nothing is
+# ever deleted off-site by us; R2 expires objects itself (lifecycle rule, set in the dashboard).
+# R2 bucket + token: ansible/secrets/r2.sops.yaml (scripts/secrets/set-r2.sh). Until it exists the
+# off-site part is skipped and verify.yml reports "off-site not configured".
+offsite:
+  at: "*-*-* 04:30:00"               # systemd OnCalendar: after base backup 02:00 and archive 03:30
+  r2_expire_days: 35                 # the lifecycle rule to set on the R2 bucket (documented, checked by hand)

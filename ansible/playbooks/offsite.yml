@@ -1,0 +1,151 @@
+# Off-site copy (docs/learn/13-ssd-and-backups.md part D): every night on the backup store's node,
+# the buckets are ENCRYPTED (rclone crypt) and copied to Cloudflare R2, then checked file by file.
+#   store:   the local Garage, read-only key "offsite"
+#   offsite: R2 bucket, through rclone crypt (content AND file names encrypted before they leave)
+# Applied by host GitOps (site.yml). Inactive until ansible/secrets/r2.sops.yaml exists
+# (scripts/secrets/set-r2.sh). Nothing is ever deleted off-site by this job (rclone copy, --immutable);
+# R2 expires old objects itself (lifecycle rule on the bucket, offsite.r2_expire_days).
+- name: Off-site copy to Cloudflare R2
+  hosts: pis
+  gather_facts: false
+  become: true
+  vars:
+    r2_file: "{{ repo_root }}/ansible/secrets/r2.sops.yaml"
+    off_file: "{{ repo_root }}/ansible/secrets/offsite.sops.yaml"
+    env_file: /etc/homelab-offsite.env
+  tasks:
+    - name: Only the backup store host
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != backup_store.host
+
+    - name: R2 settings in git? (scripts/secrets/set-r2.sh writes them)
+      ansible.builtin.set_fact:
+        r2_ready: "{{ r2_file is file }}"      # checked on node-workstation, where the repo is
+
+    - name: Not configured yet
+      ansible.builtin.debug:
+        msg: "ansible/secrets/r2.sops.yaml missing: off-site copy not set up yet (scripts/secrets/set-r2.sh)"
+      when: not r2_ready
+
+    - name: Stop here until R2 is configured
+      ansible.builtin.meta: end_host
+      when: not r2_ready
+
+    - name: System user offsite (no login, no rights beyond its own state folder)
+      ansible.builtin.user:
+        name: offsite
+        system: true
+        shell: /usr/sbin/nologin
+        home: /nonexistent
+        create_home: false
+
+    - name: rclone {{ rclone_version }} (arm64, checksum from the release's SHA256SUMS)
+      ansible.builtin.get_url:
+        url: "https://github.com/rclone/rclone/releases/download/{{ rclone_version }}/rclone-{{ rclone_version }}-linux-arm64.zip"
+        checksum: "sha256:https://github.com/rclone/rclone/releases/download/{{ rclone_version }}/SHA256SUMS"
+        dest: "/var/cache/rclone-{{ rclone_version }}-arm64.zip"
+        mode: "0644"
+      register: rclone_zip
+
+    - name: rclone into /usr/local/bin
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+          python3 -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' /var/cache/rclone-{{ rclone_version }}-arm64.zip "$d"
+          install -m 0755 "$d"/rclone-*/rclone /usr/local/bin/rclone
+        executable: /bin/bash
+        creates: "{{ omit if rclone_zip is changed else '/usr/local/bin/rclone' }}"
+
+    - name: Secrets from git (decrypted on node-workstation)
+      ansible.builtin.set_fact:
+        r2: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ r2_file) | from_json }}"
+        off: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ off_file) | from_json }}"
+      no_log: true
+
+    # Plain crypt password here (file readable only by root and offsite); the job "obscures" it for
+    # rclone at run time (obscured values change every time, which would make every apply a change).
+    - name: Settings for the job ({{ env_file }}, root:offsite 0640)
+      ansible.builtin.copy:
+        dest: "{{ env_file }}"
+        owner: root
+        group: offsite
+        mode: "0640"
+        content: |
+          # Managed by ansible/playbooks/offsite.yml (secrets from ansible/secrets/*.sops.yaml)
+          RCLONE_CONFIG_STORE_TYPE=s3
+          RCLONE_CONFIG_STORE_PROVIDER=Other
+          RCLONE_CONFIG_STORE_ENDPOINT=http://127.0.0.1:{{ backup_store.port }}
+          RCLONE_CONFIG_STORE_REGION={{ backup_store.region }}
+          RCLONE_CONFIG_STORE_FORCE_PATH_STYLE=true
+          RCLONE_CONFIG_STORE_ACCESS_KEY_ID={{ off.garage.id }}
+          RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY={{ off.garage.secret }}
+          RCLONE_CONFIG_R2_TYPE=s3
+          RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+          RCLONE_CONFIG_R2_ENDPOINT=https://{{ r2.account_id }}.r2.cloudflarestorage.com
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID={{ r2.access_key_id }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY={{ r2.secret_access_key }}
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+          RCLONE_CONFIG_OFFSITE_TYPE=crypt
+          RCLONE_CONFIG_OFFSITE_REMOTE=r2:{{ r2.bucket }}
+          RCLONE_CONFIG_OFFSITE_FILENAME_ENCRYPTION=standard
+          RCLONE_CONFIG_OFFSITE_DIRECTORY_NAME_ENCRYPTION=true
+          CRYPT_PASSWORD={{ off.crypt.password }}
+          CRYPT_SALT={{ off.crypt.salt }}
+          BUCKETS="{{ backup_store.buckets | join(' ') }}"
+      no_log: true
+
+    - name: The job (/usr/local/bin/homelab-offsite)
+      ansible.builtin.copy:
+        src: ../files/homelab-offsite.sh
+        dest: /usr/local/bin/homelab-offsite
+        mode: "0755"
+
+    - name: Service + nightly timer
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/homelab-offsite.{{ item.ext }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - ext: service
+          content: |
+            [Unit]
+            Description=homelab off-site copy to Cloudflare R2 (encrypted), docs/learn/13-ssd-and-backups.md
+            Wants=network-online.target
+            After=network-online.target garage.service
+            Requires=garage.service
+            [Service]
+            Type=oneshot
+            User=offsite
+            Group=offsite
+            StateDirectory=homelab-offsite
+            ExecStart=/usr/local/bin/homelab-offsite
+            TimeoutStartSec=4h
+            NoNewPrivileges=true
+            ProtectSystem=strict
+            ProtectHome=true
+            PrivateTmp=true
+        - ext: timer
+          content: |
+            [Unit]
+            Description=homelab off-site copy, nightly
+            [Timer]
+            OnCalendar={{ offsite.at }}
+            Persistent=true
+            RandomizedDelaySec=10min
+            [Install]
+            WantedBy=timers.target
+      loop_control: { label: "homelab-offsite.{{ item.ext }}" }
+      register: units
+
+    - name: Timer enabled
+      ansible.builtin.systemd_service:
+        name: homelab-offsite.timer
+        enabled: true
+        state: started
+        daemon_reload: "{{ units is changed }}"
+
+    - name: First copy right away if it never ran (in the background)
+      ansible.builtin.shell:
+        cmd: test -f /var/lib/homelab-offsite/last-ok || systemctl start --no-block homelab-offsite.service
+      changed_when: false

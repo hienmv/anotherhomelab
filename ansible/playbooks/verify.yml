@@ -106,6 +106,28 @@
         problems: "{{ problems + ['backup-store: ' ~ item] }}"
       loop: "{{ store_check.stdout_lines | default([]) }}"
 
+    # Off-site copy (playbooks/offsite.yml): last successful run < 26 h ago (it is nightly)
+    - name: Off-site copy (Cloudflare R2)
+      when: inventory_hostname == backup_store.host
+      become: true
+      ansible.builtin.shell:
+        cmd: |
+          [ -f /etc/homelab-offsite.env ] || { echo "off-site copy not configured yet (scripts/secrets/set-r2.sh, docs/learn/13 part D)"; exit 0; }
+          f=/var/lib/homelab-offsite/last-ok
+          [ -f "$f" ] || { echo "off-site copy never succeeded (journalctl -u homelab-offsite)"; exit 0; }
+          read -r t rest < "$f"
+          age=$(( ($(date +%s) - t) / 3600 ))
+          [ "$age" -le 26 ] || echo "last off-site copy ${age} h ago (journalctl -u homelab-offsite)"
+      register: offsite_check
+      changed_when: false
+      failed_when: false
+
+    - name: Off-site result
+      when: inventory_hostname == backup_store.host
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['offsite: ' ~ item] }}"
+      loop: "{{ offsite_check.stdout_lines | default([]) }}"
+
     - name: Container AppArmor denials since boot (Ubuntu 26.04 bug, K3S-GUIDE 10.3)
       ansible.builtin.shell: journalctl -k -b --no-pager 2>/dev/null | grep 'apparmor="DENIED"' | grep -c cri-containerd || true
       register: aa_denied
