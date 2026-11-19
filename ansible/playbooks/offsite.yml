@@ -95,6 +95,20 @@
           BUCKETS="{{ backup_store.buckets | join(' ') }}"
       no_log: true
 
+    - name: Metrics folder for node-exporter (the job writes its results there)
+      ansible.builtin.file:
+        path: /var/lib/node_exporter/textfile
+        state: directory
+        owner: root
+        group: offsite
+        mode: "0775"
+
+    - name: Metrics writer (/usr/local/bin/homelab-backup-metrics)
+      ansible.builtin.copy:
+        src: ../files/backup-metrics.sh
+        dest: /usr/local/bin/homelab-backup-metrics
+        mode: "0755"
+
     - name: The job (/usr/local/bin/homelab-offsite)
       ansible.builtin.copy:
         src: ../files/homelab-offsite.sh
@@ -119,7 +133,10 @@
             User=offsite
             Group=offsite
             StateDirectory=homelab-offsite
+            ReadWritePaths=/var/lib/node_exporter/textfile
+            ExecStartPre=/usr/local/bin/homelab-backup-metrics start offsite
             ExecStart=/usr/local/bin/homelab-offsite
+            ExecStopPost=/usr/local/bin/homelab-backup-metrics stop offsite
             TimeoutStartSec=4h
             NoNewPrivileges=true
             ProtectSystem=strict

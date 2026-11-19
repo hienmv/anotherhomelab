@@ -234,6 +234,42 @@ rclone copy offsite:archives <new store>:archives   # nightly archives (still ag
 # then: Postgres restore (pitr-drill.yml mechanism / restore.yml), archives with the age key
 ```
 
+## Watching the backups (observability)
+
+Checks say "OK now". Observability also keeps the **history**: when each backup ran, how long, how
+big, how far behind; graphs for "is it getting slower or bigger?", alerts on the **promises**.
+
+| Backup | Metrics from | Where they come from |
+|---|---|---|
+| Postgres WAL (continuous) | `cnpg_pg_stat_archiver_*`, `cnpg_collector_pg_wal_archive_status` | CNPG's exporter in pg-1 (already scraped) |
+| Postgres base (nightly) | `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp` or `cnpg_collector_last_available_backup_timestamp` | the plugin / CNPG |
+| nightly archive (node-workstation), off-site (node-8gb) | `homelab_backup_last_success_timestamp_seconds{backup=...}`, `..._last_status`, `..._last_duration_seconds`, `..._last_size_bytes`, `homelab_backup_offsite_bucket_bytes{bucket}` | the jobs themselves: `homelab-backup-metrics` runs before and after each job (systemd `ExecStartPre` / `ExecStopPost`, so a **failed** run is recorded too) and writes a `.prom` file to `/var/lib/node_exporter/textfile`; node-exporter publishes it (its **textfile collector**, the standard way for jobs that are not always running) |
+
+Grafana → Dashboards → Apps → **Backups**: time since each backup's last success, WAL waiting to be
+uploaded, WAL archived per hour, job durations, sizes, off-site bytes per bucket, alerts firing.
+
+**Alerts on the promises** (`k8s/monitoring/backup-rules.yaml`, label `slo: backup-rpo`, so they go
+to Telegram through the existing route):
+
+| Alert | Promise broken |
+|---|---|
+| `BackupWALNotArchived` (critical) | finished WAL waits > 15 min: "lose at most ~5 min" no longer holds |
+| `BackupWALArchiveFailing` | archive attempts failing (Postgres retries; warning before the promise breaks) |
+| `BackupBaseStale` | no full Postgres copy for > 26 h |
+| `BackupJobFailed` / `BackupJobStale` | the nightly archive or the off-site copy failed / no success for > 26 h |
+| `BackupJobMissing` | the archive job's metrics never appeared for 26 h |
+
+Why "WAL **waiting**" and not "time since last upload": on an idle database nothing is uploaded for
+hours, and that is fine. What breaks the promise is a *finished* segment that does not get uploaded.
+
+Tested like the SLO rules (`backup-rules.test.yaml`, CI). The tests found two real mistakes before
+anything was deployed: VictoriaMetrics' `increase()` counts a counter's first value (the 9 old
+failures looked new: `increase_prometheus()` now), and test data with gaps hid the "stale" alerts.
+
+**Logs** of the host jobs: `journalctl -u homelab-backup` (node-workstation), `journalctl -u
+homelab-offsite` and `-u garage` (node-8gb). They are not yet in VictoriaLogs (it collects pod logs);
+shipping the hosts' journald there is a later step.
+
 ## Next parts
 
 | Part | What |

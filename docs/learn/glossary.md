@@ -75,6 +75,7 @@
 | **span** | one timed step of a trace (an HTTP request, one SQL query, ...), with a `span_id` and a parent |
 | **structured logs** | log lines as JSON objects (`{"level":"INFO","status":200,...}`): every part is a searchable field |
 | **substitution (`${DOMAIN}`)** | Flux fills variables in manifests from site-settings |
+| **textfile collector** | node-exporter reads `*.prom` files from a folder: how short jobs (backups) publish their results as metrics |
 | **tmux** | keeps a terminal session running when your SSH connection drops |
 | **tail sampling** | deciding to keep or drop a trace after it is complete (the collector drops probe and housekeeping traces) |
 | **topology spread** | `topologySpreadConstraints`: asks the scheduler to put the copies on different nodes |

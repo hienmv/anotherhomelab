@@ -6,6 +6,7 @@ resources:
   - grafana-public.yaml
   - otel-collector.yaml
   - slo-rules.yaml          # SLO recording + alert rules (tests: slo-rules.test.yaml)
+  - backup-rules.yaml       # backup promises (RPO) alerts (tests: backup-rules.test.yaml)
 # Grafana dashboards: ConfigMaps labelled grafana_dashboard=1 are loaded by Grafana's sidecar.
 configMapGenerator:
   - name: dashboard-ticketlite
@@ -18,6 +19,16 @@ configMapGenerator:
       annotations:
         grafana_folder: Apps
         # ${datasource} & co. are Grafana variables: Flux must not substitute them
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+  - name: dashboard-backups
+    namespace: monitoring
+    files:
+      - dashboards/backups.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: Apps
         kustomize.toolkit.fluxcd.io/substitute: disabled
   - name: dashboard-slo
     namespace: monitoring

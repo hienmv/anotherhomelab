@@ -1,0 +1,99 @@
+# Unit tests for backup-rules.yaml (scripts/test-slo-rules.sh, CI). Fake metrics in, expected alerts out.
+# vmalert-tool's clock starts at 2000-01-01 00:00 UTC = 946684800: timestamps below are relative to it.
+rule_files: [/tmp/backup-rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # 1. WAL segments ready but not uploaded for 20 min -> critical; idle database (0 ready) -> nothing
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_collector_pg_wal_archive_status{value="ready", pod="pg-1"}'
+        values: '0x5 2x25'
+    alert_rule_test:
+      - eval_time: 10m
+        groupname: backup-rpo
+        alertname: BackupWALNotArchived
+        exp_alerts: []
+      - eval_time: 25m
+        groupname: backup-rpo
+        alertname: BackupWALNotArchived
+        exp_alerts:
+          - exp_labels: { severity: critical, slo: backup-rpo, backup: wal }
+            exp_annotations:
+              summary: 'Postgres changes are not reaching the backup store'
+              description: '2 finished WAL segment(s) have waited over 15 min to be archived: changes since then would be lost with the disk. kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=30'
+
+  # 2. archiving attempts failing
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_failed_count{pod="pg-1"}'
+        values: '9x10 9+1x20'
+    alert_rule_test:
+      - eval_time: 9m
+        groupname: backup-rpo
+        alertname: BackupWALArchiveFailing
+        exp_alerts: []
+      - eval_time: 25m
+        groupname: backup-rpo
+        alertname: BackupWALArchiveFailing
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: backup-rpo, backup: wal, pod: pg-1 }
+            exp_annotations:
+              summary: 'Postgres WAL archiving is failing'
+              description: '14 failed archive attempts in 15 min (Postgres retries; the promise breaks if it continues). kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=30'
+
+  # 3. nightly archive: last run failed, and no success for > 26 h; off-site fine (recent success)
+  - interval: 1m
+    input_series:
+      - series: 'homelab_backup_last_status{backup="archive"}'
+        values: '0x1900'
+      - series: 'homelab_backup_last_success_timestamp_seconds{backup="archive"}'
+        values: '946684800x1900'                 # last success at the start: 30 h old at 30 h
+      - series: 'homelab_backup_last_status{backup="offsite"}'
+        values: '1x1900'
+      - series: 'homelab_backup_last_success_timestamp_seconds{backup="offsite"}'
+        values: '946684800+60x1900'              # always "just now": never stale
+    alert_rule_test:
+      - eval_time: 30h
+        groupname: backup-rpo
+        alertname: BackupJobFailed
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: backup-rpo, backup: archive }
+            exp_annotations:
+              summary: 'Backup job archive failed at its last run'
+              description: 'journalctl -u homelab-backup -n 50 (on node-workstation)'
+      - eval_time: 30h
+        groupname: backup-rpo
+        alertname: BackupJobStale
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: backup-rpo, backup: archive }
+            exp_annotations:
+              summary: 'Backup job archive: no success for 1d 6h 0m 0s'
+              description: 'It runs nightly; a day without success means the timer or the job is broken.'
+
+  # 4. base backup 30 h old (CNPG's metric name) -> stale; and no archive metric for 27 h -> missing
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_collector_last_available_backup_timestamp{pod="pg-1"}'
+        values: '946684800x1900'                 # base backup at the start: 25 h / 30 h old
+    alert_rule_test:
+      - eval_time: 25h
+        groupname: backup-rpo
+        alertname: BackupBaseStale
+        exp_alerts: []
+      - eval_time: 30h
+        groupname: backup-rpo
+        alertname: BackupBaseStale
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: backup-rpo, backup: base }
+            exp_annotations:
+              summary: 'No full Postgres backup for over a day'
+              description: 'The newest base backup is 1d 6h 0m 0s old (nightly at 02:00). kubectl -n data get backups'
+      - eval_time: 27h
+        groupname: backup-rpo
+        alertname: BackupJobMissing
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: backup-rpo, backup: archive }
+            exp_annotations:
+              summary: 'No result of the nightly archive job at all'
+              description: 'The metric file is missing (job never succeeded since the metrics exist, or node-exporter cannot read /var/lib/node_exporter/textfile on node-workstation).'

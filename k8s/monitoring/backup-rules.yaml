@@ -1,0 +1,76 @@
+# Backup alerts on the RECOVERY PROMISES (RPO), docs/learn/13-ssd-and-backups.md "Watching the backups".
+# Label slo: backup-rpo -> the existing Alertmanager route sends them to Telegram.
+# Tests: backup-rules.test.yaml (CI, scripts/test-slo-rules.sh).
+#
+#   promise                                        alert when
+#   lose at most ~5 min of Postgres changes         WAL waits > 15 min to be archived, or archiving fails
+#   a full Postgres copy at most 1 day old          newest base backup > 26 h
+#   nightly archive (backup.yml) at most 1 day old  last success > 26 h, or the last run failed
+#   off-site copy at most 1 day old                 same, for the off-site job
+# A double dollar is Flux's escape (the rule gets a single one, used in the annotations).
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: backup
+  namespace: monitoring
+spec:
+  groups:
+    - name: backup-rpo
+      rules:
+        # On an idle database nothing is archived for hours, and that is fine: what matters is WAL that
+        # is READY (finished) but not yet uploaded. CNPG counts those .ready files.
+        - alert: BackupWALNotArchived
+          expr: max(cnpg_collector_pg_wal_archive_status{value="ready"}) > 0
+          for: 15m
+          labels: { severity: critical, slo: backup-rpo, backup: wal }
+          annotations:
+            summary: "Postgres changes are not reaching the backup store"
+            description: >-
+              {{ $$value }} finished WAL segment(s) have waited over 15 min to be archived: changes since
+              then would be lost with the disk. kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=30
+        - alert: BackupWALArchiveFailing
+          # increase_prometheus: like Prometheus, ignore a counter's first value (plain increase() in
+          # VictoriaMetrics counts it, so the old failures looked new after every restart: found by the tests)
+          expr: increase_prometheus(cnpg_pg_stat_archiver_failed_count[15m]) > 0
+          for: 5m
+          labels: { severity: warning, slo: backup-rpo, backup: wal }
+          annotations:
+            summary: "Postgres WAL archiving is failing"
+            description: >-
+              {{ $$value | printf "%.0f" }} failed archive attempts in 15 min (Postgres retries; the
+              promise breaks if it continues). kubectl -n data logs pg-1 -c plugin-barman-cloud --tail=30
+        - alert: BackupBaseStale
+          expr: >-
+            time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
+            or cnpg_collector_last_available_backup_timestamp) > 26 * 3600
+          for: 10m
+          labels: { severity: warning, slo: backup-rpo, backup: base }
+          annotations:
+            summary: "No full Postgres backup for over a day"
+            description: >-
+              The newest base backup is {{ $$value | humanizeDuration }} old (nightly at 02:00).
+              kubectl -n data get backups
+        - alert: BackupJobFailed
+          expr: homelab_backup_last_status == 0
+          labels: { severity: warning, slo: backup-rpo }
+          annotations:
+            summary: "Backup job {{ $$labels.backup }} failed at its last run"
+            description: >-
+              journalctl -u homelab-{{ if eq $$labels.backup "archive" }}backup{{ else }}{{ $$labels.backup }}{{ end }} -n 50
+              (on {{ if eq $$labels.backup "archive" }}node-workstation{{ else }}node-8gb{{ end }})
+        - alert: BackupJobStale
+          expr: time() - homelab_backup_last_success_timestamp_seconds > 26 * 3600
+          for: 10m
+          labels: { severity: warning, slo: backup-rpo }
+          annotations:
+            summary: "Backup job {{ $$labels.backup }}: no success for {{ $$value | humanizeDuration }}"
+            description: "It runs nightly; a day without success means the timer or the job is broken."
+        - alert: BackupJobMissing
+          expr: absent(homelab_backup_last_success_timestamp_seconds{backup="archive"})
+          for: 26h     # metrics exist only after the first run with them: a real gap, not a fresh setup
+          labels: { severity: warning, slo: backup-rpo, backup: archive }
+          annotations:
+            summary: "No result of the nightly archive job at all"
+            description: >-
+              The metric file is missing (job never succeeded since the metrics exist, or node-exporter
+              cannot read /var/lib/node_exporter/textfile on node-workstation).
