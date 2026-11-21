@@ -27,6 +27,7 @@ start here.
 ## What is next
 
 [docs/roadmap.md](../roadmap.md): what is done, what comes next, and in which order.
+Before building a stage: its design doc in [docs/design/](../design/README.md) (problem, options, decision, risks, test plan, rollback).
 
 ## Golden rules (learned the hard way, see the [postmortem](../postmortems/2026-11-11-phase2-migration.md))
 

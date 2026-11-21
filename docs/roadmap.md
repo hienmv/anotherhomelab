@@ -1,6 +1,7 @@
 # Roadmap
 
-One list of what is done and what is next, in the order it makes sense. It replaces the roadmap in
+One list of what is done and what is next, in the order it makes sense. Each stage from O1 on
+starts with a design doc in [design/](design/README.md). It replaces the roadmap in
 [review/2026-11-15-resilience-review.md](review/2026-11-15-resilience-review.md) (kept as the
 snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a stage is done.
 
@@ -16,6 +17,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | SLOs | availability 99.5 % + latency targets, burn-rate alerts, unit-tested rules | 2026-11-18 | [learn/11](learn/11-slo.md) |
 | Everything through git | SOPS-encrypted secrets, instant chart upgrades, Flux → Telegram | 2026-11-18 | [learn/12](learn/12-gitops-secrets.md) |
 | Host GitOps | the machines follow `main` by themselves (`homelab-apply.timer`) | 2026-11-18 | [learn/14](learn/14-host-gitops.md) |
+| Host logs in Grafana (O1) | every machine's journal (services + kernel) in VictoriaLogs; design doc practice started | 2026-11-21 | [design](design/2026-11-21-host-logs.md), [learn/9](learn/9-monitoring-grafana.md) |
 | **Backups, stage 1** | SSD store (Garage) on node-8gb; Postgres point-in-time restore (drill: 54 s); nightly archive; encrypted off-site copy to R2; 3-2-1 met; backup dashboard + alerts | 2026-11-21 | [learn/13](learn/13-ssd-and-backups.md) |
 
 ## Next: hardware (only a person can do it)
@@ -40,7 +42,6 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 
 | # | Stage | Gives | Needs |
 |---|---|---|---|
-| O1 | **Host logs in Grafana** (journald → VictoriaLogs) | backup jobs, SSH, kernel, under-voltage messages searchable next to app logs | nothing |
 | O2 | Monthly restore drill on a timer (PITR drill + off-site check) | "0 restore errors" stays proven without anyone remembering | nothing |
 | O3 | **Database rollback safety**: backward-compatible migrations, a backup point before each migration | a bad migration cannot lose data | habit + 1 h |
 | O4 | **Renovate** (dependency update PRs) | outdated images and libraries, missed security fixes | 1 h |
@@ -59,7 +60,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 ## Suggested order
 
 1. **H1** now: a real risk today, and cheap.
-2. **O1**: small, and makes everything after it easier to debug.
+2. ~~O1~~ done 2026-11-21.
 3. **A1**: the biggest gain in availability with the hardware you have.
 4. O2, O3, O4: habits that keep the gains.
 5. H2 + H4, then A3 and A4: full automatic failover.

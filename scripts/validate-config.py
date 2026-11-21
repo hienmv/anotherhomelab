@@ -32,6 +32,7 @@ schema = {
     "CLOUDFLARE_TUNNEL_ID": (r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "UUID"),
     "TIMEZONE": (r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$", "IANA zone, e.g. Asia/Tokyo"),
     "BACKUP_STORE_URL": (r"^https?://[A-Za-z0-9.-]+:[0-9]{1,5}$", "http(s)://host:port of the S3 backup store"),
+    "LOGS_INGEST_IP": (r"^10\.43\.0\.[0-9]{1,3}$", "10.43.0.x (low part of k3s' service range)"),
 }
 for key, (rx, desc) in schema.items():
     value = str(data.get(key, ""))
@@ -51,6 +52,12 @@ if slug and data.get("GIT_REPO_SSH") and data["GIT_REPO_SSH"] != f"git@github.co
 tz = data.get("TIMEZONE")
 if tz and pathlib.Path("/usr/share/zoneinfo").is_dir() and not (pathlib.Path("/usr/share/zoneinfo") / tz).is_file():
     problems.append(f"{settings_path}: TIMEZONE={tz} is not a known time zone")
+
+# LOGS_INGEST_IP: a fixed ClusterIP, in the LOW part of k3s' service range 10.43.0.0/16 (Kubernetes
+# leaves it to fixed IPs; automatic ones come from the top), not .1 (API), .10 (DNS), .0/.255
+ip = str(data.get("LOGS_INGEST_IP", ""))
+if re.match(r"^10\.43\.0\.[0-9]{1,3}$", ip) and not (2 <= int(ip.rsplit(".", 1)[1]) <= 254 and ip != "10.43.0.10"):
+    problems.append(f"{settings_path}: LOGS_INGEST_IP={ip}: use 10.43.0.2 .. 10.43.0.254, not .10 (k3s DNS)")
 
 # The backup store's URL (used by Postgres in k8s/data) must match where Ansible runs it
 # (ansible/group_vars/all.yml backup_store + the host's static_ip in ansible/inventory.yml).

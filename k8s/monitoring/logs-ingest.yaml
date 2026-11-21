@@ -1,0 +1,18 @@
+# Fixed address where the HOSTS send their systemd journal (docs/design/2026-11-21-host-logs.md):
+#   journald -> systemd-journal-upload (ansible/playbooks/host-logs.yml) -> ${LOGS_INGEST_IP}:9428 -> VictoriaLogs
+# A ClusterIP: reachable from the cluster's own nodes (kube-proxy), NOT from the LAN (VictoriaLogs has no
+# login). Fixed (site-settings LOGS_INGEST_IP) because Ansible, not Kubernetes, configures the hosts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: logs-ingest
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  clusterIP: ${LOGS_INGEST_IP}
+  selector:
+    # the pods of the VLSingle that the monitoring chart creates (vm-operator's labels)
+    app.kubernetes.io/name: vlsingle
+    app.kubernetes.io/instance: vm-victoria-metrics-k8s-stack
+  ports:
+    - { name: http, port: 9428, targetPort: 9428 }

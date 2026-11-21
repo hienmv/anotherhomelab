@@ -38,6 +38,7 @@
 | **idempotent** | running it again changes nothing if it is already right |
 | **Ingress / Traefik** | rule "this hostname goes to that app" / the program that applies those rules |
 | **inventory** | Ansible's list of machines and their variables (`ansible/inventory.yml`) |
+| **journal / journald** | systemd's log of a machine (services + kernel); `journalctl` reads it; since O1 also shipped to VictoriaLogs |
 | **k3s** | a small Kubernetes distribution, good for Pis |
 | **kubeconfig** | the file `kubectl` uses to talk to the cluster (`~/.kube/homelab.yaml`, cluster-admin) |
 | **kubeconform** | checks manifests against Kubernetes schemas (in CI) |

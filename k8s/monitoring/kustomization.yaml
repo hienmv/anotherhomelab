@@ -5,6 +5,7 @@ resources:
   - grafana-https.yaml
   - grafana-public.yaml
   - otel-collector.yaml
+  - logs-ingest.yaml        # fixed address for the hosts' journal (docs/design/2026-11-21-host-logs.md)
   - slo-rules.yaml          # SLO recording + alert rules (tests: slo-rules.test.yaml)
   - backup-rules.yaml       # backup promises (RPO) alerts (tests: backup-rules.test.yaml)
 # Grafana dashboards: ConfigMaps labelled grafana_dashboard=1 are loaded by Grafana's sidecar.
