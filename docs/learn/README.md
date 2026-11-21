@@ -24,6 +24,10 @@ start here.
 | 14 | [Host GitOps](14-host-gitops.md) | the machines follow main too: the apply timer, what is applied and what not, secrets declared in git |
 | – | [Glossary](glossary.md) | every term used in these pages, in one place |
 
+## What is next
+
+[docs/roadmap.md](../roadmap.md): what is done, what comes next, and in which order.
+
 ## Golden rules (learned the hard way, see the [postmortem](../postmortems/2026-11-11-phase2-migration.md))
 
 1. **Change things through code**, never by hand on a server: edit the repo, commit, run the

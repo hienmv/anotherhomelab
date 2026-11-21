@@ -165,6 +165,8 @@ the files).
 
 ## 3. Roadmap (in order)
 
+> **Superseded:** the current list is [docs/roadmap.md](../roadmap.md). This table is the snapshot of 2026-11-15.
+
 | # | Step | Fixes | Effort |
 |---|---|---|---|
 | 1 | **Off-site automated backups**: tier 1 Garage S3 on an SSD on node-8gb (continuous Postgres WAL + nightly base, secrets archives), tier 2 encrypted nightly copy to R2; checked by `verify.yml`. **Parked 2026-11-15 until the SSD is ready**; code on branch `wip/offsite-backup` | total data loss if node-workstation's disk dies | 1 day + SSD |

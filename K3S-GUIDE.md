@@ -315,17 +315,7 @@ Done (details in git history):
 - CI: shared `build-image.yml` / `bump-tag.yml`, dependency layer cached, Node 24 actions
 
 Open:
-- [ ] node-1gb power supply; USB SSDs for node-8gb / node-4gb, then HA control plane + Postgres replica
-- [ ] **Off-site backups** (designed 2026-11-15, waiting for the SSD): tier 1 = Garage S3 on a 128 GB
-  SSD on node-8gb (host service, outside k8s; continuous Postgres WAL + nightly base via the Barman
-  Cloud plugin, secrets archives), tier 2 = nightly encrypted (rclone crypt) copy to Cloudflare R2.
-  Prepared code: branch `wip/offsite-backup` (cert-manager, plugin, ObjectStore, R2 upload, timer,
-  verify checks). Steps: plug the SSD into a USB 3 port of node-8gb, then continue from the review
-  (docs/review/2026-11-15-resilience-review.md, roadmap step 1).
-- [ ] SOPS-encrypted secrets
-- [x] Alerting: scheduled checks + Telegram + healthchecks.io (section 12); metric alerts (vmalert) still open
-- [ ] KEDA worker autoscaling; batch CronJobs
-- [ ] Archive hienmv.github.io once the notes site is confirmed (user)
+Open work lives in one place: [docs/roadmap.md](docs/roadmap.md) (hardware, availability, operations).
 
 ## 10. Migration: CF-SV9 as k3s server + data node (2026-11-10 to 2026-11-12, done)
 
