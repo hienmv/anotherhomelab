@@ -424,6 +424,30 @@
         problems: "{{ problems + ['logs: ' ~ item] }}"
       loop: "{{ central_logs.stdout_lines }}"
 
+    # Host logs (docs/design/2026-11-21-host-logs.md): every machine in the inventory sent journal lines
+    # to VictoriaLogs in the last 15 min (a machine going quiet is itself a warning sign)
+    - name: Host logs arriving from every machine
+      tags: [apps]
+      ansible.builtin.shell:
+        cmd: |
+          svc=$(kubectl -n monitoring get svc -l app.kubernetes.io/name=vlsingle -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$svc" ] || exit 0
+          # LogsQL: _time:15m _HOSTNAME:* | stats by (_HOSTNAME) count() lines   (one JSON line per host)
+          seen=$(kubectl get --raw "/api/v1/namespaces/monitoring/services/$svc:9428/proxy/select/logsql/query?query=_time%3A15m%20_HOSTNAME%3A*%20%7C%20stats%20by%20(_HOSTNAME)%20count()%20lines" 2>/dev/null \
+            | grep -oE '"_HOSTNAME":"[^"]+"' | cut -d'"' -f4)
+          for h in {{ groups['k3s'] | join(' ') }}; do
+            printf '%s\n' "$seen" | grep -qx "$h" || echo "no host log lines from $h in 15 min (ssh $h systemctl status systemd-journal-upload)"
+          done
+      register: host_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Host logs result
+      tags: [apps]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['logs: ' ~ item] }}"
+      loop: "{{ host_logs.stdout_lines }}"
+
     # Traces: make ONE real request, then find its trace in VictoriaTraces (proves agent -> collector ->
     # store end to end). Needed because idle traffic is filtered out: "no traces" alone proves nothing.
     # Takes ~20 s (agent batch 5 s + collector decision 10 s + batch 5 s).

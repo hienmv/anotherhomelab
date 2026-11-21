@@ -154,6 +154,33 @@ this a **correlation id**. Since tracing ([chapter 10](10-tracing.md)) every lin
 (`level`, `message`, `request_id`, `http.response.status_code`, `duration_ms`, ...) or the level rule changes, the same
 way `MetricsTest` protects the dashboard.
 
+## Machine logs (since 2026-11-21)
+
+Pods are not everything: the backup jobs, Garage, the scheduled checks, the host apply, k3s itself,
+SSH and the **kernel** run directly on the machines and log to each machine's systemd **journal**.
+Now every machine sends its journal to VictoriaLogs too (design: [docs/design/2026-11-21-host-logs.md](../design/2026-11-21-host-logs.md)):
+
+```text
+ each machine: journald -> systemd-journal-upload -> 10.43.0.50:9428 (Service logs-ingest) -> VictoriaLogs
+```
+
+Same place in Grafana (Explore → VictoriaLogs (DS)), other fields:
+
+| You want | LogsQL |
+|---|---|
+| one machine, everything | `_HOSTNAME:=node-8gb` |
+| the nightly off-site copy | `_SYSTEMD_UNIT:=homelab-offsite.service` |
+| the backup store | `_SYSTEMD_UNIT:=garage.service` |
+| what the host apply did | `_SYSTEMD_UNIT:=homelab-apply.service` |
+| every under-voltage on any Pi | `undervoltage` |
+| USB disconnects (the SSD) | `"USB disconnect"` |
+| SSH logins | `_SYSTEMD_UNIT:=ssh.service Accepted` |
+| errors of every machine (journal priority 0-3) | `_HOSTNAME:* level:=error` |
+
+The uploader remembers its position in the journal: if VictoriaLogs is away (a rebuild, a restart),
+it resumes where it stopped. The journal on each machine is kept on disk (max 200 MB), so a reboot
+before the upload loses nothing either. `verify.yml` reports a machine that sent nothing for 15 min.
+
 ## `kubectl logs`
 
 Still works and is quicker for "what is this pod doing right now":

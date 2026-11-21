@@ -1,0 +1,96 @@
+# Host logs to VictoriaLogs (roadmap O1, docs/design/2026-11-21-host-logs.md): every machine's systemd
+# journal (services + kernel) -> systemd-journal-upload -> LOGS_INGEST_IP:9428 -> VictoriaLogs.
+# In site.yml: applied by host GitOps. The uploader remembers its position in the journal
+# (/var/lib/systemd/journal-upload/state): after an outage it resumes, nothing is lost while the
+# journal still holds it.
+- name: Host logs to VictoriaLogs
+  hosts: k3s
+  gather_facts: false
+  become: true
+  vars:
+    ingest_url: "http://{{ site.LOGS_INGEST_IP }}:9428"
+  tasks:
+    - name: systemd-journal-upload (package systemd-journal-remote)
+      ansible.builtin.apt:
+        name: systemd-journal-remote
+        state: present
+
+    - name: Drop-in folders (not shipped by every distribution)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: [/etc/systemd/journald.conf.d, /etc/systemd/system/systemd-journal-upload.service.d]
+
+    # persistent: the journal survives a reboot (the uploader may not have sent everything yet);
+    # 200M cap: SD cards on the Pis
+    - name: journald settings (persistent, max 200M)
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/homelab.conf
+        mode: "0644"
+        content: |
+          # Managed by ansible/playbooks/host-logs.yml
+          [Journal]
+          Storage=persistent
+          SystemMaxUse=200M
+      notify: Restart journald
+
+    - name: Where to send (/etc/systemd/journal-upload.conf)
+      ansible.builtin.copy:
+        dest: /etc/systemd/journal-upload.conf
+        mode: "0644"
+        content: |
+          # Managed by ansible/playbooks/host-logs.yml. The uploader adds /upload itself
+          # (VictoriaLogs serves /insert/journald/upload; tested 2026-11-21).
+          [Upload]
+          URL={{ ingest_url }}/insert/journald
+      notify: Restart uploader
+
+    # The stock unit gives up after a few failures; VictoriaLogs can be away for a rebuild:
+    # retry forever, every 30 s.
+    - name: Uploader keeps retrying (drop-in)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/systemd-journal-upload.service.d/homelab.conf
+        mode: "0644"
+        content: |
+          # Managed by ansible/playbooks/host-logs.yml
+          [Unit]
+          After=network-online.target
+          Wants=network-online.target
+          StartLimitIntervalSec=0
+          [Service]
+          Restart=always
+          RestartSec=30
+      notify: Restart uploader
+
+    - name: Uploader enabled and running
+      ansible.builtin.systemd_service:
+        name: systemd-journal-upload
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Flush handlers (apply the new settings now)
+      ansible.builtin.meta: flush_handlers
+
+    # Smoke test: this machine reaches VictoriaLogs at the fixed address. Retries: right after a merge
+    # Flux may still be creating the Service.
+    - name: Smoke test - this machine reaches {{ ingest_url }}
+      ansible.builtin.command: curl -sf -m 5 {{ ingest_url }}/health
+      register: health
+      until: health.rc == 0
+      retries: 10
+      delay: 30
+      changed_when: false
+
+  handlers:
+    - name: Restart journald
+      ansible.builtin.systemd_service:
+        name: systemd-journald
+        state: restarted
+
+    - name: Restart uploader
+      ansible.builtin.systemd_service:
+        name: systemd-journal-upload
+        state: restarted
+        daemon_reload: true

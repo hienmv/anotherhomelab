@@ -20,4 +20,5 @@ data:
   IMAGE_REGISTRY: ghcr.io/hienmv   # must be ghcr.io/<GitHub repo owner>: CI pushes there (checked in CI)
   CLOUDFLARE_TUNNEL_ID: ab958f58-ce09-42de-a826-bd8a8779bdbd
   TIMEZONE: Asia/Tokyo
+  LOGS_INGEST_IP: 10.43.0.50       # fixed ClusterIP where the hosts send their journal (docs/design/2026-11-21-host-logs.md)
   BACKUP_STORE_URL: http://192.168.40.250:3900   # Garage on node-8gb's SSD (= ansible backup_store; checked in CI)
