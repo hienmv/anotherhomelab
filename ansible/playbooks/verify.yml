@@ -54,8 +54,14 @@
              + (['under-voltage happened since boot'] if (flags | int >= 0 and (flags | int) // 65536 % 2 == 1) else [])
              + (['throttled since boot'] if (flags | int >= 0 and (flags | int) // 262144 % 2 == 1) else [])
              + (['temperature limit since boot'] if (flags | int >= 0 and (flags | int) // 524288 % 2 == 1) else []) }}
+        # an accepted risk (inventory accepted_risks.power) that has not expired: a warning, not a problem
+        accepted: >-
+          {{ (accepted_risks.power is defined) and
+             (accepted_risks.power.until | to_datetime('%Y-%m-%d')) >= now() and flags | int >= 0 }}
+        text: "{{ 'power: ' ~ (found | join(', ')) ~ ' (' ~ throttled.stdout | default('?') ~ '; check the power supply / cooling; since-boot flags clear at a reboot)' }}"
       ansible.builtin.set_fact:
-        problems: "{{ problems + ['power: ' ~ (found | join(', ')) ~ ' (' ~ throttled.stdout | default('?') ~ '; check the power supply / cooling; since-boot flags clear at a reboot)'] }}"
+        problems: "{{ problems + ([] if accepted | bool else [text ~ (' [accepted risk EXPIRED ' ~ accepted_risks.power.until ~ ']' if accepted_risks.power is defined else '')]) }}"
+        warnings: "{{ (warnings | default([])) + ([text ~ ' [accepted risk until ' ~ accepted_risks.power.until ~ ': ' ~ accepted_risks.power.reason | trim | truncate(80) ~ ']'] if accepted | bool else []) }}"
       when:
         - inventory_hostname in groups['pis']
         - found | length > 0
@@ -702,6 +708,12 @@
       ansible.builtin.debug:
         msg: "{{ inventory_hostname }}: {{ packet_loss | join(', ') }}"
       when: packet_loss | default([]) | length > 0
+
+    # Accepted risks (inventory accepted_risks): shown, but not a failure and no Telegram alert
+    - name: Warnings (accepted risks, until their date)
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ warnings | join(' | ') }}"
+      when: warnings | default([]) | length > 0
 
     - name: All checks passed
       ansible.builtin.assert:

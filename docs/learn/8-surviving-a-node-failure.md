@@ -41,6 +41,13 @@ Kubernetes does **not** move a copy back by itself. `verify.yml` therefore check
 kubectl -n apps rollout restart deploy/landing   # new pods, spread again
 ```
 
+Since 2026-11-22 the **descheduler** does that restart by itself
+([design](../design/2026-11-21-descheduler.md)): every 10 minutes it looks for copies that break their
+spread rule, evicts **one** of them (through the disruption budget, so the site stays up), and the
+scheduler starts the new copy on the emptier node. Tested in a throwaway 2-node cluster: 2 copies on
+one node -> 1 eviction -> one copy per node; the next run evicts nothing. Its log:
+`kubectl -n kube-system logs job/$(kubectl -n kube-system get jobs -o name | grep descheduler | tail -1 | cut -d/ -f2)`.
+
 ## 3. Disruption budget (`PodDisruptionBudget`)
 
 Failures are one thing; **you** also take nodes away on purpose: `kubectl drain` before maintenance,

@@ -2,6 +2,7 @@
 
 | Term | Meaning (in this homelab) |
 |---|---|
+| **accepted risk** | a known problem deliberately tolerated, with a reason and an end date (shown as a warning until then) |
 | **age** | a small encryption tool; encrypts the backups. Its key: `~/.config/sops/age/keys.txt` on node-workstation + password manager |
 | **agent (ssh-agent)** | keeps unlocked SSH keys in memory so you type the passphrase once (8 h here) |
 | **Alertmanager / vmalert** | sends alerts (groups, repeats, Telegram) / evaluates the alert and recording rules every 20 s |
@@ -21,6 +22,7 @@
 | **container / image** | a program packaged with everything it needs / the package itself (stored in GHCR) |
 | **CRD** | Custom Resource Definition: lets an operator add its own object types (e.g. `Cluster` for Postgres) |
 | **DaemonSet** | "run one copy on every node" (e.g. the log collector, node-exporter) |
+| **descheduler** | evicts pods that break a placement rule (here: spread) so the scheduler can place them better; the scheduler itself never moves running pods |
 | **dead man's switch** | an alarm that fires when regular "I'm alive" pings **stop** (healthchecks.io here) |
 | **deploy key** | an SSH key that may access **one** repository (read, or read + write); here for Flux, the workstation and CI's tag bumps |
 | **Deployment / Pod** | "run N copies of this image" / one running copy |

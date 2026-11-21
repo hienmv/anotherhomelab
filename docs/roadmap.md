@@ -18,16 +18,27 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | Everything through git | SOPS-encrypted secrets, instant chart upgrades, Flux → Telegram | 2026-11-18 | [learn/12](learn/12-gitops-secrets.md) |
 | Host GitOps | the machines follow `main` by themselves (`homelab-apply.timer`) | 2026-11-18 | [learn/14](learn/14-host-gitops.md) |
 | Host logs in Grafana (O1) | every machine's journal (services + kernel) in VictoriaLogs; design doc practice started | 2026-11-21 | [design](design/2026-11-21-host-logs.md), [learn/9](learn/9-monitoring-grafana.md) |
+| Re-spread after an outage (O8): the descheduler | copies that end up on one node after a node returns are moved back within ~10 min (PDBs respected) | 2026-11-22 | [design](design/2026-11-21-descheduler.md), [learn/8](learn/8-surviving-a-node-failure.md) |
 | **Backups, stage 1** | SSD store (Garage) on node-8gb; Postgres point-in-time restore (drill: 54 s); nightly archive; encrypted off-site copy to R2; 3-2-1 met; backup dashboard + alerts | 2026-11-21 | [learn/13](learn/13-ssd-and-backups.md) |
 
 ## Next: hardware (only a person can do it)
 
 | # | Item | Why | Status |
 |---|---|---|---|
-| H1 | **Official power supplies**: node-8gb 5.1 V / 3 A, node-1gb (Pi 3B+) 5.1 V / 2.5 A | under-voltage on node-8gb **during** the backup jobs; risks the SD card and the SSD | **urgent** |
+| H1 | **Power supplies**: node-8gb fixed 2026-11-21 (new charger, no more warnings); node-1gb (Pi 3B+) still under-voltage on a shared 65 W charger | node-1gb: accepted risk until 2027-02-22 (below) | node-8gb ✅, node-1gb accepted |
 | H2 | Ethernet for node-workstation | Wi-Fi packet loss; needed for stage A3 | open |
 | H3 | A UPS for the router + Pis | power cuts (node-workstation has its laptop battery) | open |
 | H4 | An SSD for node-4gb | stage A3 (etcd needs fast disks on every control-plane node) | open |
+
+## Accepted risks
+
+A known problem we decided to live with **for now**: written down with a reason and an end date.
+`verify.yml` shows it as a **warning** (no Telegram alert) until the date, then as a problem again,
+so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`accepted_risks:`).
+
+| Risk | Host | Why accepted | Until | Then |
+|---|---|---|---|---|
+| power: under-voltage / throttling | node-1gb | 3 Pis share one 65 W multi-port charger; node-1gb only runs light, tainted workloads, no data | 2027-02-22 | a dedicated 5.1 V / 2.5 A supply, or extend with a new reason |
 
 ## Next: availability (survive a dead machine without restoring)
 
