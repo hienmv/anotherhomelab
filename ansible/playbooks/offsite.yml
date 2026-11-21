@@ -57,43 +57,70 @@
         executable: /bin/bash
         creates: "{{ omit if rclone_zip is changed else '/usr/local/bin/rclone' }}"
 
-    - name: Secrets from git (decrypted on node-workstation)
-      ansible.builtin.set_fact:
-        r2: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ r2_file) | from_json }}"
-        off: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ off_file) | from_json }}"
-      no_log: true
+    # no_log protects the secrets but would also hide WHY a task failed: the rescue below names the
+    # cause (never a value), like the key import in backup-store.yml.
+    - name: Job settings from the secrets in git
+      block:
+        - name: Secrets from git (decrypted on node-workstation)
+          # (not "off": in YAML 1.1 a bare off/on/yes/no is a boolean, so a fact named off silently became
+          # `false` and the next task failed hidden by no_log: 2026-11-21)
+          ansible.builtin.set_fact:
+            r2_secrets: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ r2_file) | from_json }}"
+            offsite_secrets: "{{ lookup('ansible.builtin.pipe', 'sops --decrypt --output-type json ' ~ off_file) | from_json }}"
+          no_log: true
 
-    # Plain crypt password here (file readable only by root and offsite); the job "obscures" it for
-    # rclone at run time (obscured values change every time, which would make every apply a change).
-    - name: Settings for the job ({{ env_file }}, root:offsite 0640)
-      ansible.builtin.copy:
-        dest: "{{ env_file }}"
-        owner: root
-        group: offsite
-        mode: "0640"
-        content: |
-          # Managed by ansible/playbooks/offsite.yml (secrets from ansible/secrets/*.sops.yaml)
-          RCLONE_CONFIG_STORE_TYPE=s3
-          RCLONE_CONFIG_STORE_PROVIDER=Other
-          RCLONE_CONFIG_STORE_ENDPOINT=http://127.0.0.1:{{ backup_store.port }}
-          RCLONE_CONFIG_STORE_REGION={{ backup_store.region }}
-          RCLONE_CONFIG_STORE_FORCE_PATH_STYLE=true
-          RCLONE_CONFIG_STORE_ACCESS_KEY_ID={{ off.garage.id }}
-          RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY={{ off.garage.secret }}
-          RCLONE_CONFIG_R2_TYPE=s3
-          RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-          RCLONE_CONFIG_R2_ENDPOINT=https://{{ r2.account_id }}.r2.cloudflarestorage.com
-          RCLONE_CONFIG_R2_ACCESS_KEY_ID={{ r2.access_key_id }}
-          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY={{ r2.secret_access_key }}
-          RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
-          RCLONE_CONFIG_OFFSITE_TYPE=crypt
-          RCLONE_CONFIG_OFFSITE_REMOTE=r2:{{ r2.bucket }}
-          RCLONE_CONFIG_OFFSITE_FILENAME_ENCRYPTION=standard
-          RCLONE_CONFIG_OFFSITE_DIRECTORY_NAME_ENCRYPTION=true
-          CRYPT_PASSWORD={{ off.crypt.password }}
-          CRYPT_SALT={{ off.crypt.salt }}
-          BUCKETS="{{ backup_store.buckets | join(' ') }}"
-      no_log: true
+        # Plain crypt password here (file readable only by root and offsite); the job "obscures" it for
+        # rclone at run time (obscured values change every time, which would make every apply a change).
+        - name: Settings for the job ({{ env_file }}, root:offsite 0640)
+          ansible.builtin.copy:
+            dest: "{{ env_file }}"
+            owner: root
+            group: offsite
+            mode: "0640"
+            content: |
+              # Managed by ansible/playbooks/offsite.yml (secrets from ansible/secrets/*.sops.yaml)
+              RCLONE_CONFIG_STORE_TYPE=s3
+              RCLONE_CONFIG_STORE_PROVIDER=Other
+              RCLONE_CONFIG_STORE_ENDPOINT=http://127.0.0.1:{{ backup_store.port }}
+              RCLONE_CONFIG_STORE_REGION={{ backup_store.region }}
+              RCLONE_CONFIG_STORE_FORCE_PATH_STYLE=true
+              RCLONE_CONFIG_STORE_ACCESS_KEY_ID={{ offsite_secrets.garage.id }}
+              RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY={{ offsite_secrets.garage.secret }}
+              RCLONE_CONFIG_R2_TYPE=s3
+              RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+              RCLONE_CONFIG_R2_ENDPOINT=https://{{ r2_secrets.account_id }}.r2_secrets.cloudflarestorage.com
+              RCLONE_CONFIG_R2_ACCESS_KEY_ID={{ r2_secrets.access_key_id }}
+              RCLONE_CONFIG_R2_SECRET_ACCESS_KEY={{ r2_secrets.secret_access_key }}
+              RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+              RCLONE_CONFIG_OFFSITE_TYPE=crypt
+              RCLONE_CONFIG_OFFSITE_REMOTE=r2:{{ r2_secrets.bucket }}
+              RCLONE_CONFIG_OFFSITE_FILENAME_ENCRYPTION=standard
+              RCLONE_CONFIG_OFFSITE_DIRECTORY_NAME_ENCRYPTION=true
+              CRYPT_PASSWORD={{ offsite_secrets.crypt.password }}
+              CRYPT_SALT={{ offsite_secrets.crypt.salt }}
+              BUCKETS="{{ backup_store.buckets | join(' ') }}"
+          no_log: true
+
+        - name: The settings have every value the job needs
+          ansible.builtin.assert:
+            that:
+              - r2_secrets.account_id | default('') is match('^[0-9a-f]{32}$')
+              - r2_secrets.bucket | default('') | length > 0
+              - r2_secrets.access_key_id | default('') | length > 0
+              - r2_secrets.secret_access_key | default('') | length > 0
+              - offsite_secrets.garage.id | default('') | length > 0
+              - offsite_secrets.crypt.password | default('') | length > 0
+            fail_msg: "ansible/secrets/r2.sops.yaml or offsite.sops.yaml lacks a value (keys: account_id, bucket, access_key_id, secret_access_key / garage.id, garage.secret, crypt.password, crypt.salt)"
+            quiet: true
+      rescue:
+        - name: Why it failed (without secrets)
+          ansible.builtin.fail:
+            msg: >-
+              off-site settings failed at "{{ ansible_failed_task.name }}":
+              {{ (ansible_failed_result.msg | default('') | regex_replace('(?s)(ENC\\[|-----BEGIN).*', '<cut>') | truncate(300))
+                 if not (ansible_failed_result.censored is defined) else
+                 'the task output is hidden (it holds secrets). Usual causes: sops cannot decrypt (age key in ~/.config/sops/age/keys.txt?), '
+                 ~ 'a key missing in the .sops.yaml files, or the group offsite missing on ' ~ inventory_hostname }}
 
     - name: Metrics folder for node-exporter (the job writes its results there)
       ansible.builtin.file:
