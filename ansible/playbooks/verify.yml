@@ -472,7 +472,10 @@
           q 'ALERTS%7Balertstate%3D%22firing%22%2Cslo!%3D%22%22%7D' | python3 -c '
           import json, sys
           for r in json.load(sys.stdin).get("data", {}).get("result", []):
-              m = r["metric"]; print("firing: %s %s %s (%s)" % (m.get("alertname"), m.get("site"), m.get("slo"), m.get("window")))
+              m = r["metric"]
+              # only the labels an alert has: SLO alerts (site, window), backup alerts (backup)
+              what = " ".join(v for v in (m.get("site"), m.get("backup"), m.get("slo")) if v)
+              print("firing: %s %s%s" % (m.get("alertname"), what, " (%s)" % m["window"] if m.get("window") else ""))
           ' 2>/dev/null
       register: slo
       changed_when: false
