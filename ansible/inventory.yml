@@ -75,6 +75,15 @@ all:
           k3s_labels: [role=light]
           k3s_taints: [role=light:NoSchedule]   # weak PSU: only pods that tolerate it
           k3s_reserved: memory=128Mi
+          # Accepted risk (docs/roadmap.md "Accepted risks"): verify.yml shows these as WARNINGS, not
+          # problems (no Telegram alert), until the date; after it they are problems again.
+          accepted_risks:
+            power:
+              until: "2027-02-22"
+              decided: "2026-11-22, owner"
+              reason: >-
+                Under-voltage on this Pi 3B+ while 3 Pis share one 65 W multi-port USB charger. It only
+                runs light, tainted workloads (no data). Review: a dedicated 5.1 V / 2.5 A supply.
     # Cluster roles. Exactly one server. Moving the server = move the host here + rebuild.
     k3s_servers:
       hosts:

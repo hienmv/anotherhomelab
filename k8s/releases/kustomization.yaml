@@ -6,6 +6,7 @@ resources:
   - cert-manager.yaml   # for the Barman Cloud plugin (mTLS to the CNPG operator)
   - barman-cloud.yaml   # Postgres continuous backup (docs/learn/13-ssd-and-backups.md)
   - vm-stack.yaml
+  - descheduler.yaml    # re-spread copies after a node returns (docs/design/2026-11-21-descheduler.md)
 configMapGenerator:
   - name: vm-stack-values
     namespace: flux-system

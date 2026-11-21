@@ -89,6 +89,8 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Host logs | every machine in the inventory sent journal lines in the last 15 min | `verify.yml --tags apps` (`logs: no host log lines from …`); apply smoke test reaches 10.43.0.50:9428 | always | ✅ |
 | Host logs path (local) | VictoriaLogs v1.53 accepts the journal at /insert/journald/upload, real systemd-journal-upload delivers with host/unit/level fields | containers (manual, 2026-11-21) | after changing host-logs.yml | ✅ manual |
 | Central logs | a log collector is ready on every node; VictoriaLogs received lines in the last 15 min | `verify.yml --tags apps` (`logs:` problem) | always | ✅ |
+| Descheduler re-spread (local) | 2 copies stacked on one node -> exactly 1 eviction -> one per node; second run 0 evictions | throwaway 2-node k3s v1.37.2 in Docker (manual, 2026-11-22) | after changing `k8s/releases/descheduler.yaml` | ✅ manual |
+| Accepted risks | an accepted, unexpired risk is a warning (no alert); expired or none = a problem | Ansible test of the power result (manual, 2026-11-22) | after changing the logic | ✅ manual |
 | Copies spread | Traefik, cloudflared, landing, notes, ticketlite-web/api each have copies on **2 nodes** | `verify.yml --tags apps` (`spread:` problem, with the fix) | always | ✅ |
 | Failover (drain) | losing node-8gb or node-4gb keeps every site up (PDBs: one copy at a time) | `kubectl drain`, curl the sites, `uncordon` ([learn/8](learn/8-surviving-a-node-failure.md#try-it-the-failover-drill)) | after changes to replicas/PDBs, every ~3 months | ✅ procedure, ❌ not run yet |
 
