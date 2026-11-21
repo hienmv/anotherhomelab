@@ -225,6 +225,22 @@ The target must be after the oldest base backup still kept (`kubectl -n data get
    **password** and **salt**. Store both: if node-workstation and the SSD are gone, they and the
    age key are what turn the R2 copy back into data.
 
+### What went wrong first (2026-11-21), and what changed
+
+1. The apply failed with a **hidden** error: the decrypted secrets were stored as a fact named `off`,
+   and YAML 1.1 reads a bare `off` (also `on`, `yes`, `no`) as **false**. `no_log` (which protects the
+   secrets) also hid the error. Now: plain names, and a rescue that names the cause without values.
+2. Then the job failed at 04:30 and 11:37: a blind search-and-replace during fix 1 had turned R2's
+   address into `<account>.r2_secrets.cloudflarestorage.com` (no such host). rclone reported it as
+   "is a file not a directory", which pointed the wrong way.
+3. Now the apply runs a **smoke test** right after writing the settings: it lists the store and the R2
+   bucket and does a `--dry-run` of the exact copy. A wrong setting fails the apply within minutes
+   (with rclone's error: addresses, never keys), not the nightly job hours later.
+
+Lessons: never rename by blind text replacement in config that contains hostnames; test a change
+where it runs (the local test used Garage as a stand-in, not R2's real address); verify right after
+configuring, not at the next scheduled run.
+
 ### Restoring from R2 (if both local copies are gone)
 
 ```bash
