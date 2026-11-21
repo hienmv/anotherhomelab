@@ -1,0 +1,51 @@
+# Descheduler (roadmap O8, docs/design/2026-11-21-descheduler.md): after a node comes back, copies that
+# break their spread rule (both copies on one node) are evicted ONE at a time (PDBs respected) and the
+# scheduler places them on the emptier node. Only this one plugin, only our namespaces.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: descheduler
+  namespace: flux-system
+spec:
+  interval: 1h
+  releaseName: descheduler
+  targetNamespace: kube-system
+  chart:
+    spec:
+      chart: descheduler
+      version: 0.37.0          # = Kubernetes 1.37 (k3s_version)
+      sourceRef: { kind: HelmRepository, name: descheduler, namespace: flux-system }
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  values:
+    kind: CronJob
+    schedule: "*/10 * * * *"
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { memory: 128Mi }
+    deschedulerPolicy:
+      profiles:
+        - name: respread
+          pluginConfig:
+            - name: DefaultEvictor
+              args:
+                podProtections:
+                  defaultDisabled:
+                    - PodsWithLocalStorage   # emptyDir (stateless Grafana) may move
+                    - SystemCriticalPods     # Traefik runs as system-cluster-critical (k3s)
+                  extraEnabled:
+                    - PodsWithPVC            # pods with volumes (databases) never move
+                # Learned in a test cluster (2026-11-22): the old evictSystemCriticalPods is refused next to
+                # podProtections; and the extra protection PodsWithoutPDB blocked EVERY eviction in 0.37,
+                # also of pods that have a PDB, so it is not used (see the design doc).
+            - name: RemovePodsViolatingTopologySpreadConstraint
+              args:
+                constraints: [DoNotSchedule, ScheduleAnyway]  # ours are soft (ScheduleAnyway)
+                topologyBalanceNodeFit: true                  # evict only if it fits on another node
+                namespaces:
+                  include: [apps, infra, kube-system]
+          plugins:
+            balance:
+              enabled: [RemovePodsViolatingTopologySpreadConstraint]
