@@ -208,7 +208,7 @@ battery acts as a UPS. Cost: one machine holds every key and the whole control p
 failure, and a browser on the same box), mitigated by a sudo password, passphrase keys, keys-only
 SSH, AppArmor left stock. **Ubuntu 24.04 LTS, not 26.04:** 26.04's AppArmor default breaks every
 container on k3s today (K3S-GUIDE 10.3). Next steps toward HA: USB SSDs for the Pi 4s, 3 control-plane
-nodes, a Postgres replica (roadmap in K3S-GUIDE).
+nodes, a Postgres replica: [docs/roadmap.md](docs/roadmap.md).
 
 ## Usage (GitOps)
 
