@@ -88,7 +88,7 @@
               RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY={{ offsite_secrets.garage.secret }}
               RCLONE_CONFIG_R2_TYPE=s3
               RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-              RCLONE_CONFIG_R2_ENDPOINT=https://{{ r2_secrets.account_id }}.r2_secrets.cloudflarestorage.com
+              RCLONE_CONFIG_R2_ENDPOINT=https://{{ r2_secrets.account_id }}.r2.cloudflarestorage.com
               RCLONE_CONFIG_R2_ACCESS_KEY_ID={{ r2_secrets.access_key_id }}
               RCLONE_CONFIG_R2_SECRET_ACCESS_KEY={{ r2_secrets.secret_access_key }}
               RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
@@ -121,6 +121,28 @@
                  if not (ansible_failed_result.censored is defined) else
                  'the task output is hidden (it holds secrets). Usual causes: sops cannot decrypt (age key in ~/.config/sops/age/keys.txt?), '
                  ~ 'a key missing in the .sops.yaml files, or the group offsite missing on ' ~ inventory_hostname }}
+
+    # Smoke test right after a settings change: can the job reach the store AND R2 with these settings?
+    # (2026-11-21 the endpoint had a typo, found only when the nightly job failed.) rclone's errors show
+    # addresses and bucket names, never the keys.
+    - name: Smoke test - the job's settings reach the store and R2, and its copy would start (dry run)
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          set -a; . {{ env_file }}; set +a
+          rclone lsf --config /dev/null --max-depth 1 store:{{ backup_store.buckets | first }} >/dev/null
+          rclone lsf --config /dev/null --max-depth 1 "$RCLONE_CONFIG_OFFSITE_REMOTE" >/dev/null
+          # exactly the job's first step, changing nothing (--dry-run): same remotes, same paths
+          RCLONE_CONFIG_OFFSITE_PASSWORD="$(rclone obscure "$CRYPT_PASSWORD")"
+          RCLONE_CONFIG_OFFSITE_PASSWORD2="$(rclone obscure "$CRYPT_SALT")"
+          export RCLONE_CONFIG_OFFSITE_PASSWORD RCLONE_CONFIG_OFFSITE_PASSWORD2
+          for b in $BUCKETS; do
+            rclone copy --config /dev/null --dry-run --immutable -q "store:$b" "offsite:$b"
+          done
+          echo ok
+        executable: /bin/bash
+      become_user: offsite
+      changed_when: false
 
     - name: Metrics folder for node-exporter (the job writes its results there)
       ansible.builtin.file:
