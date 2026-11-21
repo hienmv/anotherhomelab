@@ -27,7 +27,7 @@ How this homelab measures up:
 |---|---|---|---|
 | 1 | live Postgres | node-workstation, internal NVMe | |
 | 2 | WAL + nightly base backups, nightly archives | node-8gb, USB SSD (Garage) | another disk, another machine ✅ |
-| 3 | encrypted copy (part D, nightly 04:30) | Cloudflare R2, another city | another provider, **off-site** ✅ (once R2 is set up) |
+| 3 | encrypted copy (part D, nightly 04:30) | Cloudflare R2, another city | another provider, **off-site** ✅ (first copy 2026-11-21: 37 files / 13 MiB Postgres, 4 archives, cryptcheck identical) |
 | +1 | R2 only adds, never deletes; R2 itself expires objects after 35 days | | protects against deleting both local copies (close to "immutable") |
 | 0 | PITR drill (restore to a chosen second), off-site check (part D) | | tested ✅ |
 
