@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - cloudflared.yaml
   - traefik-config.yaml
+  - local-ssd.yaml       # storage class on the SSD node (docs/design/2026-11-22-postgres-replica.md)

@@ -21,4 +21,6 @@ data:
   CLOUDFLARE_TUNNEL_ID: ab958f58-ce09-42de-a826-bd8a8779bdbd
   TIMEZONE: Asia/Tokyo
   LOGS_INGEST_IP: 10.43.0.50       # fixed ClusterIP where the hosts send their journal (docs/design/2026-11-21-host-logs.md)
+  SSD_NODE: node-8gb               # the node with the USB SSD (= ansible inventory ssd:; checked in CI)
+  SSD_K8S_PATH: /mnt/ssd/k8s       # where storage class local-ssd puts volumes on that node
   BACKUP_STORE_URL: http://192.168.40.250:3900   # Garage on node-8gb's SSD (= ansible backup_store; checked in CI)

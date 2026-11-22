@@ -1,0 +1,42 @@
+# Unit tests for postgres-rules.yaml (scripts/test-slo-rules.sh, CI). vmalert-tool's clock starts 2000-01-01.
+rule_files: [/tmp/postgres-rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # 1. one streaming replica -> fine; it drops to 0 for 20 min -> alert
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_replication_streaming_replicas{pod="pg-1"}'
+        values: '1x10 0x25'
+    alert_rule_test:
+      - eval_time: 9m
+        groupname: postgres-ha
+        alertname: PostgresReplicaNotStreaming
+        exp_alerts: []
+      - eval_time: 30m
+        groupname: postgres-ha
+        alertname: PostgresReplicaNotStreaming
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: postgres-ha }
+            exp_annotations:
+              summary: 'Postgres has no streaming replica'
+              description: 'The primary has had no streaming replica for 15 min: if it fails now, there is nothing to fail over to (restore from backup instead). kubectl -n data get pods -l cnpg.io/cluster=pg'
+
+  # 2. lag: under a second -> fine; 10 min behind for 15 min -> alert
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_replication_lag{pod="pg-2"}'
+        values: '0.4x10 600x20'
+    alert_rule_test:
+      - eval_time: 9m
+        groupname: postgres-ha
+        alertname: PostgresReplicationLag
+        exp_alerts: []
+      - eval_time: 25m
+        groupname: postgres-ha
+        alertname: PostgresReplicationLag
+        exp_alerts:
+          - exp_labels: { severity: warning, slo: postgres-ha }
+            exp_annotations:
+              summary: 'Postgres replica is 10m 0s behind'
+              description: 'A failover now would lose that much. Usually the replica''s node is overloaded or the network is bad (node-8gb, Wi-Fi to node-workstation).'

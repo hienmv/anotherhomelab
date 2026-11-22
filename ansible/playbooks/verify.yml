@@ -266,11 +266,22 @@
         problems: "{{ problems + ['config: unreplaced ' ~ (unreplaced.stdout_lines | map('trim') | join(', ')) ~ ' (Flux substitution)'] }}"
       when: unreplaced.stdout | length > 0
 
-    - name: Data pods on the role=data node
+    # Postgres instances: on homelab/postgres nodes, one per node (A1, docs/design/2026-11-22-postgres-replica.md);
+    # every other data pod (Redis): on the role=data node
+    - name: Data pods on their nodes
       tags: [cluster, data]
       ansible.builtin.shell: |
-        want=$(kubectl get nodes -l role=data -o name | sed 's#node/##')
-        kubectl -n data get pods -o custom-columns=N:.metadata.name,NODE:.spec.nodeName --no-headers | awk -v w="$want" '$2 != w'
+        data_node=$(kubectl get nodes -l role=data -o name | sed 's#node/##')
+        pg_nodes=" $(kubectl get nodes -l homelab/postgres=true -o name | sed 's#node/##' | tr '\n' ' ') "
+        kubectl -n data get pods -o custom-columns=N:.metadata.name,NODE:.spec.nodeName,PG:.metadata.labels.cnpg\\.io/cluster --no-headers \
+          | while read -r name node pg; do
+              [ "$node" = "<none>" ] && continue
+              if [ "$pg" != "<none>" ]; then
+                case "$pg_nodes" in *" $node "*) ;; *) echo "$name on $node (not a homelab/postgres node)";; esac
+              elif [ "$node" != "$data_node" ]; then
+                echo "$name on $node (not the role=data node)"
+              fi
+            done
       register: misplaced
       changed_when: false
       failed_when: false
@@ -278,8 +289,33 @@
     - name: Data placement result
       tags: [cluster, data]
       ansible.builtin.set_fact:
-        problems: "{{ problems + ['data: ' ~ item ~ ' (not on the role=data node)'] }}"
+        problems: "{{ problems + ['data: ' ~ item] }}"
       loop: "{{ misplaced.stdout_lines }}"
+
+    # Replication: every instance ready, each replica streaming from the primary, instances on different nodes
+    - name: Postgres replication (instances ready, replicas streaming, one per node)
+      tags: [cluster, data]
+      ansible.builtin.shell: |
+        want=$(kubectl -n data get cluster.postgresql.cnpg.io pg -o jsonpath='{.spec.instances}')
+        ready=$(kubectl -n data get cluster.postgresql.cnpg.io pg -o jsonpath='{.status.readyInstances}')
+        primary=$(kubectl -n data get cluster.postgresql.cnpg.io pg -o jsonpath='{.status.currentPrimary}')
+        [ "${ready:-0}" = "$want" ] || echo "${ready:-0} of $want Postgres instances ready (kubectl -n data get pods -l cnpg.io/cluster=pg)"
+        if [ "${want:-1}" -gt 1 ] && [ -n "$primary" ]; then
+          streaming=$(kubectl -n data exec "$primary" -c postgres -- psql -U postgres -At -c "select count(*) from pg_stat_replication where state = 'streaming'" 2>/dev/null)
+          [ "${streaming:-0}" = "$((want - 1))" ] || echo "${streaming:-0} of $((want - 1)) replica(s) streaming from $primary"
+          nodes=$(kubectl -n data get pods -l cnpg.io/cluster=pg -o jsonpath='{.items[*].spec.nodeName}' | tr ' ' '\n' | sort -u | grep -c .)
+          [ "$nodes" = "$want" ] || echo "Postgres instances on $nodes node(s), want $want (one per node)"
+        fi
+        echo "primary=$primary" >&2
+      register: replication
+      changed_when: false
+      failed_when: false
+
+    - name: Replication result
+      tags: [cluster, data]
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['postgres: ' ~ item] }}"
+      loop: "{{ replication.stdout_lines }}"
 
     # ---------- containers: canary Postgres on every schedulable node ----------
     - name: Container canary
@@ -522,7 +558,8 @@
     - name: 2-copy deployments with all copies on one node
       tags: [apps]
       ansible.builtin.shell: |
-        for d in apps/landing apps/notes apps/ticketlite-web apps/ticketlite-api infra/cloudflared kube-system/traefik; do
+        # cnpg-system: the Postgres operator, which performs failovers (design/2026-11-22-postgres-replica.md)
+        for d in apps/landing apps/notes apps/ticketlite-web apps/ticketlite-api infra/cloudflared kube-system/traefik cnpg-system/cnpg-cloudnative-pg; do
           ns=${d%/*}; name=${d#*/}
           # matchLabels as JSON {"k":"v",...} -> k=v,... (a label selector)
           sel=$(kubectl -n "$ns" get deploy "$name" -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null | tr -d '{}"' | tr ':' '=')

@@ -1,0 +1,140 @@
+# Storage class local-ssd (docs/design/2026-11-22-postgres-replica.md): a SECOND, independent
+# local-path provisioner (upstream rancher/local-path-provisioner v0.0.37, renamed), so volumes on the
+# SSD node land on its SSD (${SSD_NODE}: ${SSD_K8S_PATH}) instead of the SD card. Every other node uses
+# the same directory as k3s' own local-path. k3s' local-path is not touched (k3s re-applies its config).
+# reclaimPolicy Retain: deleting a PVC keeps the data on disk (databases).
+# The double dollar in the helper scripts below is Flux's escape: they get the provisioner's VOL_DIR.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: local-ssd-provisioner
+  namespace: local-ssd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: local-ssd-provisioner
+  namespace: local-ssd
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: local-ssd-provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "persistentvolumeclaims", "configmaps", "pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: local-ssd-provisioner
+  namespace: local-ssd
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: local-ssd-provisioner }
+subjects: [{ kind: ServiceAccount, name: local-ssd-provisioner, namespace: local-ssd }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: local-ssd-provisioner
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: local-ssd-provisioner }
+subjects: [{ kind: ServiceAccount, name: local-ssd-provisioner, namespace: local-ssd }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: local-ssd-provisioner
+  namespace: local-ssd
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: local-ssd-provisioner } }
+  template:
+    metadata: { labels: { app: local-ssd-provisioner } }
+    spec:
+      serviceAccountName: local-ssd-provisioner
+      containers:
+        - name: provisioner
+          image: docker.io/rancher/local-path-provisioner:v0.0.37
+          command:
+            - local-path-provisioner
+            - start
+            - --config
+            - /etc/config/config.json
+            - --provisioner-name
+            - homelab.io/local-ssd     # not rancher.io/local-path: k3s' provisioner keeps its own volumes
+            # renamed resources: tell it (defaults are local-path-config / local-path-provisioner-service-account;
+            # without these it crashed in the test cluster, 2026-11-22)
+            - --configmap-name
+            - local-ssd-config
+            - --service-account-name
+            - local-ssd-provisioner
+          ports: [{ name: health, containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /ready, port: health }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /health, port: health }, periodSeconds: 20 }
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          volumeMounts: [{ name: config, mountPath: /etc/config/ }]
+          env:
+            - { name: POD_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+            - { name: CONFIG_MOUNT_PATH, value: /etc/config/ }
+            - { name: HEALTH_PORT, value: "8080" }
+      volumes: [{ name: config, configMap: { name: local-ssd-config } }]
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-ssd
+provisioner: homelab.io/local-ssd
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-ssd-config
+  namespace: local-ssd
+data:
+  config.json: |-
+    {
+      "nodePathMap": [
+        { "node": "DEFAULT_PATH_FOR_NON_LISTED_NODES", "paths": ["/var/lib/rancher/k3s/storage"] },
+        { "node": "${SSD_NODE}", "paths": ["${SSD_K8S_PATH}"] }
+      ]
+    }
+  setup: |-
+    #!/bin/sh
+    set -eu
+    mkdir -m 0777 -p "$${VOL_DIR}"
+  teardown: |-
+    #!/bin/sh
+    set -eu
+    rm -rf "$${VOL_DIR}"
+  helperPod.yaml: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: helper-pod
+          image: docker.io/library/busybox:1.37.0
+          imagePullPolicy: IfNotPresent

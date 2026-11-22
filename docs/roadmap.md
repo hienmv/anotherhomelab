@@ -20,6 +20,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | Host logs in Grafana (O1) | every machine's journal (services + kernel) in VictoriaLogs; design doc practice started | 2026-11-21 | [design](design/2026-11-21-host-logs.md), [learn/9](learn/9-monitoring-grafana.md) |
 | Re-spread after an outage (O8): the descheduler | copies that end up on one node after a node returns are moved back within ~10 min (PDBs respected) | 2026-11-22 | [design](design/2026-11-21-descheduler.md), [learn/8](learn/8-surviving-a-node-failure.md) |
 | Brief outages without errors (U1) | a Postgres failover/restart answers 503 + Retry-After in ≤ 5 s (was: 30 s hang, then 500); the web retries reads with a "Reconnecting…" banner, never repeats an order | 2026-11-24 | [design](design/2026-11-24-graceful-db-outage.md) |
+| Postgres replica (A1) | a streaming replica on node-8gb's SSD; CNPG promotes it when the primary's pod, disk or node fails, `pg-rw` follows; replication checked and alerted | 2026-11-25 | [design](design/2026-11-22-postgres-replica.md), [learn/8](learn/8-surviving-a-node-failure.md) |
 | **Backups, stage 1** | SSD store (Garage) on node-8gb; Postgres point-in-time restore (drill: 54 s); nightly archive; encrypted off-site copy to R2; 3-2-1 met; backup dashboard + alerts | 2026-11-21 | [learn/13](learn/13-ssd-and-backups.md) |
 
 ## Next: hardware (only a person can do it)
@@ -45,7 +46,6 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 
 | # | Stage | Gives | Needs |
 |---|---|---|---|
-| A1 | **Postgres replica** on node-8gb's SSD (CNPG `instances: 2`) | node-workstation's disk dies → a live copy is ready, no restore | nothing new |
 | A2 | Redis replica | the order queue survives one machine | nothing new |
 | A3 | **3 k3s servers** (control plane on node-workstation, node-8gb, node-4gb; embedded etcd) | **automatic** failover: one machine dies, nothing stops | H2, H4 |
 | A4 | k3s upgrades node by node (drain → upgrade → uncordon) | upgrades without downtime; `k3s.yml` can join host GitOps | A3 helps |
@@ -81,6 +81,6 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 
 1. **H1** now: a real risk today, and cheap.
 2. ~~O1~~ done 2026-11-21.
-3. **A1**: the biggest gain in availability with the hardware you have.
+3. ~~A1~~ done 2026-11-22.
 4. O2, O3, O4: habits that keep the gains.
 5. H2 + H4, then A3 and A4: full automatic failover.
