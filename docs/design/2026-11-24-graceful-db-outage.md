@@ -68,6 +68,29 @@ Why 503 means "not placed" but 502/504 don't:
 
 Why 90 s of retries: it covers the measured failover (≤ 75 s) and a primary restart (~30 s).
 
+### Other errors (review question, 2026-11-25)
+
+Rule: an **allow-list**. Only errors that (a) mean "the dependency itself is unusable" and (b) go
+away by themselves within about a minute become 503. Everything else stays 500, because calling a
+bug "briefly unavailable" hides it and makes clients retry something that will never work.
+The codes come from [PostgreSQL's error code list](https://www.postgresql.org/docs/17/errcodes-appendix.html).
+
+| Error | 503? | Why |
+|---|---|---|
+| Hikari pool timeout, class `08` (connection refused / broken / lost) | ✅ | the server is gone or restarting |
+| `57P01` / `57P02` / `57P03` (shutting down / crashed / starting up) | ✅ | a restart, switchover, failover |
+| `25006` read-only transaction | ✅ | a write reached a demoted primary just after a failover |
+| `53300` too many connections | ✅ | all server slots taken; frees up in seconds |
+| Redis connection errors, `LOADING`, `READONLY` | ✅ | Redis restarting, reading its data from disk, or demoted (A2) |
+| `08P01` protocol violation | ❌ 500 | class 08, but means a driver bug, not a lost connection |
+| `28xxx` wrong password, `3D000` no such database | ❌ 500 | a configuration error (e.g. a rotated secret): needs a fix, not waiting |
+| `53100` disk full | ❌ 500 | not brief: a person has to free space (alerts exist for disks) |
+| `57014` statement timeout | ❌ 500 | a slow query: a performance bug |
+| `40001` serialization failure, `40P01` deadlock | ❌ 500 | transient, but the right retry is **inside the server's transaction code**, not a browser retry. Not seen in TicketLite (the worker locks rows in one order); add a server-side retry if they ever appear |
+| query errors (`42xxx` syntax, `23xxx` constraint, …), `XX000` internal error, Redis `WRONGTYPE` / `OOM` | ❌ 500 | bugs or a full Redis: retrying gives the same answer |
+
+All rows are unit-tested (`UnavailableTest`).
+
 ## Risks and how they are handled
 
 | Risk | Answer |

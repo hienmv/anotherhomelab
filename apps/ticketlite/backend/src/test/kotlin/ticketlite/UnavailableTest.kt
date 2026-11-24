@@ -18,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import redis.clients.jedis.exceptions.JedisConnectionException
+import redis.clients.jedis.exceptions.JedisDataException
 
 /** A Postgres failover / Redis restart is answered 503 + Retry-After; real bugs stay 500. */
 class UnavailableTest {
@@ -31,7 +32,10 @@ class UnavailableTest {
         assertEquals("postgres", unavailableDependency(SQLException("terminating connection", "57P01")))
         assertEquals("postgres", unavailableDependency(SQLException("the database system is starting up", "57P03")))
         assertEquals("postgres", unavailableDependency(SQLException("read-only transaction", "25006")))
+        assertEquals("postgres", unavailableDependency(SQLException("sorry, too many clients already", "53300")))
         assertEquals("redis", unavailableDependency(JedisConnectionException(ConnectException("refused"))))
+        assertEquals("redis", unavailableDependency(JedisDataException("LOADING Redis is loading the dataset in memory")))
+        assertEquals("redis", unavailableDependency(JedisDataException("READONLY You can't write against a read only replica.")))
         // found through the cause chain
         assertEquals("postgres", unavailableDependency(RuntimeException("wrapped", SQLException("x", "08003"))))
     }
@@ -41,6 +45,12 @@ class UnavailableTest {
         assertNull(unavailableDependency(SQLException("syntax error", "42601")))
         assertNull(unavailableDependency(SQLException("duplicate key", "23505")))
         assertNull(unavailableDependency(SQLException("no state")))
+        // considered and rejected (see Unavailable.kt): not brief, or not fixed by a browser retry
+        listOf("08P01", "28P01", "3D000", "53100", "57014", "40001", "40P01", "XX000").forEach {
+            assertNull(unavailableDependency(SQLException("x", it)), it)
+        }
+        assertNull(unavailableDependency(JedisDataException("WRONGTYPE Operation against a key holding the wrong kind of value")))
+        assertNull(unavailableDependency(JedisDataException("OOM command not allowed when used memory > 'maxmemory'")))
         assertNull(unavailableDependency(IllegalStateException("bug")))
     }
 
