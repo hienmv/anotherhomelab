@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, errorMessage } from './api'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api, ApiError, errorMessage, isUnavailable, onConnectionChange, READ_RETRY_FOR_MS } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -35,5 +35,63 @@ describe('errorMessage', () => {
   it('falls back for unknown codes and network errors', () => {
     expect(errorMessage(new ApiError(500, 'INTERNAL'))).toMatch(/INTERNAL/)
     expect(errorMessage(new TypeError('Failed to fetch'))).toMatch(/Network error/)
+  })
+})
+
+describe('brief outages (design/2026-11-24-graceful-db-outage.md)', () => {
+  const json = (status: number, body: object, headers: Record<string, string> = {}) =>
+    new Response(JSON.stringify(body), { status, headers })
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('retries a read after 503, honouring Retry-After, and shows "reconnecting" meanwhile', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(503, { error: 'UNAVAILABLE' }, { 'Retry-After': '5' }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json(200, []))
+    vi.stubGlobal('fetch', fetchMock)
+    const states: boolean[] = []
+    const off = onConnectionChange((r) => states.push(r))
+
+    const result = api.concerts()
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // waits the 5 s the server asked for
+    await vi.advanceTimersByTimeAsync(1 + 2_000) // then the network error: 2 s backoff
+    await expect(result).resolves.toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(states).toEqual([false, true, false])
+    off()
+  })
+
+  it('gives up on a read after READ_RETRY_FOR_MS with UNAVAILABLE', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => json(503, { error: 'UNAVAILABLE' }, { 'Retry-After': '5' })))
+    const result = api.concerts().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(READ_RETRY_FOR_MS + 10_000)
+    const e = await result
+    expect(e).toBeInstanceOf(ApiError)
+    expect(e).toMatchObject({ status: 503, code: 'UNAVAILABLE' })
+    expect(isUnavailable(e)).toBe(true)
+    expect(errorMessage(e)).toMatch(/briefly unavailable/)
+  })
+
+  it('never retries a write (it could order twice)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json(503, { error: 'UNAVAILABLE' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.buy(1, 1)).rejects.toMatchObject({ status: 503, code: 'UNAVAILABLE' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry real errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json(500, { error: 'INTERNAL' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(api.concerts()).rejects.toMatchObject({ status: 500 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a proxy 502 without JSON as UNAVAILABLE', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Bad Gateway', { status: 502 })))
+    await expect(api.buy(1, 1)).rejects.toMatchObject({ status: 502, code: 'UNAVAILABLE' })
   })
 })

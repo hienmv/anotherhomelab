@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, errorMessage } from '../api'
+import { api, ApiError, errorMessage, isUnavailable } from '../api'
 import { useAuth } from '../auth'
 import { Spinner } from '../components/atoms/Spinner'
 import { StatusMessage, type Status } from '../components/molecules/StatusMessage'
@@ -41,7 +41,21 @@ export function ConcertsPage() {
     setBusyId(concert.id)
     setStatus({ kind: 'pending', text: `Reserving ${quantity} ticket(s) for ${concert.title}…` })
     try {
-      const result = await waitForOrder(await api.buy(concert.id, quantity))
+      let placed: Order
+      try {
+        placed = await api.buy(concert.id, quantity)
+      } catch (e) {
+        // Not retried automatically: retrying a purchase is the user's choice (design doc).
+        // 503 = the order was not taken (the api releases the reservation, or the request never
+        // reached it). 502/504 = unknown: the proxy may have lost the answer of an order that worked.
+        let text = errorMessage(e)
+        if (isUnavailable(e)) {
+          text += e instanceof ApiError && e.status === 503 ? ' Your order was not placed.' : ' Check "My orders" before trying again.'
+        }
+        setStatus({ kind: 'error', text })
+        return
+      }
+      const result = await waitForOrder(placed)
       if (result.status === 'CONFIRMED') {
         setStatus({ kind: 'success', text: `Confirmed! ${quantity} ticket(s) for ${concert.title}.` })
       } else if (result.status === 'FAILED') {

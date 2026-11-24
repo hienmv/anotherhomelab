@@ -82,6 +82,11 @@ web/src/pages/ ConcertsPage, LoginPage, OrdersPage
 | GET | `/api/orders` | yes | my last 50 orders |
 | GET | `/api/orders/{id}` | yes | poll status: `PENDING` → `CONFIRMED` / `FAILED` |
 
+Errors: 4xx = your request (`SOLD_OUT`, `LIMIT`, `UNAUTHORIZED`, …). **503 `UNAVAILABLE` + `Retry-After`** =
+Postgres or Redis is briefly down (failover, restart): try again later; the web app retries reads by
+itself and never repeats an order ([design](../../docs/design/2026-11-24-graceful-db-outage.md)).
+500 `INTERNAL` = a bug.
+
 ## Run locally
 
 ```bash
@@ -101,12 +106,13 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 | `SESSION_SECRET` | api | random (hex; sessions reset on restart if unset) |
 | `COOKIE_SECURE` | api | `false` (`true` in k8s) |
 | `WORKER_DELAY_MS` | worker | `200` (simulated payment step) |
+| `DB_CONNECT_TIMEOUT_MS` | backend | `5000` (wait for a database connection; then 503) |
 | `API_UPSTREAM` | web | `http://api:8080` (nginx `/api` proxy, used by compose) |
 
 ## CI/CD
 
 `.github/workflows/ticketlite.yml`:
-1. On PR: build both images. The backend build runs `gradle test`; the web build runs `vitest` (22 tests), `tsc` and `vite build`. A failing test fails the image build.
+1. On PR: build both images. The backend build runs `gradle test`; the web build runs `vitest` (38 tests), `tsc` and `vite build`. A failing test fails the image build.
 2. On push to `main`: build `linux/amd64` + `linux/arm64` images and push to `ghcr.io/<repo owner>/ticketlite-{backend,web}`
    tagged `sha-<7>` and `main`.
 3. Commit the new tag into `k8s/apps/ticketlite/kustomization.yaml` (`[skip ci]`).
@@ -142,6 +148,7 @@ dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded au
 | `ticketlite_orders_processed_total{status,reason}` | worker | CONFIRMED / FAILED after the DB check |
 | `ticketlite_tickets_sold_total` | worker | confirmed tickets |
 | `ticketlite_order_process_seconds` | worker | histogram, time per order |
+| `ticketlite_dependency_unavailable_total{dependency}` | api | requests answered 503 because postgres / redis was briefly down |
 | `ticketlite_inventory_available{concert,hot}` | api | Redis gate per concert |
 | `ticketlite_queue_lag`, `ticketlite_queue_pending` | worker | stream backlog / unacked |
 | `ktor_http_server_requests_seconds` | api | HTTP latency histogram by route |

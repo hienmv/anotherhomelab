@@ -19,7 +19,7 @@ fun main() {
 
 private fun start() {
     val cfg = AppConfig.fromEnv()
-    val db = Db(cfg.db)
+    val db = Db(cfg.db, connectTimeoutMs = cfg.dbConnectTimeoutMs)
     val gate = RedisGate(cfg.redisUrl)
     log.info("starting role={} port={}", cfg.role, cfg.port)
     when (cfg.role) {

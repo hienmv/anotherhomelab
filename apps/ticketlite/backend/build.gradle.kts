@@ -42,6 +42,7 @@ dependencies {
     implementation("at.favre.lib:bcrypt:0.10.2")
 
     testImplementation(kotlin("test"))
+    testImplementation("io.ktor:ktor-server-test-host:$ktor")
 }
 
 kotlin {
