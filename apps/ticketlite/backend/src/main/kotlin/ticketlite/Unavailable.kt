@@ -13,7 +13,15 @@ import redis.clients.jedis.exceptions.JedisConnectionException
  */
 const val RETRY_AFTER_SECONDS = 5
 
-/** Postgres SQLSTATEs that mean "the server is not usable right now", not "your query is wrong". */
+/**
+ * Postgres SQLSTATEs that mean "the server is not usable right now", not "your query is wrong".
+ *
+ * SQLSTATE is a fixed 5-character error code (SQL standard), not message text: the first 2 characters
+ * are the class (08 = connection exception, 25 = invalid transaction state, 57 = operator
+ * intervention), a "P" marks a PostgreSQL-specific code. The list is PostgreSQL's "Appendix A. Error
+ * Codes" (https://www.postgresql.org/docs/17/errcodes-appendix.html), which recommends testing these
+ * codes rather than messages: they stay the same across releases and are not translated.
+ */
 private val UNAVAILABLE_SQLSTATES = setOf(
     "57P01", // admin_shutdown: the server is stopping (restart, switchover)
     "57P02", // crash_shutdown
