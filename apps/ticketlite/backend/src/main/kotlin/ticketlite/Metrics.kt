@@ -19,6 +19,7 @@ import java.time.Duration
  *   ticketlite_order_process_seconds              worker: time to confirm/fail one order
  *   ticketlite_inventory_available{concert}       api: Redis gate per concert
  *   ticketlite_queue_lag / _pending               worker: stream backlog / unacked messages
+ *   ticketlite_dependency_unavailable_total{dependency} api: requests answered 503 (postgres | redis down)
  */
 object Metrics {
     val registry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
@@ -40,6 +41,7 @@ object Metrics {
             registry.counter("ticketlite.orders.processed", "status", status, "reason", reason)
         }
         registry.counter("ticketlite.tickets.sold")
+        listOf("postgres", "redis").forEach { registry.counter("ticketlite.dependency.unavailable", "dependency", it) }
     }
 
     fun bindJvm() {
@@ -50,6 +52,9 @@ object Metrics {
 
     fun orderRequest(result: String) =
         registry.counter("ticketlite.order.requests", "result", result).increment()
+
+    fun dependencyUnavailable(dependency: String) =
+        registry.counter("ticketlite.dependency.unavailable", "dependency", dependency).increment()
 
     fun orderProcessed(status: String, reason: String?, quantity: Int, durationNanos: Long) {
         registry.counter("ticketlite.orders.processed", "status", status, "reason", reason ?: "none").increment()

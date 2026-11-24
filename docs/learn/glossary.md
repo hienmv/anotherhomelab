@@ -38,6 +38,8 @@
 | **host GitOps / pull model** | each machine applies the desired state from git itself (here: `homelab-apply.timer` runs `site.yml`) |
 | **Helm / HelmRelease** | packages of Kubernetes manifests ("charts") / Flux's object that installs one |
 | **idempotent** | running it again changes nothing if it is already right |
+| **503 / Retry-After** | HTTP "temporarily unavailable, try again in N seconds": a brief outage, not a bug (500) or a wrong request (4xx) |
+| **cascading failure** | one part failing makes others fail too (e.g. health checks that depend on the database take every api pod out at once) |
 | **Ingress / Traefik** | rule "this hostname goes to that app" / the program that applies those rules |
 | **inventory** | Ansible's list of machines and their variables (`ansible/inventory.yml`) |
 | **journal / journald** | systemd's log of a machine (services + kernel); `journalctl` reads it; since O1 also shipped to VictoriaLogs |

@@ -1,5 +1,6 @@
 package ticketlite
 
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -32,6 +33,7 @@ import io.ktor.server.sessions.sessions
 import io.ktor.server.sessions.set
 import java.util.UUID
 import net.logstash.logback.argument.StructuredArguments.kv
+import net.logstash.logback.argument.StructuredArguments.v
 import org.slf4j.LoggerFactory
 
 private val log = LoggerFactory.getLogger("ticketlite.api")
@@ -64,15 +66,7 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
         replyToHeader("X-Request-ID")
     }
     install(RequestLog)
-    install(StatusPages) {
-        exception<BadRequestException> { call, _ ->
-            call.respond(HttpStatusCode.BadRequest, ErrorDto("BAD_REQUEST"))
-        }
-        exception<Throwable> { call, e ->
-            log.error("unhandled error on {}", call.request.path(), kv("request_id", call.callId ?: "-"), e)
-            call.respond(HttpStatusCode.InternalServerError, ErrorDto("INTERNAL"))
-        }
-    }
+    installErrorPages()
     install(Sessions) {
         cookie<UserSession>("TL_SESSION") {
             cookie.path = "/"
@@ -188,4 +182,27 @@ private suspend fun ApplicationCall.requireUser(): UserSession? {
     val s = sessions.get<UserSession>()
     if (s == null) respond(HttpStatusCode.Unauthorized, ErrorDto("UNAUTHORIZED"))
     return s
+}
+
+/** Error answers: 400 bad input, 503 + Retry-After when Postgres/Redis is briefly down, 500 for bugs. */
+fun Application.installErrorPages() {
+    install(StatusPages) {
+        exception<BadRequestException> { call, _ ->
+            call.respond(HttpStatusCode.BadRequest, ErrorDto("BAD_REQUEST"))
+        }
+        exception<Throwable> { call, e ->
+            val dependency = unavailableDependency(e)
+            if (dependency != null) {
+                // a failover/restart, not a bug: 503 + Retry-After; no stack trace (it is not our code)
+                Metrics.dependencyUnavailable(dependency)
+                log.error("{} unavailable on {}: {}", v("dependency", dependency), call.request.path(), e.toString(),
+                    kv("request_id", call.callId ?: "-"))
+                call.response.headers.append(HttpHeaders.RetryAfter, RETRY_AFTER_SECONDS.toString())
+                call.respond(HttpStatusCode.ServiceUnavailable, ErrorDto("UNAVAILABLE"))
+                return@exception
+            }
+            log.error("unhandled error on {}", call.request.path(), kv("request_id", call.callId ?: "-"), e)
+            call.respond(HttpStatusCode.InternalServerError, ErrorDto("INTERNAL"))
+        }
+    }
 }

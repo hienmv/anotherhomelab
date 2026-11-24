@@ -68,6 +68,29 @@ With 2 copies and `minAvailable: 1`, a drain evicts one copy, waits until its re
 elsewhere, and only then may the other one go. A PDB does **not** help when a node simply dies (that
 is not voluntary); the 2 copies + spread cover that.
 
+## 4. What users see during the minute it takes (503, retries)
+
+Even a good failover leaves a gap: the database is gone for ~30-75 s. Real services make that gap
+**honest and short**, rather than pretending it cannot happen
+([design](../design/2026-11-24-graceful-db-outage.md)):
+
+| HTTP answer | Means | Client should |
+|---|---|---|
+| 4xx (`409 SOLD_OUT`) | your request is wrong or impossible | show it; don't retry |
+| **503 + `Retry-After: 5`** | "I'm fine, a dependency is briefly down, come back in 5 s" | retry later |
+| 500 | a bug | show an error; retrying rarely helps |
+
+- **Fail fast**: the api waits at most 5 s for a database connection (the default was 30 s, so every
+  click hung half a minute), then answers 503.
+- **Retry only what is safe**: a GET (reading) can be repeated any number of times, because it is
+  *idempotent*. A POST (buying) cannot: if the first attempt actually worked and only the answer
+  was lost, a retry buys twice. So the web app retries reads by itself, with a "Reconnecting…"
+  banner, and tells the user about a failed purchase instead. Real shops make purchases retryable
+  with an **idempotency key** (roadmap U4).
+- **Don't let the database decide readiness**: if the api's readiness probe checked Postgres, a DB
+  blip would take *every* api pod out of service at once. Pages that don't need the DB would fail
+  too. That is a *cascading failure*.
+
 ## What got it (2026-11-16)
 
 | Part | Copies | Why it matters |

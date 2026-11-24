@@ -19,6 +19,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | Host GitOps | the machines follow `main` by themselves (`homelab-apply.timer`) | 2026-11-18 | [learn/14](learn/14-host-gitops.md) |
 | Host logs in Grafana (O1) | every machine's journal (services + kernel) in VictoriaLogs; design doc practice started | 2026-11-21 | [design](design/2026-11-21-host-logs.md), [learn/9](learn/9-monitoring-grafana.md) |
 | Re-spread after an outage (O8): the descheduler | copies that end up on one node after a node returns are moved back within ~10 min (PDBs respected) | 2026-11-22 | [design](design/2026-11-21-descheduler.md), [learn/8](learn/8-surviving-a-node-failure.md) |
+| Brief outages without errors (U1) | a Postgres failover/restart answers 503 + Retry-After in ≤ 5 s (was: 30 s hang, then 500); the web retries reads with a "Reconnecting…" banner, never repeats an order | 2026-11-24 | [design](design/2026-11-24-graceful-db-outage.md) |
 | **Backups, stage 1** | SSD store (Garage) on node-8gb; Postgres point-in-time restore (drill: 54 s); nightly archive; encrypted off-site copy to R2; 3-2-1 met; backup dashboard + alerts | 2026-11-21 | [learn/13](learn/13-ssd-and-backups.md) |
 
 ## Next: hardware (only a person can do it)
@@ -67,6 +68,14 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 | L1 | KEDA autoscaling for the TicketLite workers; batch CronJobs |
 | L2 | Browser tracing (OpenTelemetry JS) for TicketLite |
 | L3 | Archive hienmv.github.io once the notes site is confirmed (user) |
+
+## Next: what users see during outages
+
+| # | Stage | Gives | Needs |
+|---|---|---|---|
+| U2 | **Maintenance mode through git**: a flag + time window in site-settings; Traefik serves a static maintenance page (503 + `Retry-After`) for TicketLite while it is on | planned work (upgrades, migrations) shows "back at 14:30" instead of errors | 1-2 h |
+| U3 | Public status page fed by an outside probe | users (and you, away from home) see "degraded / down since …" | an outside probe |
+| U4 | Idempotency keys for orders (`Idempotency-Key` header) | a purchase can be retried safely, even automatically, through a failover | 2 h |
 
 ## Suggested order
 

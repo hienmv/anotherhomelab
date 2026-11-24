@@ -25,8 +25,8 @@ Every Ansible run is also logged to `ansible/logs/ansible.log` (the file is git-
 
 | Test | Proves | How | When | Status |
 |---|---|---|---|---|
-| TicketLite backend unit tests | config parsing, limits, metric names (`MetricsTest` guards the dashboard), JSON log fields + level rule (`LoggingTest` guards the log queries) | `gradle test`, inside the Docker build | every push / PR touching `apps/ticketlite/` | ✅ CI |
-| TicketLite web tests (31) | every Atomic Design level, `buyState`, API errors, ConcertsPage flow | `npm test` (Vitest + RTL), inside the Docker build | same | ✅ CI |
+| TicketLite backend unit tests | config parsing, limits, metric names (`MetricsTest` guards the dashboard), JSON log fields + level rule (`LoggingTest` guards the log queries), outage errors → 503 + Retry-After, bugs → 500 (`UnavailableTest`) | `gradle test`, inside the Docker build | every push / PR touching `apps/ticketlite/` | ✅ CI |
+| TicketLite web tests (38) | every Atomic Design level, `buyState`, API errors, ConcertsPage flow; brief outages: reads retried (Retry-After, backoff, 90 s, banner), writes never retried, 503 vs 504 buy messages | `npm test` (Vitest + RTL), inside the Docker build | same | ✅ CI |
 | nginx JSON access logs (landing, notes, ticketlite-web) | config valid, one JSON line per request, 5xx = ERROR, probes not logged | `nginx -t` + curl in the image (manual, 2026-11-16); in the cluster: Grafana `service.name:=notes` | after changing an `nginx.conf*` | ✅ manual |
 | Tracing end to end (local) | api + worker spans form ONE trace through the Redis queue; collector drops probes, scrapes and housekeeping, keeps real requests | docker compose: buy a ticket, look up the trace in VictoriaTraces ([docs/learn/10](learn/10-tracing.md)) | after changing `Tracing.kt` or `otel-collector-config.yaml` | ✅ manual (2026-11-16) |
 | GitOps secrets tooling | `alerting.yml` writes encrypted files, re-run leaves them identical, no plain value in them, decrypt round trip, kustomize + kubeconform valid, gitleaks clean | throwaway container with a test age key (manual, 2026-11-18) | after changing `scripts/secrets/` or `alerting.yml` | ✅ manual |
@@ -39,6 +39,7 @@ Every Ansible run is also logged to `ansible/logs/ansible.log` (the file is git-
 | Tracing pipeline (cluster) | one test request's trace reaches VictoriaTraces (agent → collector → store) | `verify.yml --tags apps` (`traces:` problem) | always | ✅ |
 | landing / notes checks | type check, unit tests, build, **no broken links** | `npm run check && npm test && npm run build && npm run check:links` in the Docker build | every push / PR touching the app | ✅ CI |
 | TicketLite end-to-end | real Postgres + Redis, order flow | docker compose by hand ([apps/ticketlite](../apps/ticketlite/README.md#tests)) | before risky backend changes | 🟡 |
+| TicketLite with Postgres down (e2e) | Postgres stopped: 503 + `Retry-After: 5` within ≤ 5 s through nginx (not a 30 s hang + 500), metric counted; Postgres back → 200 | docker compose by hand (2026-11-24; [design](design/2026-11-24-graceful-db-outage.md#test-plan)) | after changing error handling or the DB pool | ✅ manual |
 | TicketLite rush test | 30 parallel buys on 5 tickets: exactly 5 sold, per-user limit holds, nothing stuck | by hand ([apps/ticketlite](../apps/ticketlite/README.md)) | after queue/limit changes | 🟡 |
 
 A failing test fails the image build, so a broken image never reaches GHCR or the cluster.

@@ -15,6 +15,8 @@ data class AppConfig(
     val sessionSecret: ByteArray,
     val cookieSecure: Boolean,
     val workerDelayMs: Long,
+    /** Max wait for a database connection before a request fails with 503 (Hikari connectionTimeout). */
+    val dbConnectTimeoutMs: Long = 5_000,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(AppConfig::class.java)
@@ -35,6 +37,7 @@ data class AppConfig(
                 sessionSecret = secret,
                 cookieSecure = env["COOKIE_SECURE"]?.toBoolean() ?: false,
                 workerDelayMs = env["WORKER_DELAY_MS"]?.toLong() ?: 200,
+                dbConnectTimeoutMs = env["DB_CONNECT_TIMEOUT_MS"]?.toLong() ?: 5_000,
             )
         }
     }

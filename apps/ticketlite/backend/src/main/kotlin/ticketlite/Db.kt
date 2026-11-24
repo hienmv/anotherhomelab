@@ -7,13 +7,16 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import org.flywaydb.core.Flyway
 
-class Db(cfg: DbConfig, poolSize: Int = 5) {
+class Db(cfg: DbConfig, poolSize: Int = 5, connectTimeoutMs: Long = 5_000) {
     val ds = HikariDataSource(HikariConfig().apply {
         jdbcUrl = cfg.jdbcUrl
         username = cfg.user
         password = cfg.password
         maximumPoolSize = poolSize
         poolName = "ticketlite"
+        // Hikari's default is 30 s: during a failover every request hung 30 s, then failed. 5 s: the
+        // user gets a quick 503 "retrying" instead (docs/design/2026-11-24-graceful-db-outage.md).
+        connectionTimeout = connectTimeoutMs
     })
 
     fun migrate() {

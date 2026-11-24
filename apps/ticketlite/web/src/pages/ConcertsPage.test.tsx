@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../api'
 import type { Concert, User } from '../types'
 import { ConcertsPage } from './ConcertsPage'
 
@@ -78,5 +79,24 @@ describe('ConcertsPage', () => {
     await screen.findByText('Hot Show')
     await userEvent.click(screen.getAllByRole('button', { name: 'Buy' })[0])
     expect(await screen.findByText('Order failed: SOLD_OUT')).toBeInTheDocument()
+  })
+
+  it('says a 503 order was not placed (and does not retry it)', async () => {
+    mocks.user = { id: 1, username: 'alice', displayName: 'Alice' }
+    mocks.buy.mockRejectedValue(new ApiError(503, 'UNAVAILABLE'))
+    renderPage()
+    await screen.findByText('Hot Show')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Buy' })[0])
+    expect(await screen.findByText(/briefly unavailable.*Your order was not placed/)).toBeInTheDocument()
+    expect(mocks.buy).toHaveBeenCalledTimes(1)
+  })
+
+  it('after a 504 (answer lost) points to "My orders" instead', async () => {
+    mocks.user = { id: 1, username: 'alice', displayName: 'Alice' }
+    mocks.buy.mockRejectedValue(new ApiError(504, 'UNAVAILABLE'))
+    renderPage()
+    await screen.findByText('Hot Show')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Buy' })[0])
+    expect(await screen.findByText(/Check "My orders" before trying again/)).toBeInTheDocument()
   })
 })
