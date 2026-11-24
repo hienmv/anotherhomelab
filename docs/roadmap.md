@@ -81,6 +81,6 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 
 1. **H1** now: a real risk today, and cheap.
 2. ~~O1~~ done 2026-11-21.
-3. ~~A1~~ done 2026-11-22.
+3. ~~A1~~ done 2026-11-25.
 4. O2, O3, O4: habits that keep the gains.
 5. H2 + H4, then A3 and A4: full automatic failover.

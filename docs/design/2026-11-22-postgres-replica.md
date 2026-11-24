@@ -60,7 +60,7 @@ behind; a failover can lose that second. Synchronous mode can come later (`minSy
 
 | Risk | Answer |
 |---|---|
-| applying the change restarts pg-1 (pod spec changes) | ~30 s of TicketLite API unavailability, once; announced; the 2 api copies retry |
+| applying the change restarts pg-1 (pod spec changes) | ~30 s without the database, once. Since U1 ([design](2026-11-24-graceful-db-outage.md)) users see "Reconnecting…" and pages retry by themselves; a purchase in that window gets 503 "not placed" |
 | pg-2 on a Pi with a USB-2 SSD is slower | it only replays WAL; as primary (after a failover) TicketLite's load is tiny. A switchover back is one command |
 | a failover moves the primary to node-8gb | documented; `kubectl cnpg promote pg pg-1` (or the CNPG switchover) moves it back |
 | node-workstation dies completely | out of scope (A3); manual: on a working control plane promote pg-2; until A3 the backups + PITR remain the answer |

@@ -104,7 +104,7 @@ Even a good failover leaves a gap: the database is gone for ~30-75 s. Real servi
 
 | Part | Where | If it fails |
 |---|---|---|
-| Postgres | **2 instances since 2026-11-22**: primary + streaming replica on node-8gb's SSD ([design](../design/2026-11-22-postgres-replica.md)) | the primary's pod, disk or (Pi) node fails: CNPG promotes the replica within about a minute (lab: ≤ 75 s), `pg-rw` follows. The CNPG operator, which does the promoting, runs as 2 copies on different nodes: in the lab a single copy died together with the primary's node and the failover waited ~6 min. node-workstation dies completely: no automatic failover yet (its control plane runs the operator: roadmap A3); the replica holds the data |
+| Postgres | **2 instances since 2026-11-25**: primary + streaming replica on node-8gb's SSD ([design](../design/2026-11-22-postgres-replica.md)) | the primary's pod, disk or (Pi) node fails: CNPG promotes the replica within about a minute (lab: ≤ 75 s), `pg-rw` follows. The CNPG operator, which does the promoting, runs as 2 copies on different nodes: in the lab a single copy died together with the primary's node and the failover waited ~6 min. During the failover users see "Reconnecting…" (section 4). node-workstation dies completely: no automatic failover yet (its control plane runs the operator: roadmap A3); the replica holds the data |
 | Redis | node-workstation | TicketLite orders pause until it is back (roadmap A2) |
 | k3s server (control plane) | node-workstation | running pods keep running and serving, but nothing new can be scheduled or changed |
 | metrics (vmsingle) | node-workstation | Grafana shows no data |
