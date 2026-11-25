@@ -7,7 +7,11 @@ import java.sql.PreparedStatement
 import java.sql.ResultSet
 import org.flywaydb.core.Flyway
 
-class Db(cfg: DbConfig, poolSize: Int = 5, connectTimeoutMs: Long = 5_000) {
+/**
+ * One connection pool. [readOnly] + not [failFast] for the replica pool: the api must start (and keep
+ * working on the primary) when the replica is down (docs/design/2026-11-25-read-routing.md).
+ */
+class Db(cfg: DbConfig, poolSize: Int = 5, connectTimeoutMs: Long = 5_000, readOnly: Boolean = false, failFast: Boolean = true) {
     val ds = HikariDataSource(HikariConfig().apply {
         jdbcUrl = cfg.jdbcUrl
         username = cfg.user
@@ -17,6 +21,8 @@ class Db(cfg: DbConfig, poolSize: Int = 5, connectTimeoutMs: Long = 5_000) {
         // Hikari's default is 30 s: during a failover every request hung 30 s, then failed. 5 s: the
         // user gets a quick 503 "retrying" instead (docs/design/2026-11-24-graceful-db-outage.md).
         connectionTimeout = connectTimeoutMs
+        isReadOnly = readOnly
+        if (!failFast) initializationFailTimeout = -1
     })
 
     fun migrate() {

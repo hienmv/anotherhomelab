@@ -57,12 +57,12 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 │ │  │   + notes app   │                        │    ticketlite.<domain>    │                │ │
 │ │  └─────────────────┘                        └─┬───────────────────┬─────┘                │ │
 │ │                                               │                   │                      │ │
-│ │                                               │ SQL               │ gate + XADD          │ │
+│ │                                               │ SQL: rw + ro      │ gate + XADD          │ │
 │ │                                               ▼                   ▼                      │ │
 │ │                       ┌──────────────────────────┐    ┌──────────────────────────┐       │ │
-│ │                       │   PostgreSQL 17 (CNPG)   │    │ Redis 8.2 (queue/cache)  │       │ │
-│ │                       │   pg-rw.data.svc:5432    │    │   redis.data.svc:6379    │       │ │
-│ │                       │  10Gi SSD, workstation   │    │ 2Gi SSD AOF, workstation │       │ │
+│ │                       │ PostgreSQL 17 (CNPG) x2  │    │ Redis 8.2 (queue/cache)  │       │ │
+│ │                       │ pg-rw primary, pg-ro rep │    │   redis.data.svc:6379    │       │ │
+│ │                       │ workstation + 8gb (SSD)  │    │ 2Gi SSD AOF, workstation │       │ │
 │ │                       └──────────────────────────┘    └──────────────────────────┘       │ │
 │ │                         ▲           ▲                               ▲                    │ │
 │ │                         │           │                               │ consume            │ │
@@ -120,7 +120,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Traefik ingress | kube-system | node-8gb | `:80` on node IPs (ServiceLB) | running |
 | cloudflared tunnel 2026.10.7 | infra | 2 copies on different nodes (since 2026-11-16) | -> `traefik.kube-system.svc:80` (Traefik: 2 copies too) | running |
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
-| PostgreSQL 17 (`pg`), 2 instances | data | primary node-workstation (NVMe), streaming replica node-8gb (USB SSD, storage class `local-ssd`) | `pg-rw.data.svc:5432` (primary), `pg-ro` (replica) | since 2026-11-22: 2 instances |
+| PostgreSQL 17 (`pg`), 2 instances | data | primary node-workstation (NVMe), streaming replica node-8gb (USB SSD, storage class `local-ssd`) | `pg-rw.data.svc:5432` (primary: writes, sale checks), `pg-ro` (replica: reads when correct, D1) | since 2026-11-25: 2 instances, reads on the replica |
 | Redis 8.2 | data | node-workstation (`role=data`) | `redis.data.svc:6379` | running, NVMe SSD |
 | TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | spread (any node except node-1gb) | `https://ticketlite.hien0ethan.com` | running |
 | Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | any node | `https://hien0ethan.com`; unknown subdomains 301 here | running |

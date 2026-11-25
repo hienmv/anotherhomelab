@@ -6,28 +6,42 @@ import java.util.UUID
 
 data class UserRow(val id: Long, val username: String, val displayName: String, val passwordHash: String)
 
-class Repo(private val db: Db) {
+/**
+ * Every query says which consistency it needs (docs/design/2026-11-25-read-routing.md):
+ *   reads.read(null)     eventual: the replica is fine (lag-limited)
+ *   reads.read(ctx)      read-your-writes + monotonic for this user (LSN token)
+ *   reads.linearizable   part of a sale decision: the primary, the latest value
+ *   reads.write(ctx)     the primary; afterwards the user's token covers the write
+ */
+class Repo(private val db: Db, private val reads: ReadRouter = ReadRouter(db, null)) {
 
-    fun findUser(username: String): UserRow? = db.read { c ->
+    // eventual: accounts are seeded, there is no sign-up
+    fun findUser(username: String): UserRow? = reads.read(null) { c ->
         c.queryOne("select id, username, display_name, password_hash from users where username = ?", username) {
             UserRow(it.getLong(1), it.getString(2), it.getString(3), it.getString(4))
         }
     }
 
-    fun concerts(): List<ConcertDto> = db.read { c ->
+    // eventual (anonymous) or read-your-writes; `available` is overridden by the Redis gate anyway
+    fun concerts(ctx: ReadCtx? = null): List<ConcertDto> = reads.read(ctx) { c ->
         c.queryList("$CONCERT_SELECT order by hot desc, starts_at", map = ::toConcert)
     }
 
-    fun concert(id: Long): ConcertDto? = db.read { c ->
+    fun concert(id: Long): ConcertDto? = reads.linearizable { c ->
         c.queryOne("$CONCERT_SELECT where id = ?", id, map = ::toConcert)
     }
 
-    fun available(concertId: Long): Int = db.read { c ->
+    fun available(concertId: Long): Int = reads.linearizable { c ->
+        c.queryOne("select available from concerts where id = ?", concertId) { it.getInt(1) } ?: 0
+    }
+
+    /** For the /metrics gauge: monitoring reads must not load the primary (eventual is fine). */
+    fun availableForMetrics(concertId: Long): Int = reads.read(null) { c ->
         c.queryOne("select available from concerts where id = ?", concertId) { it.getInt(1) } ?: 0
     }
 
     /** Tickets a user holds or is waiting for (pending + confirmed) for one concert. */
-    fun userHeld(userId: Long, concertId: Long): Int = db.read { c ->
+    fun userHeld(userId: Long, concertId: Long): Int = reads.linearizable { c ->
         c.queryOne(
             "select coalesce(sum(quantity), 0) from orders where user_id = ? and concert_id = ? and status in ('PENDING','CONFIRMED')",
             userId, concertId,
@@ -35,29 +49,29 @@ class Repo(private val db: Db) {
     }
 
     /** concertId -> tickets held (pending + confirmed) for one user, in one query. */
-    fun userHeldByConcert(userId: Long): Map<Long, Int> = db.read { c ->
+    fun userHeldByConcert(userId: Long, ctx: ReadCtx): Map<Long, Int> = reads.read(ctx) { c ->
         c.queryList(
             "select concert_id, sum(quantity) from orders where user_id = ? and status in ('PENDING','CONFIRMED') group by concert_id",
             userId,
         ) { it.getLong(1) to it.getInt(2) }.toMap()
     }
 
-    fun insertPending(id: UUID, userId: Long, concertId: Long, quantity: Int) = db.tx { c ->
+    fun insertPending(id: UUID, userId: Long, concertId: Long, quantity: Int, ctx: ReadCtx) = reads.write(ctx) { c ->
         c.update(
             "insert into orders (id, user_id, concert_id, quantity, status) values (?, ?, ?, ?, ?)",
             id, userId, concertId, quantity, OrderStatus.PENDING,
         )
     }
 
-    fun markFailed(id: UUID, reason: String) = db.tx { c ->
+    fun markFailed(id: UUID, reason: String, ctx: ReadCtx) = reads.write(ctx) { c ->
         c.update("update orders set status = ?, reason = ?, updated_at = now() where id = ?", OrderStatus.FAILED, reason, id)
     }
 
-    fun order(id: UUID, userId: Long): OrderDto? = db.read { c ->
+    fun order(id: UUID, userId: Long, ctx: ReadCtx): OrderDto? = reads.read(ctx) { c ->
         c.queryOne("$ORDER_SELECT where o.id = ? and o.user_id = ?", id, userId, map = ::toOrder)
     }
 
-    fun orders(userId: Long): List<OrderDto> = db.read { c ->
+    fun orders(userId: Long, ctx: ReadCtx): List<OrderDto> = reads.read(ctx) { c ->
         c.queryList("$ORDER_SELECT where o.user_id = ? order by o.created_at desc limit 50", userId, map = ::toOrder)
     }
 

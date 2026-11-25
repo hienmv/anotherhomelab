@@ -3,7 +3,13 @@ package ticketlite
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class UserSession(val userId: Long, val username: String, val displayName: String)
+data class UserSession(
+    val userId: Long,
+    val username: String,
+    val displayName: String,
+    /** LSN token for read-your-writes (ReadRouter); old cookies without it decode as null. */
+    val minLsn: String? = null,
+)
 
 @Serializable
 data class UserDto(val id: Long, val username: String, val displayName: String)

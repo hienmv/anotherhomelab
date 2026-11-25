@@ -34,6 +34,9 @@ spec:
           env:
             - { name: ROLE, value: api }
             - { name: COOKIE_SECURE, value: "true" }
+            # Reads on the Postgres replica when correct (docs/design/2026-11-25-read-routing.md); the
+            # user and password come from DATABASE_URL. Remove this line = every query on the primary.
+            - { name: DATABASE_READ_HOST, value: pg-ro.data.svc.cluster.local }
             # Tracing (docs/learn/10-tracing.md): the OpenTelemetry Java agent in the image sends spans to
             # the collector, which filters noise and forwards to VictoriaTraces.
             - { name: OTEL_SERVICE_NAME, value: ticketlite-api }

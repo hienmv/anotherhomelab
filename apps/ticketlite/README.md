@@ -92,6 +92,7 @@ itself and never repeats an order ([design](../../docs/design/2026-11-24-gracefu
 ```bash
 cd apps/ticketlite
 docker compose up --build        # http://localhost:8080 (api also on :8081); SITE_TIMEZONE=... to override UTC
+docker compose -f docker-compose.yml -f docker-compose.replica.yml up --build   # with a streaming replica, like the cluster
 docker compose down -v
 ```
 Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDirs` in `~/.docker/config.json`).
@@ -107,6 +108,8 @@ Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDir
 | `COOKIE_SECURE` | api | `false` (`true` in k8s) |
 | `WORKER_DELAY_MS` | worker | `200` (simulated payment step) |
 | `DB_CONNECT_TIMEOUT_MS` | backend | `5000` (wait for a database connection; then 503) |
+| `DATABASE_READ_HOST` | api | unset = every query on the primary; `pg-ro.data.svc.cluster.local` in k8s: reads on the replica when correct ([design](../../docs/design/2026-11-25-read-routing.md)) |
+| `DB_READ_MAX_LAG_SECONDS` | api | `10` (a replica further behind serves no reads) |
 | `API_UPSTREAM` | web | `http://api:8080` (nginx `/api` proxy, used by compose) |
 
 ## CI/CD
@@ -149,6 +152,7 @@ dashboard **TicketLite** (`k8s/monitoring/dashboards/ticketlite.json`, loaded au
 | `ticketlite_tickets_sold_total` | worker | confirmed tickets |
 | `ticketlite_order_process_seconds` | worker | histogram, time per order |
 | `ticketlite_dependency_unavailable_total{dependency}` | api | requests answered 503 because postgres / redis was briefly down |
+| `ticketlite_db_reads_total{target,reason}` | api | where each database read went (replica / primary) and why: ok, write_path, not_caught_up, lagging, replica_down, no_replica |
 | `ticketlite_inventory_available{concert,hot}` | api | Redis gate per concert |
 | `ticketlite_queue_lag`, `ticketlite_queue_pending` | worker | stream backlog / unacked |
 | `ktor_http_server_requests_seconds` | api | HTTP latency histogram by route |

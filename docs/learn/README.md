@@ -22,6 +22,7 @@ start here.
 | 12 | [Everything through git](12-gitops-secrets.md) | secrets encrypted in git (SOPS + age), instant chart upgrades, Flux messages, checks with the newest code |
 | 13 | [The SSD and backups](13-ssd-and-backups.md) | a USB SSD on a Pi (power, health, safe formatting); backups that survive a dead disk |
 | 14 | [Host GitOps](14-host-gitops.md) | the machines follow main too: the apply timer, what is applied and what not, secrets declared in git |
+| 15 | [Data: one leader, many readers](15-data-intensive.md) | why one node takes writes, which reads may use the replica (read-your-writes, LSN tokens), sync vs async, sharding, outbox |
 | – | [Glossary](glossary.md) | every term used in these pages, in one place |
 
 ## What is next
