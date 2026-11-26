@@ -19,7 +19,7 @@ IPs and per-node settings: `ansible/inventory.yml` (source of truth); the table 
 
 | | node-workstation | node-8gb | node-4gb | node-1gb |
 |---|---|---|---|---|
-| IP (static) | 192.168.40.249 (Wi-Fi) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
+| IP (static) | 192.168.40.249 (Ethernet) | 192.168.40.250 | 192.168.40.251 | 192.168.40.252 |
 | Board | Panasonic CF-SV9 (amd64) | Pi 4B rev 1.5 | Pi 4B rev 1.1 | Pi 3B+ |
 | CPU / RAM | 8 threads / 15 GiB | 4x A72 / 7.6 GiB | 4x A72 / 3.7 GiB | 4x A53 / 905 MiB |
 | Disk | NVMe SSD (Ubuntu partition 94 GB; Windows kept) | 64 GB SD (swapped in 2026-11-12) | 32 GB SD | 32 GB SD |
@@ -342,9 +342,10 @@ Ubuntu **Administrator** (sudo group) and **keeps its sudo password** (node-work
 the web; passwordless sudo stays on the Pis only).
 
 All LAN addresses live in `ansible/inventory.yml` (hosts' `static_ip`, gateway, DNS); playbooks and
-scripts read them from there. node-workstation's `lan_link` picks the link holding `.249`: **`wifi` (current)** or
-`ethernet` (change the value, re-run the playbook; `ansible/files/net-static.sh` moves the address and
-the playbook follows node-workstation to it). Wi-Fi is acceptable here: the profile is system-wide (connects at
+scripts read them from there. node-workstation's `lan_link` picks the link holding `.249`: **`ethernet` (since 2026-11-26)** or
+`wifi`. Changing the value is applied by host GitOps: `ansible/files/net-static.sh` moves the address
+**commit-confirmed** (kept only if the gateway answers, else rolled back by itself) and k3s restarts once
+so the pod network follows ([design](docs/design/2026-11-26-workstation-ethernet.md)). Before, on Wi-Fi: the profile is system-wide (connects at
 boot without a login) and power saving is off. Costs: higher latency and short drops; the AP uses
 DFS channel 124 (5.6 GHz), where radar detection can move the AP and cut Wi-Fi for about a minute,
 long enough for agents to show `NotReady`. If that shows up, pick a non-DFS 5 GHz channel (36-48) on
@@ -498,7 +499,7 @@ maihien@Mac --(id_homelab_workstation)--> ethan@node-workstation --(id_homelab)-
   the password manager, debugging via `kubectl debug node/...` and Ansible ad-hoc as ops), with
   node-workstation as the only SSH entry point (bastion).
 - Wi-Fi: node-workstation sees 5-10 % packet loss and latency spikes to ~570 ms (2026-11-13), the
-  Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Ethernet would fix it.
+  Pis on cable 0 %. `verify.yml` reports loss and fails only at >= 50 %. Fixed by moving to Ethernet (H2, 2026-11-26).
 
 ### 10.6 Rename: hien -> ethan (human) and ops (automation) (done 2026-11-15)
 

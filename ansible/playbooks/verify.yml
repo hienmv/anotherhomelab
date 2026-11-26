@@ -173,6 +173,31 @@
       loop_control: { label: "{{ item.item }}" }
       when: (item.stdout or '100') | float >= 50
 
+    # node-workstation: the static IP on the lan_link port, the pod network (flannel) on the same port,
+    # and with ethernet the Wi-Fi off (docs/design/2026-11-26-workstation-ethernet.md)
+    - name: Workstation LAN link (static IP, pod network, Wi-Fi)
+      ansible.builtin.shell: |
+        dev=$(ip -o -4 addr show | awk -v ip="{{ static_ip }}" '$4 ~ "^"ip"/" {print $2; exit}')
+        case "{{ lan_link }}:$dev" in ethernet:en*|ethernet:eth*|wifi:wl*) ;; *) echo "{{ static_ip }} is on '${dev:-nothing}', lan_link is {{ lan_link }}";; esac
+        fl=$(ip -d link show flannel.1 2>/dev/null | grep -o ' dev [^ ]*' | awk '{print $2}' | head -1)
+        [ -n "$fl" ] && [ "$fl" != "$dev" ] && echo "pod network (flannel) on $fl, the node IP on $dev: restart k3s"
+        if [ "{{ lan_link }}" = ethernet ]; then
+          wl=$(ip -o -4 addr show | awk '$2 ~ /^wl/ {print $2" "$4}')
+          [ -n "$wl" ] && echo "Wi-Fi still has an address ($wl) though lan_link is ethernet"
+          [ -e /var/lib/homelab/net-ethernet-rolled-back ] && echo "the switch to Ethernet was rolled back: see /var/lib/homelab/net-ethernet-rolled-back"
+        fi
+        true
+      args: { executable: /bin/bash }
+      register: lan_link_check
+      changed_when: false
+      when: inventory_hostname in groups['workstation']
+
+    - name: Workstation LAN link result
+      ansible.builtin.set_fact:
+        problems: "{{ problems + ['network: ' ~ item] }}"
+      loop: "{{ lan_link_check.stdout_lines | default([]) }}"
+      when: inventory_hostname in groups['workstation']
+
     - name: DNS and HTTPS to the internet
       ansible.builtin.command: curl -sS -o /dev/null -w '%{http_code}' https://github.com
       register: inet

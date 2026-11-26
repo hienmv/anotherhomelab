@@ -47,6 +47,7 @@ How to undo it if it goes wrong.
 | 2026-11-21 | [Re-spread copies after an outage: the descheduler (O8)](2026-11-21-descheduler.md) | built 2026-11-22 |
 | 2026-11-24 | [Brief outages without errors: 503 + Retry-After, automatic retries (U1)](2026-11-24-graceful-db-outage.md) | built 2026-11-24 |
 | 2026-11-22 | [Postgres replica on node-8gb's SSD (A1)](2026-11-22-postgres-replica.md) | built 2026-11-22 |
+| 2026-11-26 | [node-workstation on Ethernet, commit-confirmed (H2)](2026-11-26-workstation-ethernet.md) | in review |
 
 Earlier stages were decided in the chapters themselves (docs/learn) and in the review
 (docs/review/2026-11-15-resilience-review.md); from O1 on, each stage gets a design doc here.
