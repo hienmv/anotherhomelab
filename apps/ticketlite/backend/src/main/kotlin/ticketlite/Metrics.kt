@@ -44,7 +44,7 @@ object Metrics {
         registry.counter("ticketlite.tickets.sold")
         listOf("postgres", "redis").forEach { registry.counter("ticketlite.dependency.unavailable", "dependency", it) }
         registry.counter("ticketlite.db.reads", "target", "replica", "reason", "ok")
-        listOf("write_path", "no_replica", "replica_down", "lagging", "not_caught_up").forEach {
+        listOf("write_path", "no_replica", "no_token", "replica_down", "lagging", "not_caught_up").forEach {
             registry.counter("ticketlite.db.reads", "target", "primary", "reason", it)
         }
     }

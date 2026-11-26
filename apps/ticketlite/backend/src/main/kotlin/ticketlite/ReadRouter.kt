@@ -11,13 +11,28 @@ import java.sql.Connection
  * the primary, the token is moved to the primary's current LSN. A replica may serve that user only
  * once it has replayed past the token: they always see their own writes and never older data.
  */
-class ReadCtx(token: String? = null) {
-    /** The newest LSN this user must see (null: nothing to wait for). */
+class ReadCtx(token: String?, val loggedIn: Boolean, private val onAdvance: (String) -> Unit = {}) {
+    /** The newest LSN this user must see. */
     var token: String? = token
         private set
 
+    /**
+     * Logged in but no token: a session from before D1, or a write handled by an old api pod during a
+     * rolling deploy. What this user has seen is UNKNOWN (not "nothing"), so the primary answers
+     * first and sets the token; later reads may use the replica.
+     */
+    val unknown: Boolean get() = loggedIn && token == null
+
+    companion object {
+        /** Not logged in: never wrote anything, so eventual reads are correct. */
+        fun anonymous() = ReadCtx(null, loggedIn = false)
+    }
+
     fun advanceTo(lsn: String?) {
-        if (lsn != null && (token == null || lsnValue(lsn) > lsnValue(token!!))) token = lsn
+        if (lsn != null && (token == null || lsnValue(lsn) > lsnValue(token!!))) {
+            token = lsn
+            onAdvance(lsn) // e.g. store it in the session cookie (ReadConsistency.kt)
+        }
     }
 }
 
@@ -30,7 +45,10 @@ fun lsnValue(lsn: String): Long {
 /** What the replica reports about itself (one cheap query). */
 data class ReplicaState(val caughtUp: Boolean, val lagSeconds: Double)
 
-/** Where a read goes and why: the label of ticketlite_db_reads_total{reason}. */
+/**
+ * Where a read goes, once the replica has answered its state: the label of
+ * ticketlite_db_reads_total{reason}. ("no_token" is decided before asking the replica: [ReadRouter.read].)
+ */
 fun readDecision(hasReplica: Boolean, breakerOpen: Boolean, state: ReplicaState?, maxLagSeconds: Double): String = when {
     !hasReplica -> "no_replica"
     breakerOpen || state == null -> "replica_down"
@@ -48,13 +66,14 @@ class ReadRouter(
 ) {
     @Volatile private var replicaSkipUntil = 0L
 
-    /** A read that tolerates a replica: eventual (ctx null, anonymous) or read-your-writes (ctx). */
-    fun <T> read(ctx: ReadCtx?, block: (Connection) -> T): T {
+    /** A read that may use the replica: eventual (anonymous) or read-your-writes + monotonic (logged in). */
+    fun <T> read(ctx: ReadCtx, block: (Connection) -> T): T {
         val r = replica ?: return onPrimary(ctx, "no_replica", block)
+        if (ctx.unknown) return onPrimary(ctx, "no_token", block)
         if (now() < replicaSkipUntil) return onPrimary(ctx, "replica_down", block)
         val reason = try {
             r.ds.connection.use { c ->
-                val state = c.queryOne(STATE_SQL, ctx?.token ?: "0/0") {
+                val state = c.queryOne(STATE_SQL, ctx.token ?: "0/0") {
                     ReplicaState(it.getBoolean(1), it.getDouble(2))
                 }
                 val decision = readDecision(true, false, state, maxLagSeconds)
@@ -78,13 +97,13 @@ class ReadRouter(
     fun <T> linearizable(block: (Connection) -> T): T = primary.read(block).also { Metrics.dbRead("primary", "write_path") }
 
     /** A write; afterwards the user's token covers it (read-your-writes). */
-    fun <T> write(ctx: ReadCtx?, block: (Connection) -> T): T =
-        primary.tx { c -> block(c) }.also { if (ctx != null && replica != null) primary.read { c -> ctx.advanceTo(currentLsn(c)) } }
+    fun <T> write(ctx: ReadCtx, block: (Connection) -> T): T =
+        primary.tx { c -> block(c) }.also { if (ctx.loggedIn && replica != null) primary.read { c -> ctx.advanceTo(currentLsn(c)) } }
 
-    private fun <T> onPrimary(ctx: ReadCtx?, reason: String, block: (Connection) -> T): T = primary.read { c ->
+    private fun <T> onPrimary(ctx: ReadCtx, reason: String, block: (Connection) -> T): T = primary.read { c ->
         val value = block(c)
         // monotonic reads: the user saw the primary's state, so a later replica read must be at least this new
-        if (ctx != null && replica != null) ctx.advanceTo(currentLsn(c))
+        if (ctx.loggedIn && replica != null) ctx.advanceTo(currentLsn(c))
         Metrics.dbRead("primary", reason)
         value
     }

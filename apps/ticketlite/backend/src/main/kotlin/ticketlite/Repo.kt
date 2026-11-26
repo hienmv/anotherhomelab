@@ -8,22 +8,22 @@ data class UserRow(val id: Long, val username: String, val displayName: String, 
 
 /**
  * Every query says which consistency it needs (docs/design/2026-11-25-read-routing.md):
- *   reads.read(null)     eventual: the replica is fine (lag-limited)
- *   reads.read(ctx)      read-your-writes + monotonic for this user (LSN token)
+ *   reads.read(ctx)      the replica when correct: eventual for anonymous users, read-your-writes +
+ *                        monotonic for a logged-in user (LSN token; `call.readCtx`, ReadConsistency.kt)
  *   reads.linearizable   part of a sale decision: the primary, the latest value
  *   reads.write(ctx)     the primary; afterwards the user's token covers the write
  */
 class Repo(private val db: Db, private val reads: ReadRouter = ReadRouter(db, null)) {
 
     // eventual: accounts are seeded, there is no sign-up
-    fun findUser(username: String): UserRow? = reads.read(null) { c ->
+    fun findUser(username: String): UserRow? = reads.read(ReadCtx.anonymous()) { c ->
         c.queryOne("select id, username, display_name, password_hash from users where username = ?", username) {
             UserRow(it.getLong(1), it.getString(2), it.getString(3), it.getString(4))
         }
     }
 
     // eventual (anonymous) or read-your-writes; `available` is overridden by the Redis gate anyway
-    fun concerts(ctx: ReadCtx? = null): List<ConcertDto> = reads.read(ctx) { c ->
+    fun concerts(ctx: ReadCtx): List<ConcertDto> = reads.read(ctx) { c ->
         c.queryList("$CONCERT_SELECT order by hot desc, starts_at", map = ::toConcert)
     }
 
@@ -36,7 +36,7 @@ class Repo(private val db: Db, private val reads: ReadRouter = ReadRouter(db, nu
     }
 
     /** For the /metrics gauge: monitoring reads must not load the primary (eventual is fine). */
-    fun availableForMetrics(concertId: Long): Int = reads.read(null) { c ->
+    fun availableForMetrics(concertId: Long): Int = reads.read(ReadCtx.anonymous()) { c ->
         c.queryOne("select available from concerts where id = ?", concertId) { it.getInt(1) } ?: 0
     }
 

@@ -40,7 +40,7 @@ private val log = LoggerFactory.getLogger("ticketlite.api")
 
 fun runApi(cfg: AppConfig, repo: Repo, gate: RedisGate) {
     // One gauge per concert: tickets still reservable (Redis gate, falls back to Postgres).
-    for (c in repo.concerts()) {
+    for (c in repo.concerts(ReadCtx.anonymous())) {
         Metrics.gauge("ticketlite.inventory.available", "concert", c.title, "hot", c.hot.toString()) {
             gate.available(c.id) ?: repo.availableForMetrics(c.id)
         }
@@ -76,6 +76,15 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
             cookie.extensions["SameSite"] = "Lax"
             transform(SessionTransportTransformerMessageAuthentication(cfg.sessionSecret))
         }
+        // read-your-writes token, separate from the session on purpose (Models.kt ReadToken); signed too
+        cookie<ReadToken>("TL_RYW") {
+            cookie.path = "/"
+            cookie.httpOnly = true
+            cookie.secure = cfg.cookieSecure
+            cookie.maxAgeInSeconds = 8 * 3600
+            cookie.extensions["SameSite"] = "Lax"
+            transform(SessionTransportTransformerMessageAuthentication(cfg.sessionSecret))
+        }
     }
 
     routing {
@@ -90,9 +99,7 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
                     call.respond(HttpStatusCode.Unauthorized, ErrorDto("INVALID_CREDENTIALS"))
                     return@post
                 }
-                // keep a previous token: logging in again must not forget writes made seconds ago
-                val minLsn = call.sessions.get<UserSession>()?.minLsn
-                call.sessions.set(UserSession(user.id, user.username, user.displayName, minLsn))
+                call.sessions.set(UserSession(user.id, user.username, user.displayName))
                 call.respond(UserDto(user.id, user.username, user.displayName))
             }
 
@@ -109,19 +116,14 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
             get("/concerts") {
                 // Show what can still be reserved right now (the Redis gate) when known, plus how many
                 // tickets the logged-in user already holds so the UI can explain a disabled Buy button.
-                val s = call.sessions.get<UserSession>()
-                val ctx = s?.let { ReadCtx(it.minLsn) }
-                val held = s?.let { repo.userHeldByConcert(it.userId, ctx!!) }
-                val concerts = repo.concerts(ctx)
-                call.keepToken(ctx)
-                call.respond(concerts.map { c ->
+                val held = call.sessions.get<UserSession>()?.let { repo.userHeldByConcert(it.userId, call.readCtx) }
+                call.respond(repo.concerts(call.readCtx).map { c ->
                     c.copy(available = gate.available(c.id) ?: c.available, userHeld = held?.let { it[c.id] ?: 0 })
                 })
             }
 
             post("/orders") {
                 val s = call.requireUser() ?: return@post
-                val ctx = ReadCtx(s.minLsn)
                 val req = call.receive<OrderRequest>()
                 val concert = repo.concert(req.concertId)
                 if (concert == null) {
@@ -155,34 +157,26 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
                 }
                 val id = UUID.randomUUID()
                 try {
-                    repo.insertPending(id, s.userId, concert.id, req.quantity, ctx)
+                    repo.insertPending(id, s.userId, concert.id, req.quantity, call.readCtx)
                     gate.enqueue(id, call.callId)
                 } catch (e: Exception) {
                     gate.release(concert.id, s.userId, req.quantity)
-                    runCatching { repo.markFailed(id, "ENQUEUE_FAILED", ctx) }
-                    call.keepToken(ctx)
+                    runCatching { repo.markFailed(id, "ENQUEUE_FAILED", call.readCtx) }
                     throw e
                 }
                 Metrics.orderRequest("accepted")
-                val order = repo.order(id, s.userId, ctx)!!
-                call.keepToken(ctx) // the next reads (status poll) must see this order
-                call.respond(HttpStatusCode.Accepted, order)
+                call.respond(HttpStatusCode.Accepted, repo.order(id, s.userId, call.readCtx)!!)
             }
 
             get("/orders") {
                 val s = call.requireUser() ?: return@get
-                val ctx = ReadCtx(s.minLsn)
-                val orders = repo.orders(s.userId, ctx)
-                call.keepToken(ctx)
-                call.respond(orders)
+                call.respond(repo.orders(s.userId, call.readCtx))
             }
 
             get("/orders/{id}") {
                 val s = call.requireUser() ?: return@get
                 val id = runCatching { UUID.fromString(call.parameters["id"]) }.getOrNull()
-                val ctx = ReadCtx(s.minLsn)
-                val order = id?.let { repo.order(it, s.userId, ctx) }
-                call.keepToken(ctx)
+                val order = id?.let { repo.order(it, s.userId, call.readCtx) }
                 if (order == null) {
                     call.respond(HttpStatusCode.NotFound, ErrorDto("ORDER_NOT_FOUND"))
                 } else {
@@ -191,12 +185,6 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
             }
         }
     }
-}
-
-/** Stores a moved LSN token in the (signed) session cookie; nothing to do for anonymous calls. */
-private fun ApplicationCall.keepToken(ctx: ReadCtx?) {
-    val s = sessions.get<UserSession>() ?: return
-    if (ctx?.token != null && ctx.token != s.minLsn) sessions.set(s.copy(minLsn = ctx.token))
 }
 
 private suspend fun ApplicationCall.requireUser(): UserSession? {

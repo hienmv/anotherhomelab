@@ -222,8 +222,16 @@ Every write in Postgres has a position in the WAL, the **LSN** (log sequence num
 2. My next read goes to the replica, which first answers "how far have I replayed?" (`pg_last_wal_replay_lsn()`).
 3. Replayed past my token: the replica serves my read. Not yet: the primary serves it, and my token moves to the primary's position, so I never see older data later.
 
-This is an exact check, not a guess like "wait 2 seconds". Real services (GitHub, Shopify, the
-database routing in Rails) use the same idea.
+This is an exact check, not a guess like "wait 2 seconds" (Rails' built-in database selector uses
+such a time window; MongoDB's causal-consistency sessions and MySQL's GTID waits use positions, like
+here).
+
+Two details that matter in production (found by testing, [design doc](../design/2026-11-25-read-routing.md)):
+- **No token is "unknown", not "fresh".** A logged-in user without a token (a session from before
+  the feature, or a purchase on an old pod during a rolling update) reads from the primary first.
+- **The token has its own cookie (`TL_RYW`).** Ktor rejects session cookies with unknown fields, so
+  adding the token to the session would log users out whenever a request hit a pod of the other
+  version. Rule: never change a session format in one release.
 
 ### When things break
 

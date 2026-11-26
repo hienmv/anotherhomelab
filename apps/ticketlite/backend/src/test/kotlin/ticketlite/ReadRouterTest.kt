@@ -3,6 +3,7 @@ package ticketlite
 import io.ktor.server.sessions.defaultSessionSerializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.Serializable
@@ -18,7 +19,7 @@ class ReadRouterTest {
 
     @Test
     fun `the token only moves forward (monotonic reads)`() {
-        val ctx = ReadCtx(null)
+        val ctx = ReadCtx(null, loggedIn = true)
         ctx.advanceTo("0/200")
         assertEquals("0/200", ctx.token)
         ctx.advanceTo("0/100") // an older position never replaces a newer one
@@ -27,6 +28,17 @@ class ReadRouterTest {
         assertEquals("0/200", ctx.token)
         ctx.advanceTo("1/0")
         assertEquals("1/0", ctx.token)
+    }
+
+    @Test
+    fun `a logged-in user without a token is unknown, an anonymous one is not`() {
+        // a session from before D1, or a purchase handled by an old pod during the rollout
+        assertTrue(ReadCtx(null, loggedIn = true).unknown)
+        assertFalse(ReadCtx("0/10", loggedIn = true).unknown)
+        assertFalse(ReadCtx.anonymous().unknown) // never wrote anything: eventual is correct
+        val ctx = ReadCtx(null, loggedIn = true)
+        ctx.advanceTo("0/10") // after the first read on the primary
+        assertFalse(ctx.unknown)
     }
 
     @Test
@@ -57,16 +69,23 @@ class ReadRouterTest {
         assertEquals("jdbc:postgresql://pg-ro:5432/app", cfg.dbRead?.jdbcUrl)
     }
 
-    /** The session cookie before D1, without a token. */
+    /** The session cookie as pods before D1 know it. */
     @Serializable
     data class OldSession(val userId: Long, val username: String, val displayName: String)
 
     @Test
-    fun `session cookies from before D1 still work`() {
+    fun `the session cookie format is unchanged, so old and new pods read each other's sessions`() {
+        // Ktor's session decoder REJECTS unknown keys: a new field in UserSession would log users out
+        // whenever a request hits a pod of the other version during a rolling update or a rollback.
+        val new = defaultSessionSerializer<UserSession>().serialize(UserSession(1, "alice", "Alice"))
+        assertEquals(OldSession(1, "alice", "Alice"), defaultSessionSerializer<OldSession>().deserialize(new))
         val old = defaultSessionSerializer<OldSession>().serialize(OldSession(1, "alice", "Alice"))
-        val s = defaultSessionSerializer<UserSession>().deserialize(old)
-        assertEquals(UserSession(1, "alice", "Alice", minLsn = null), s)
-        val withToken = s.copy(minLsn = "0/3000060")
-        assertEquals(withToken, defaultSessionSerializer<UserSession>().deserialize(defaultSessionSerializer<UserSession>().serialize(withToken)))
+        assertEquals(UserSession(1, "alice", "Alice"), defaultSessionSerializer<UserSession>().deserialize(old))
+        // ...and that is a real risk, not a theory (seen 2026-11-26 with a minLsn field):
+        val withExtraKey = defaultSessionSerializer<ReadTokenAndUser>().serialize(ReadTokenAndUser(1, "alice", "Alice", "0/1"))
+        assertTrue(runCatching { defaultSessionSerializer<UserSession>().deserialize(withExtraKey) }.isFailure)
     }
+
+    @Serializable
+    data class ReadTokenAndUser(val userId: Long, val username: String, val displayName: String, val minLsn: String)
 }
