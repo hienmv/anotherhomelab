@@ -27,6 +27,24 @@ every 15 min:  take the lock (never two Ansible jobs at once: check, apply, back
                fixed?              -> 🟢 OK again
 ```
 
+### The health check judges what was applied, not what was merged
+
+`homelab-check` (verify, every 15 min) **does not move the checkout**: only the apply does. The check
+fetches `main` just to see what is waiting:
+
+```text
+merge at 23:13 ─────► check 23:15: verifies the APPLIED commit; logs "pending: <new>, merged 2 min ago"
+                      apply 23:20: fast-forwards + applies it
+                      check 23:30: verifies the new commit
+```
+
+Before 2026-11-26 the check pulled `main` itself, so right after a merge it judged the machines
+against a change nobody had applied yet: a false 🔴 ("192.168.40.249 is on 'wlp0s20f3', lan_link is
+ethernet", 5 min before the apply switched the link). Kubernetes and Flux work the same way: a
+resource's health is measured against its `observedGeneration` / `lastAppliedRevision`, not against
+the newest spec. A merge still not applied after 45 min (3 apply runs) **is** reported: then the apply
+is stuck or failing. [Design](../design/2026-11-26-check-applied-revision.md).
+
 The real-world names: this is the **pull model** (each place applies the desired state itself, like
 `ansible-pull`, Puppet or Chef agents), as opposed to **push** (a CI pipeline runs Ansible against
 the machines; that needs a runner inside the LAN, GitHub's runners cannot reach it).

@@ -21,6 +21,17 @@ take_lock() {
   flock -w "${1:-1500}" 9
 }
 
+# GitHub's main, anonymously over HTTPS (public repo: a timer has no ssh-agent). Fetch only: moves
+# origin/main, never the checkout. Sets pull_problem="" on success, else a one-line reason.
+fetch_main() {
+  local url out
+  pull_problem=""
+  url="$(git -C "$repo" remote get-url origin | sed -E 's#^git@github\.com:#https://github.com/#')"
+  if ! out="$(git -C "$repo" fetch -q "$url" "+refs/heads/main:refs/remotes/origin/main" 2>&1)"; then
+    pull_problem="repo on $(hostname -s) could not fetch from GitHub: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-160)"
+  fi
+}
+
 # Fast-forward to GitHub's main, anonymously over HTTPS (public repo: a timer has no ssh-agent for the
 # passphrase-protected key, and reading needs none). Never overwrites local changes.
 # Sets pull_problem="" on success, else a one-line reason.
