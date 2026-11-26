@@ -30,6 +30,175 @@ TicketLite also protects the leader from a rush:
 
 This is admission control plus a queue: the leader sees a calm stream, not the spike.
 
+## How pg-1 and pg-2 stay in sync: the flows
+
+The pieces, all managed by CloudNativePG (CNPG, the operator):
+
+| Piece | Where | Job |
+|---|---|---|
+| **WAL** (write-ahead log) | `pg_wal/` on each instance | every change is first written here, in order; the data files follow later |
+| **walsender** | a process on the primary | reads the WAL and streams it to the replica |
+| **walreceiver** | a process on the replica | receives the WAL, writes it to the replica's own `pg_wal/` |
+| **startup process** | on the replica | *replays* the received WAL into the data files, exactly as the primary applied it |
+| **replication slot** `_cnpg_pg_2` | on the primary | remembers how far pg-2 has received: WAL it still needs is not deleted |
+| user `streaming_replica` | both | the replication connection; TLS with a client certificate that CNPG creates and rotates (no password) |
+| **instance manager** | PID 1 in every Postgres pod | starts/stops Postgres, reports status to the operator, answers the probes |
+| **operator** | `cnpg-system` (2 copies since A1) | decides who is primary, creates replicas, runs failover, points `pg-rw` / `pg-ro` at the right pod |
+| WAL archive | Garage on node-8gb's SSD (`ssd:cnpg`) | the primary also uploads each finished WAL file (at least every 5 min); a lagging replica can fetch from it |
+
+### Flow 1: a new replica is born (once)
+
+When `instances` goes from 1 to 2:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Op as CNPG operator
+    participant K as Kubernetes
+    participant P as pg-1 (primary)
+    participant R as pg-2 (new)
+    Op->>K: PVC pg-2 (storage class local-ssd: node-8gb /mnt/ssd/k8s)
+    Op->>K: "join" job on node-8gb
+    K->>P: pg_basebackup over the replication connection (streaming_replica, TLS cert)
+    P-->>R: full copy of the data files + the WAL written meanwhile
+    Op->>K: pod pg-2 (instance manager, standby mode: primary_conninfo → pg-rw)
+    R->>P: walreceiver connects, asks "send from LSN X"
+    P->>P: replication slot _cnpg_pg_2 created (keeps WAL from X)
+    P-->>R: streaming starts (Flow 2)
+    Op->>K: pg-2 Ready → added to the pg-ro / pg-r services
+```
+
+Observe: `kubectl -n data get jobs` (the join job), `kubectl cnpg status pg` (pg-2 "Standby (async)").
+
+### Flow 2: one write, step by step (all the time)
+
+A worker confirms an order (`UPDATE orders SET status='CONFIRMED' …; COMMIT`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as worker
+    participant P as pg-1 primary
+    participant S as walsender (pg-1)
+    participant WR as walreceiver (pg-2)
+    participant ST as startup process (pg-2)
+    participant G as WAL archive (Garage)
+    W->>P: UPDATE … COMMIT
+    P->>P: WAL record written + flushed to pg-1's disk (fsync)
+    P-->>W: COMMIT OK (asynchronous: does NOT wait for pg-2)
+    S->>WR: the new WAL bytes (TCP, usually < 1 ms after the flush)
+    WR->>WR: written + flushed to pg-2's pg_wal
+    ST->>ST: replays the record into pg-2's data files
+    Note over ST: now visible to reads on pg-2 (hot standby)
+    WR-->>S: feedback: write / flush / replay LSN
+    S->>P: slot _cnpg_pg_2 advances; old WAL may be recycled
+    P->>G: later, when the 16 MB WAL file is full or after 5 min: archived
+```
+
+The 4 positions in step 7 are what `pg_stat_replication` shows on the primary, and they explain "lag":
+
+| Column | Means | If it lags behind `sent_lsn` |
+|---|---|---|
+| `sent_lsn` | sent by the walsender | network (Wi-Fi) |
+| `write_lsn` / `flush_lsn` | on pg-2's disk | pg-2's disk (USB SSD) |
+| `replay_lsn` | applied, **visible to reads** | pg-2's replay (CPU, or a long read query holding it back) |
+
+Observe: on pg-1:
+```
+select application_name, state, sent_lsn, write_lsn, flush_lsn, replay_lsn, replay_lag from pg_stat_replication;
+```
+On pg-2: `select pg_last_wal_replay_lsn();`. D1's read-your-writes check compares exactly this replay position with the user's token. Between step 3 and step 6 is the moment where a failover loses the write (asynchronous replication); D2 (synchronous) would move step 3 after step 5.
+
+### Flow 3: the replica falls behind or disconnects
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as pg-1 primary
+    participant R as pg-2 replica
+    participant G as WAL archive (Garage)
+    R--xP: connection lost (node-8gb reboot, Wi-Fi drop)
+    P->>P: slot keeps the WAL since pg-2's last position (pg_wal grows), at most 3 GB
+    Note over P: beyond 3 GB (max_slot_wal_keep_size) the slot lets go: the primary's disk never fills
+    Note over P: alert PostgresReplicaNotStreaming after 15 min
+    R->>P: back: walreceiver asks "from LSN X"
+    alt WAL from X still on pg-1 (away briefly)
+        P-->>R: streams the backlog, then live again
+    else WAL already gone (away long: beyond the 3 GB cap)
+        R->>G: restore_command fetches the missing WAL files from the archive
+        R->>P: then streams the rest
+    end
+```
+
+Why the cap matters: without it (Postgres' default is unlimited) a replica that is away for days
+makes the primary keep every WAL file until its 10 Gi volume is full, and then the **primary**
+stops: the replica that should add safety takes the database down. With the cap, the archive
+(which has every WAL file anyway, for backups) covers the gap. CNPG's docs recommend setting it.
+
+### Flow 4: failover (the primary dies)
+
+Measured in the A1 lab (operator with 2 copies; numbers from the design doc):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant N as node controller (k3s)
+    participant Op as CNPG operator
+    participant P as pg-1 (old primary)
+    participant R as pg-2 (replica)
+    participant Svc as pg-rw service
+    participant App as TicketLite api
+    Note over P: t=0 node dies: pg-1 gone, mid-stream
+    App->>Svc: writes fail → 503 + Retry-After (U1); reads still from pg-ro (D1)
+    N->>Op: ~45 s: node NotReady, pod pg-1 Ready=False
+    Op->>Op: TargetPrimary = pending ("Failing over")
+    Op->>P: shut down (unreachable: nothing to do, or immediate shutdown)
+    Op->>R: stop the WAL receiver; pick the replica with the most WAL (lowest lag)
+    R->>R: take the primary lease (Kubernetes Lease object; expires after 15 s if the old primary cannot release it)
+    R->>R: promote: new timeline (2), accepts writes
+    Op->>Svc: pg-rw → pg-2
+    App->>Svc: next connection works (Hikari reconnects); ≤ 75 s in the lab
+```
+
+What is lost: WAL that pg-1 had committed (step 3 of Flow 2) but not yet sent. Normally under a
+second of writes; 0 in the lab.
+
+### Flow 5: the old primary comes back
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as pg-1 (old primary)
+    participant R as pg-2 (new primary)
+    participant Op as CNPG operator
+    P->>P: instance manager starts; asks the operator: am I primary? → no
+    P->>P: archives leftover WAL files first
+    P->>R: pg_rewind: rewinds pg-1's data to where the timelines forked (its own unsent writes are discarded)
+    P->>R: starts as a standby of pg-2, walreceiver connects (Flow 2, roles swapped)
+    Op->>Op: pg-1 Ready → added to pg-ro
+```
+
+The primary now runs on node-8gb (the Pi). To move it back on purpose, use Flow 6.
+
+### Flow 6: switchover (planned, no data lost)
+
+`kubectl cnpg promote pg pg-1` (or set `targetPrimary`):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Op as CNPG operator
+    participant Old as current primary
+    participant New as chosen replica
+    Op->>Old: fast shutdown (waits up to switchoverDelay): no new writes, remaining WAL sent + archived
+    New->>New: has replayed everything: identical copy
+    Op->>New: promote
+    Op->>Op: pg-rw → New; Old restarts as its replica (no rewind needed)
+```
+
+Difference from a failover: the old primary shuts down **cleanly first**, so the replica has every
+write. Only a few seconds without writes (the apps answer 503 and retry reads).
+
 ## Where reads go: by the guarantee each one needs
 
 A replica is usually under a second behind. "A second old" is fine for some reads and wrong for
