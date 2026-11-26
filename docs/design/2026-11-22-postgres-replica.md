@@ -68,6 +68,7 @@ behind; a failover can lose that second. Synchronous mode can come later (`minSy
 | the second provisioner hands out SD-card paths | only node-8gb is mapped to the SSD; other nodes get the same path k3s uses; pg-2 can only run on node-8gb (anti-affinity + labels) |
 | replication silently broken or lagging | alerts `PostgresReplicaNotStreaming`, `PostgresReplicationLag` (unit-tested); `verify.yml` checks 2 ready instances, 1 streaming replica |
 | verify's "data pods on role=data" check | updated: Postgres instances may run on any `homelab/postgres` node |
+| the replica is away for days: its replication slot keeps all WAL, the primary's volume fills, the **primary** stops | `max_slot_wal_keep_size: 3GB` (10Gi volume, `max_wal_size` 1GB); beyond it pg-2 catches up from the WAL archive on Garage (`restore_command`). Found while documenting the sync flows (learn/15), 2026-11-26 |
 | the operator dies with the primary's node | 2 operator copies on different nodes; verify's spread check includes it |
 | a failover loses the last writes | asynchronous: what the replica had not received yet (normally < 1 s). The lab lost nothing |
 

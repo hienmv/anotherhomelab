@@ -50,6 +50,11 @@ spec:
       # SD-card friendly: fewer, larger checkpoints
       checkpoint_timeout: 15min
       max_wal_size: 1GB
+      # The replica's slot keeps WAL pg-2 has not received yet. Default: no limit, so a replica that is
+      # away for days fills the primary's 10Gi volume and the PRIMARY stops. Capped: past 3GB the slot
+      # lets go, and pg-2 catches up from the WAL archive instead (restore_command), losing nothing.
+      # docs/design/2026-11-22-postgres-replica.md, docs/learn/15 (flow 3)
+      max_slot_wal_keep_size: 3GB
   bootstrap:
     initdb:
       database: app
