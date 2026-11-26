@@ -755,5 +755,7 @@
     - name: All checks passed
       ansible.builtin.assert:
         that: problems | default([]) | length == 0
-        fail_msg: "{{ problems | length }} problem(s) on {{ inventory_hostname }}: {{ problems | join(' | ') }}"
+        # default([]) here too: Ansible templates fail_msg even when the check passes, and with one --tags
+        # the plays that set `problems` are skipped on most hosts ("'problems' is undefined", 2026-11-26)
+        fail_msg: "{{ problems | default([]) | length }} problem(s) on {{ inventory_hostname }}: {{ problems | default([]) | join(' | ') }}"
         success_msg: "{{ inventory_hostname }}: all checks passed"
