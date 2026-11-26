@@ -29,7 +29,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | # | Item | Why | Status |
 |---|---|---|---|
 | H1 | **Power supplies**: node-8gb fixed 2026-11-21 (new charger, no more warnings); node-1gb (Pi 3B+) still under-voltage on a shared 65 W charger | node-1gb: accepted risk until 2027-02-22 (below) | node-8gb ✅, node-1gb accepted |
-| H2 | Ethernet for node-workstation | Wi-Fi packet loss; needed for stage A3 | open |
+| H2 | Ethernet for node-workstation | Wi-Fi packet loss; needed for stage A3 | cable in 2026-11-26; switch: [design](design/2026-11-26-workstation-ethernet.md) (automatic, commit-confirmed) |
 | H3 | A UPS for the router + Pis | power cuts (node-workstation has its laptop battery) | open |
 | H4 | An SSD for node-4gb | stage A3 (etcd needs fast disks on every control-plane node) | open |
 
@@ -93,4 +93,4 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 2. ~~O1~~ done 2026-11-21.
 3. ~~A1~~ done 2026-11-25.
 4. O2, O3, O4: habits that keep the gains.
-5. H2 + H4, then A3 and A4: full automatic failover.
+5. H2 (in progress) + H4, then A3 and A4: full automatic failover.

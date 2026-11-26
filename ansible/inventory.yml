@@ -27,9 +27,11 @@ all:
       hosts:
         node-workstation:   # Panasonic CF-SV9, amd64, 16 GB, SSD
           static_ip: 192.168.40.249
-          # Link that holds static_ip: wifi or ethernet (switch = change here + re-run workstation-prepare).
-          lan_link: wifi
-          wifi_profile: JCOM_CKQY   # NetworkManager profile that gets static_ip when lan_link=wifi
+          # Link that holds static_ip: wifi or ethernet. A change here is applied by host GitOps within
+          # 15 min: confirmed or rolled back by itself, k3s restarted so the pod network follows
+          # (docs/design/2026-11-26-workstation-ethernet.md). Ethernet since 2026-11-26 (roadmap H2).
+          lan_link: ethernet
+          wifi_profile: JCOM_CKQY   # static_ip when lan_link=wifi; with ethernet: off (DHCP, no autoconnect)
           # Only while the workstation is not on its static_ip yet: -e workstation_ip=<current IP>.
           ansible_host: "{{ workstation_ip | default(static_ip) }}"
           ansible_ssh_private_key_file: "{{ '~/.ssh/id_homelab_workstation' if not is_self else omit }}"
