@@ -188,6 +188,19 @@ docker compose down -v
 ```
 Needs Docker with buildx (`brew install docker-buildx`, plus `cliPluginsExtraDirs` in `~/.docker/config.json`).
 
+### Backend in an IDE (IntelliJ) or without Docker
+
+```bash
+cd apps/ticketlite/backend
+./gradlew test                   # the wrapper downloads Gradle 8.14.6 (checksum-verified)
+```
+Gradle 8.14 must run on **JDK 21** (as CI), not 25+ ("JDK 25 isn't compatible with Gradle ..."):
+- `gradle/gradle-daemon-jvm.properties` (`toolchainVersion=21`): Gradle runs its daemon on an installed JDK 21 whatever `JAVA_HOME` says. IntelliJ uses it as the "Gradle JVM".
+- `.java-version` (`21`): jenv switches to 21 in this directory.
+- Needs a JDK 21 installed (`brew install openjdk@21`). If IntelliJ still complains: Settings → Build Tools → Gradle → Gradle JVM: 21.
+
+Versions in step: the wrapper, `gradle-daemon-jvm.properties` and the Dockerfile image (`gradle:8.14.6-jdk21`) change together.
+
 ## Configuration (environment)
 
 | Variable | Used by | Default |

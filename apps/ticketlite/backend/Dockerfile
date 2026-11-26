@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 # Build stage runs on the CI/host architecture (JVM bytecode is portable),
 # runtime stage is the target architecture (linux/arm64 for the Pis). No emulation needed.
-FROM --platform=$BUILDPLATFORM gradle:8.14-jdk21 AS build
+# Same Gradle + JDK as the wrapper (gradle/wrapper/gradle-wrapper.properties) and the IDE
+# (gradle/gradle-daemon-jvm.properties): change all three together.
+FROM --platform=$BUILDPLATFORM gradle:8.14.6-jdk21 AS build
 WORKDIR /src
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 # Cached layer: downloads all jars incl. the Kotlin compiler; reruns only if the build files change.
