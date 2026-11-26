@@ -21,3 +21,15 @@ spec:
   upgrade:
     crds: CreateReplace
     remediation: { retries: 3 }
+  # 2 copies on different nodes (docs/design/2026-11-22-postgres-replica.md, lab results): the operator
+  # is what promotes the replica. With 1 copy on the primary's node, a dead node took the operator with it:
+  # no failover until Kubernetes evicted and restarted the operator (~6 min in the lab). The operator uses
+  # leader election (--leader-elect): one copy works, the other takes over the lease within ~15 s.
+  values:
+    replicaCount: 2
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels: { app.kubernetes.io/name: cloudnative-pg, app.kubernetes.io/instance: cnpg }

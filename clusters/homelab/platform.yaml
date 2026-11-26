@@ -99,7 +99,7 @@ metadata:
   name: data
   namespace: flux-system
 spec:
-  dependsOn: [{ name: releases }]
+  dependsOn: [{ name: releases }, { name: infra }]   # infra: storage class local-ssd for the replica
   interval: 10m
   retryInterval: 2m
   path: ./k8s/data

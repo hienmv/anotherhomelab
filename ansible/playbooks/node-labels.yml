@@ -1,0 +1,29 @@
+# Node labels from the inventory (k3s_labels), kept in step by host GitOps (site.yml).
+# k3s applies --node-label only when a node FIRST joins; later inventory changes need kubectl label.
+# Manages the listed labels and removes homelab/* labels that are no longer listed (other labels,
+# e.g. Kubernetes' own, are never touched). docs/design/2026-11-22-postgres-replica.md
+- name: Node labels from the inventory
+  hosts: workstation
+  gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+  tasks:
+    - name: Labels per node
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          node={{ item | quote }}
+          before=$(kubectl get node "$node" -o json | jq -cS '.metadata.labels | with_entries(select(.key | startswith("homelab/") or . == "role"))')
+          {% set want = hostvars[item].k3s_labels | default([]) %}
+          {% if want %}kubectl label node "$node" --overwrite {{ want | map('quote') | join(' ') }} >/dev/null{% endif %}
+
+          # homelab/* labels that are not wanted any more
+          for k in $(kubectl get node "$node" -o json | jq -r '.metadata.labels | keys[] | select(startswith("homelab/"))'); do
+            case " {{ want | map('regex_replace', '=.*$', '') | join(' ') }} " in *" $k "*) ;; *) kubectl label node "$node" "$k-" >/dev/null;; esac
+          done
+          after=$(kubectl get node "$node" -o json | jq -cS '.metadata.labels | with_entries(select(.key | startswith("homelab/") or . == "role"))')
+          [ "$before" = "$after" ] && echo unchanged || echo "changed $before -> $after"
+        executable: /bin/bash
+      loop: "{{ groups['k3s'] }}"
+      register: labels
+      changed_when: "'changed' in labels.stdout"

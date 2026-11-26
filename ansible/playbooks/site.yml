@@ -9,6 +9,7 @@
 #   backup-store         Garage on the SSD, buckets, keys from git
 #   offsite              nightly encrypted copy of the store to Cloudflare R2
 #   host-logs            every machine's journal -> VictoriaLogs
+#   node-labels          the inventory's k3s_labels on the nodes (k3s only reads them at first join)
 # NOT here, on purpose (planned, by a person):
 #   k3s.yml              a version or config change restarts k3s on ALL nodes at once = an outage.
 #                        Needs node-by-node upgrades with drains first (roadmap).
@@ -21,6 +22,8 @@
   ansible.builtin.import_playbook: ssd.yml
 - name: Backup store
   ansible.builtin.import_playbook: backup-store.yml
+- name: Node labels (k3s_labels in the inventory)
+  ansible.builtin.import_playbook: node-labels.yml
 - name: Host logs to VictoriaLogs
   ansible.builtin.import_playbook: host-logs.yml
 - name: Off-site copy (inactive until ansible/secrets/r2.sops.yaml exists)

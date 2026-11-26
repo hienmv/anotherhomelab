@@ -91,8 +91,11 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 | Host logs path (local) | VictoriaLogs v1.53 accepts the journal at /insert/journald/upload, real systemd-journal-upload delivers with host/unit/level fields | containers (manual, 2026-11-21) | after changing host-logs.yml | ✅ manual |
 | Central logs | a log collector is ready on every node; VictoriaLogs received lines in the last 15 min | `verify.yml --tags apps` (`logs:` problem) | always | ✅ |
 | Descheduler re-spread (local) | 2 copies stacked on one node -> exactly 1 eviction -> one per node; second run 0 evictions | throwaway 2-node k3s v1.37.2 in Docker (manual, 2026-11-22) | after changing `k8s/releases/descheduler.yaml` | ✅ manual |
+| Postgres replica (local) | 1 instance -> 2: pg-1 keeps its `local-path` volume, pg-2 lands on the other node on `local-ssd` at the mapped SSD path, rows copied, streaming; switchover; **failover** (primary's node stopped): the replica is promoted, `pg-rw` follows, no rows lost | throwaway 2-node k3s v1.37.2 + CNPG 1.30.1 in Docker (manual, 2026-11-22; [design](design/2026-11-22-postgres-replica.md#lab-results)) | after changing `k8s/data/postgres.yaml` or `k8s/infra/local-ssd.yaml` | ✅ manual |
+| Postgres replication | ready instances = instances, `instances - 1` replicas streaming, instances on different nodes | `verify.yml --tags data` (`postgres:` problem) | always | ✅ |
+| Postgres alerts | `PostgresReplicaNotStreaming` (no streaming replica 15 min), `PostgresReplicationLag` (> 5 min behind for 10 min) fire and stay quiet as intended | `scripts/test-slo-rules.sh` (`k8s/monitoring/postgres-rules.test.yaml`, in CI) | always | ✅ |
 | Accepted risks | an accepted, unexpired risk is a warning (no alert); expired or none = a problem | Ansible test of the power result (manual, 2026-11-22) | after changing the logic | ✅ manual |
-| Copies spread | Traefik, cloudflared, landing, notes, ticketlite-web/api each have copies on **2 nodes** | `verify.yml --tags apps` (`spread:` problem, with the fix) | always | ✅ |
+| Copies spread | Traefik, cloudflared, landing, notes, ticketlite-web/api, the CNPG operator each have copies on **2 nodes** | `verify.yml --tags apps` (`spread:` problem, with the fix) | always | ✅ |
 | Failover (drain) | losing node-8gb or node-4gb keeps every site up (PDBs: one copy at a time) | `kubectl drain`, curl the sites, `uncordon` ([learn/8](learn/8-surviving-a-node-failure.md#try-it-the-failover-drill)) | after changes to replicas/PDBs, every ~3 months | ✅ procedure, ❌ not run yet |
 
 ## 5. Data (Postgres, Redis, backups)
@@ -101,7 +104,7 @@ A failing test fails the image build, so a broken image never reaches GHCR or th
 |---|---|---|---|---|
 | Postgres healthy | CNPG `Cluster in healthy state`, query works, row counts printed | `verify.yml --tags data` | always | ✅ |
 | Redis answers | `PING` → `PONG` with the password | `verify.yml --tags data` | always | ✅ |
-| Data on the data node | every `data` pod runs on the `role=data` node | `verify.yml --tags data` | always | ✅ |
+| Data on the data node | every `data` pod runs on the `role=data` node; Postgres instances on `homelab/postgres=true` nodes | `verify.yml --tags data` | always | ✅ |
 | Backup is fresh and decryptable | newest backup decrypts with the age key; warns when older than 26 h (nightly timer) | `verify.yml --tags backup` | always | ✅ |
 | Backup content | each dump starts with `PGDMP`; exact row counts recorded | `backup.yml` (fails on a bad dump) | every backup | ✅ |
 | Postgres continuous backup | WAL archiving works, newest base backup < 26 h | `verify.yml --tags data` (`pg-backup:`) | always | ✅ |

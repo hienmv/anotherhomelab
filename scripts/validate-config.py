@@ -32,6 +32,8 @@ schema = {
     "CLOUDFLARE_TUNNEL_ID": (r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "UUID"),
     "TIMEZONE": (r"^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$", "IANA zone, e.g. Asia/Tokyo"),
     "BACKUP_STORE_URL": (r"^https?://[A-Za-z0-9.-]+:[0-9]{1,5}$", "http(s)://host:port of the S3 backup store"),
+    "SSD_NODE": (r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", "node name"),
+    "SSD_K8S_PATH": (r"^/[A-Za-z0-9._/-]+$", "absolute path"),
     "LOGS_INGEST_IP": (r"^10\.43\.0\.[0-9]{1,3}$", "10.43.0.x (low part of k3s' service range)"),
 }
 for key, (rx, desc) in schema.items():
@@ -78,6 +80,24 @@ want = f"http://{host.get('static_ip')}:{store.get('port')}" if host.get("static
 if want and data.get("BACKUP_STORE_URL") and data["BACKUP_STORE_URL"] != want:
     problems.append(f"{settings_path}: BACKUP_STORE_URL={data['BACKUP_STORE_URL']} but Ansible runs the store at {want} "
                     f"(backup_store in ansible/group_vars/all.yml, {store.get('host')} in ansible/inventory.yml)")
+
+# SSD_NODE / SSD_K8S_PATH (storage class local-ssd) must match the SSD in the Ansible inventory:
+# the node that has `ssd:`, and <its ssd.mount>/k8s (the folder playbooks/ssd.yml creates)
+def find_ssd(node):
+    if isinstance(node, dict):
+        for name, h in (node.get("hosts") or {}).items():
+            if isinstance(h, dict) and h.get("ssd"):
+                return name, h["ssd"]
+        for v in node.values():
+            found = find_ssd(v)
+            if found:
+                return found
+    return None
+ssd = find_ssd(load("ansible/inventory.yml"))
+if ssd and data.get("SSD_NODE") and data["SSD_NODE"] != ssd[0]:
+    problems.append(f"{settings_path}: SSD_NODE={data['SSD_NODE']} but the inventory's SSD is on {ssd[0]}")
+if ssd and data.get("SSD_K8S_PATH") and data["SSD_K8S_PATH"] != f"{ssd[1].get('mount')}/k8s":
+    problems.append(f"{settings_path}: SSD_K8S_PATH={data['SSD_K8S_PATH']} but the SSD is mounted at {ssd[1].get('mount')} (expected {ssd[1].get('mount')}/k8s)")
 
 # Flux bootstrap: the only place the Git URL is written out (read before any variable exists)
 sync_path = f"clusters/{cluster}/flux-system/gotk-sync.yaml"

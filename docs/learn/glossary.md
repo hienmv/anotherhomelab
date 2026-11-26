@@ -63,7 +63,9 @@
 | **required check** | a CI job that must pass before a PR may be merged |
 | **recording rule** | a query computed regularly and stored as a new metric (`slo:error_ratio:rate1h`), so alerts and dashboards stay cheap |
 | **RPO / RTO** | how much data can be lost / how long until service is back (here: RPO ~5 min with WAL archiving) |
-| **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service |
+| **replica** | one copy of a Deployment's pod; `replicas: 2` = two identical copies behind one Service. For a database: a second server that continuously copies the primary (Postgres since 2026-11-22) |
+| **primary / streaming replication** | the one Postgres instance that accepts writes / the primary sends each change (WAL) to the replica as it happens; asynchronous here: the replica is usually under a second behind |
+| **failover / switchover** | the replica is promoted because the primary failed (automatic, CNPG) / the roles are swapped on purpose, cleanly (planned, e.g. before maintenance) |
 | **request id (correlation id)** | one id per request, in every log line it causes across services (`request_id`, `X-Request-ID`) |
 | **OpenTelemetry (OTel)** | the industry standard for producing and sending metrics, logs and traces: libraries/agent in the app, the Collector, standard field names (chapter 10) |
 | **OTLP** | OpenTelemetry's wire protocol (port 4318 HTTP / 4317 gRPC) |

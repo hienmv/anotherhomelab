@@ -35,7 +35,7 @@ all:
           ansible_ssh_private_key_file: "{{ '~/.ssh/id_homelab_workstation' if not is_self else omit }}"
           ansible_connection: "{{ 'local' if is_self else 'ssh' }}"   # on itself: no SSH to self
           is_self: "{{ lookup('pipe', 'hostname -s') == 'node-workstation' }}"
-          k3s_labels: [role=data]
+          k3s_labels: [role=data, homelab/postgres=true]   # homelab/postgres: may run a Postgres instance
           # also a desktop: keep CPU and memory for GNOME, the browser, Ansible
           k3s_reserved: cpu=1,memory=3Gi
     pis:
@@ -51,7 +51,7 @@ all:
           ram_gb: 8
           sd_gb: 64
           nm_profile: netplan-eth0
-          k3s_labels: [role=apps]
+          k3s_labels: [role=apps, homelab/postgres=true]   # the Postgres replica (on the SSD)
           k3s_reserved: cpu=250m,memory=512Mi
           # USB SSD (2.5" SATA, powered USB hub): backups + later a Postgres replica (ansible/playbooks/ssd.yml,
           # docs/learn/13-ssd-and-backups.md). Identified by the DRIVE's serial (smartctl), never by /dev/sdX.

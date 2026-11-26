@@ -1,5 +1,6 @@
-# PostgreSQL via CloudNativePG, pinned to the role=data node (node-workstation).
-# Storage: local-path on its NVMe SSD (since 2026-11-12). HA later: a second instance on another node.
+# PostgreSQL via CloudNativePG: 2 instances (since 2026-11-22, docs/design/2026-11-22-postgres-replica.md):
+# a primary and a streaming replica, one per machine (node-workstation NVMe, node-8gb USB SSD). If the
+# primary's pod or disk fails, the operator promotes the replica; pg-rw always points at the primary.
 # Backup: continuous to the S3 store on node-8gb's SSD (Barman Cloud plugin), see objectstore.yaml.
 # Creates secret `pg-app` (username/password/uri) for database `app`, owner `app`.
 # In-cluster host: pg-rw.data.svc:5432 (read-write), pg-ro / pg-r for replicas.
@@ -9,14 +10,34 @@ metadata:
   name: pg
   namespace: data
 spec:
-  instances: 1
+  instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:17
+  # restart the primary in place on spec changes (do not switch over to the replica on the Pi)
+  primaryUpdateMethod: restart
   storage:
-    storageClass: local-path
+    # NEW volumes only: pg-2 on node-8gb gets the SSD (local-ssd, k8s/infra/local-ssd.yaml); pg-1 keeps
+    # its existing local-path volume on node-workstation's NVMe
+    storageClass: local-ssd
     size: 10Gi
   affinity:
-    nodeSelector:
-      role: data
+    # one instance per machine, only on Postgres machines. "role=data OR homelab/postgres=true": the old
+    # rule keeps pg-1 schedulable before the new label exists (labels come from host GitOps, which can
+    # be minutes behind Flux)
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions: [{ key: role, operator: In, values: [data] }]
+          - matchExpressions: [{ key: homelab/postgres, operator: In, values: ["true"] }]
+    # Failover speed when a WHOLE node becomes unreachable: Kubernetes keeps its pods "Running" for the
+    # default 300 s; only then CNPG sees the primary as gone (measured in the test cluster: failover at
+    # +368 s). 60 s instead: fast enough, but not so short that a Wi-Fi hiccup of node-workstation
+    # triggers a needless failover.
+    tolerations:
+      - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 60 }
+      - { key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 60 }
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits:   { memory: 2Gi }
@@ -29,6 +50,11 @@ spec:
       # SD-card friendly: fewer, larger checkpoints
       checkpoint_timeout: 15min
       max_wal_size: 1GB
+      # The replica's slot keeps WAL pg-2 has not received yet. Default: no limit, so a replica that is
+      # away for days fills the primary's 10Gi volume and the PRIMARY stops. Capped: past 3GB the slot
+      # lets go, and pg-2 catches up from the WAL archive instead (restore_command), losing nothing.
+      # docs/design/2026-11-22-postgres-replica.md, docs/learn/15 (flow 3)
+      max_slot_wal_keep_size: 3GB
   bootstrap:
     initdb:
       database: app

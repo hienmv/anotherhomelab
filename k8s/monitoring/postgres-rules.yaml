@@ -1,0 +1,31 @@
+# Postgres replication alerts (A1, docs/design/2026-11-22-postgres-replica.md). Label slo: postgres-ha ->
+# the existing Alertmanager route sends them to Telegram. Tests: postgres-rules.test.yaml (CI).
+# Metrics: CNPG's default monitoring queries (pg_replication), already scraped from every instance.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: postgres
+  namespace: monitoring
+spec:
+  groups:
+    - name: postgres-ha
+      rules:
+        # the primary counts its streaming replicas; 0 = a failover would have nothing to promote
+        - alert: PostgresReplicaNotStreaming
+          expr: max(cnpg_pg_replication_streaming_replicas) < 1
+          for: 15m
+          labels: { severity: warning, slo: postgres-ha }
+          annotations:
+            summary: "Postgres has no streaming replica"
+            description: >-
+              The primary has had no streaming replica for 15 min: if it fails now, there is nothing
+              to fail over to (restore from backup instead). kubectl -n data get pods -l cnpg.io/cluster=pg
+        - alert: PostgresReplicationLag
+          expr: max(cnpg_pg_replication_lag) > 300
+          for: 10m
+          labels: { severity: warning, slo: postgres-ha }
+          annotations:
+            summary: "Postgres replica is {{ $$value | humanizeDuration }} behind"
+            description: >-
+              A failover now would lose that much. Usually the replica's node is overloaded or the network is
+              bad (node-8gb, Wi-Fi to node-workstation).

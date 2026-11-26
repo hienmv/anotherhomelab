@@ -80,17 +80,17 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 <!-- diagram:nodes:start -->
 ```text
 ┌─ node-workstation  .249 ────────────────────┐  ┌─ node-8gb  .250 ────────────────────────────┐
-│ CF-SV9, 8 CPU, 16 GB, NVMe SSD              │  │ Pi 4B, 8 GB RAM, SD 64 GB                   │
+│ CF-SV9, 8 CPU, 16 GB, NVMe SSD              │  │ Pi 4B, 8 GB RAM, SD 64 GB, USB SSD 64 GB    │
 │ Ubuntu 24.04 LTS, Wi-Fi (static IP)         │  │ Debian 13, Ethernet                         │
 │ k3s SERVER (control plane)                  │  │ k3s agent                                   │
-│ label role=data                             │  │ label role=apps                             │
+│ labels role=data, homelab/postgres          │  │ labels role=apps, homelab/postgres          │
 │                                             │  │                                             │
-│ * postgres pg-1, redis-0 (SSD)              │  │ * traefik ingress, svclb                    │
+│ * postgres primary, redis-0 (NVMe)          │  │ * traefik ingress, svclb                    │
 │ * vmsingle, vmagent, vlsingle (logs)        │  │ * grafana                                   │
 │ * cloudflared (tunnel), coredns             │  │ * flux source + kustomize controllers       │
-│ * cnpg operator, local-path, svclb          │  │ * app pods (k8s spreads)                    │
-│ * app pods (k8s spreads)                    │  │ - USB SSD + control plane (todo)            │
-│ * also the admin desktop (Ansible)          │  │                                             │
+│ * cnpg operator (1 of 2), local-path, svclb │  │ * app pods (k8s spreads)                    │
+│ * app pods (k8s spreads)                    │  │ * postgres replica, garage backups (SSD)    │
+│ * also the admin desktop (Ansible)          │  │ - control plane (todo)                      │
 │ ! single point of failure (HA: todo)        │  │                                             │
 │                                             │  │                                             │
 └─────────────────────────────────────────────┘  └─────────────────────────────────────────────┘
@@ -120,7 +120,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 | Traefik ingress | kube-system | node-8gb | `:80` on node IPs (ServiceLB) | running |
 | cloudflared tunnel 2026.10.7 | infra | 2 copies on different nodes (since 2026-11-16) | -> `traefik.kube-system.svc:80` (Traefik: 2 copies too) | running |
 | CloudNativePG operator 1.30 | cnpg-system | any | - | running |
-| PostgreSQL 17 (`pg`) | data | node-workstation (`role=data`) | `pg-rw.data.svc:5432` | running, NVMe SSD |
+| PostgreSQL 17 (`pg`), 2 instances | data | primary node-workstation (NVMe), streaming replica node-8gb (USB SSD, storage class `local-ssd`) | `pg-rw.data.svc:5432` (primary), `pg-ro` (replica) | since 2026-11-22: 2 instances |
 | Redis 8.2 | data | node-workstation (`role=data`) | `redis.data.svc:6379` | running, NVMe SSD |
 | TicketLite web + api x2 ([apps/ticketlite](apps/ticketlite/README.md)) | apps | spread (any node except node-1gb) | `https://ticketlite.hien0ethan.com` | running |
 | Landing (Astro: intro, featured notes, Homelab menu/list, About) | apps | any node | `https://hien0ethan.com`; unknown subdomains 301 here | running |
