@@ -24,6 +24,9 @@ class MetricsTest {
             """ticketlite_order_requests_total{result="limit"} 0.0""",
             """ticketlite_orders_processed_total{reason="LIMIT",status="FAILED"} 0.0""",
             """ticketlite_dependency_unavailable_total{dependency="redis"} 0.0""",
+            """ticketlite_db_reads_total{reason="ok",target="replica"} 0.0""",
+            """ticketlite_db_reads_total{reason="not_caught_up",target="primary"} 0.0""",
+            """ticketlite_db_reads_total{reason="no_token",target="primary"} 0.0""",
         ).forEach { assertTrue(it in text, "missing in /metrics: $it") }
     }
 }

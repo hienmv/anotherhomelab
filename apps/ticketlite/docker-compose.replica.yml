@@ -1,0 +1,42 @@
+# Local run WITH a streaming replica, like the cluster (primary pg-rw + replica pg-ro):
+#   docker compose -f docker-compose.yml -f docker-compose.replica.yml up --build
+# The api then sends reads to the replica when that is correct (docs/design/2026-11-25-read-routing.md).
+# Where reads went: curl -s localhost:8081/metrics | grep ticketlite_db_reads_total
+# Try:   docker compose exec replica psql -U app -d app -c 'select pg_wal_replay_pause()'   (replica stops replaying)
+#        docker compose stop replica                                                         (replica down)
+configs:
+  pg_hba:
+    content: |
+      local all all trust
+      host all all all scram-sha-256
+      host replication all all scram-sha-256
+
+services:
+  postgres:
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    configs: [{ source: pg_hba, target: /etc/postgresql/pg_hba.conf }]
+
+  # A copy of the primary (pg_basebackup), then streaming replication (-R writes the connection settings)
+  replica:
+    image: postgres:17-alpine
+    user: postgres
+    environment:
+      PGPASSWORD: app
+      PGDATA: /var/lib/postgresql/data/pgdata
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          until pg_basebackup -h postgres -U app -D "$$PGDATA" -R -X stream; do rm -rf "$$PGDATA"; sleep 1; done
+        fi
+        chmod 700 "$$PGDATA"
+        exec postgres
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    environment:
+      DATABASE_READ_HOST: replica
+    depends_on:
+      replica: { condition: service_started }

@@ -40,9 +40,9 @@ private val log = LoggerFactory.getLogger("ticketlite.api")
 
 fun runApi(cfg: AppConfig, repo: Repo, gate: RedisGate) {
     // One gauge per concert: tickets still reservable (Redis gate, falls back to Postgres).
-    for (c in repo.concerts()) {
+    for (c in repo.concerts(ReadCtx.anonymous())) {
         Metrics.gauge("ticketlite.inventory.available", "concert", c.title, "hot", c.hot.toString()) {
-            gate.available(c.id) ?: repo.available(c.id)
+            gate.available(c.id) ?: repo.availableForMetrics(c.id)
         }
     }
     embeddedServer(CIO, port = cfg.port) { apiModule(cfg, repo, gate) }.start(wait = true)
@@ -69,6 +69,15 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
     installErrorPages()
     install(Sessions) {
         cookie<UserSession>("TL_SESSION") {
+            cookie.path = "/"
+            cookie.httpOnly = true
+            cookie.secure = cfg.cookieSecure
+            cookie.maxAgeInSeconds = 8 * 3600
+            cookie.extensions["SameSite"] = "Lax"
+            transform(SessionTransportTransformerMessageAuthentication(cfg.sessionSecret))
+        }
+        // read-your-writes token, separate from the session on purpose (Models.kt ReadToken); signed too
+        cookie<ReadToken>("TL_RYW") {
             cookie.path = "/"
             cookie.httpOnly = true
             cookie.secure = cfg.cookieSecure
@@ -107,8 +116,8 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
             get("/concerts") {
                 // Show what can still be reserved right now (the Redis gate) when known, plus how many
                 // tickets the logged-in user already holds so the UI can explain a disabled Buy button.
-                val held = call.sessions.get<UserSession>()?.let { repo.userHeldByConcert(it.userId) }
-                call.respond(repo.concerts().map { c ->
+                val held = call.sessions.get<UserSession>()?.let { repo.userHeldByConcert(it.userId, call.readCtx) }
+                call.respond(repo.concerts(call.readCtx).map { c ->
                     c.copy(available = gate.available(c.id) ?: c.available, userHeld = held?.let { it[c.id] ?: 0 })
                 })
             }
@@ -148,26 +157,26 @@ fun Application.apiModule(cfg: AppConfig, repo: Repo, gate: RedisGate) {
                 }
                 val id = UUID.randomUUID()
                 try {
-                    repo.insertPending(id, s.userId, concert.id, req.quantity)
+                    repo.insertPending(id, s.userId, concert.id, req.quantity, call.readCtx)
                     gate.enqueue(id, call.callId)
                 } catch (e: Exception) {
                     gate.release(concert.id, s.userId, req.quantity)
-                    runCatching { repo.markFailed(id, "ENQUEUE_FAILED") }
+                    runCatching { repo.markFailed(id, "ENQUEUE_FAILED", call.readCtx) }
                     throw e
                 }
                 Metrics.orderRequest("accepted")
-                call.respond(HttpStatusCode.Accepted, repo.order(id, s.userId)!!)
+                call.respond(HttpStatusCode.Accepted, repo.order(id, s.userId, call.readCtx)!!)
             }
 
             get("/orders") {
                 val s = call.requireUser() ?: return@get
-                call.respond(repo.orders(s.userId))
+                call.respond(repo.orders(s.userId, call.readCtx))
             }
 
             get("/orders/{id}") {
                 val s = call.requireUser() ?: return@get
                 val id = runCatching { UUID.fromString(call.parameters["id"]) }.getOrNull()
-                val order = id?.let { repo.order(it, s.userId) }
+                val order = id?.let { repo.order(it, s.userId, call.readCtx) }
                 if (order == null) {
                     call.respond(HttpStatusCode.NotFound, ErrorDto("ORDER_NOT_FOUND"))
                 } else {

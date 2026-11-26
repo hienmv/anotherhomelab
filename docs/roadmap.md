@@ -21,6 +21,7 @@ snapshot of that day) and the to-do list in K3S-GUIDE. Update this file when a s
 | Re-spread after an outage (O8): the descheduler | copies that end up on one node after a node returns are moved back within ~10 min (PDBs respected) | 2026-11-22 | [design](design/2026-11-21-descheduler.md), [learn/8](learn/8-surviving-a-node-failure.md) |
 | Brief outages without errors (U1) | a Postgres failover/restart answers 503 + Retry-After in ≤ 5 s (was: 30 s hang, then 500); the web retries reads with a "Reconnecting…" banner, never repeats an order | 2026-11-24 | [design](design/2026-11-24-graceful-db-outage.md) |
 | Postgres replica (A1) | a streaming replica on node-8gb's SSD; CNPG promotes it when the primary's pod, disk or node fails, `pg-rw` follows; replication checked and alerted | 2026-11-25 | [design](design/2026-11-22-postgres-replica.md), [learn/8](learn/8-surviving-a-node-failure.md) |
+| Reads on the replica (D1) | reads go to the replica when correct (read-your-writes + monotonic via LSN tokens, linearizable sale checks on the primary); fallback on lag / down (circuit breaker); reads keep working while the primary is down; safe in both directions of a rolling update | 2026-11-25 | [design](design/2026-11-25-read-routing.md), [learn/15](learn/15-data-intensive.md) |
 | **Backups, stage 1** | SSD store (Garage) on node-8gb; Postgres point-in-time restore (drill: 54 s); nightly archive; encrypted off-site copy to R2; 3-2-1 met; backup dashboard + alerts | 2026-11-21 | [learn/13](learn/13-ssd-and-backups.md) |
 
 ## Next: hardware (only a person can do it)
@@ -68,6 +69,15 @@ so the decision cannot be forgotten. Configured in `ansible/inventory.yml` (`acc
 | L1 | KEDA autoscaling for the TicketLite workers; batch CronJobs |
 | L2 | Browser tracing (OpenTelemetry JS) for TicketLite |
 | L3 | Archive hienmv.github.io once the notes site is confirmed (user) |
+
+## Next: data (a data-intensive system: who writes, where reads go, how safe a write is)
+
+| # | Stage | Gives | Needs |
+|---|---|---|---|
+| D2 | **Durability per write**: CNPG synchronous replication, `dataDurability: preferred` (the primary waits for the replica while it is up, continues alone when it is down) | a failover loses **0** confirmed orders (today: < 1 s of writes), without stopping writes when node-8gb is down | measure the write latency over Wi-Fi first |
+| D3 | **Outbox**: the order event is written in the same Postgres transaction as the order, a relay publishes it to the Redis stream | no order without its event (today: a crash between insert and enqueue leaves a PENDING order nobody processes) | 2-3 h |
+| D4 | **Partitioning decision** (design doc only): why one leader is enough, the numbers, what would trigger sharding | the "why not shard" question answered with data, not habit | 1 h |
+| D5 | **Read-your-writes across devices and for any authentication**: the LSN token per user on the server (`lsn:user:<id>` in Redis), the `TL_RYW` cookie as a fallback ([D1 doc §10](design/2026-11-25-read-routing.md#10-future-work)) | a purchase on the phone is guaranteed visible on the laptop; API clients with JWTs get the guarantee too (today: per browser) | D1; 2 h |
 
 ## Next: what users see during outages
 

@@ -16,6 +16,7 @@
 | **burn rate** | how fast the error budget is spent; 1 = exactly used up in 30 days, 14.4 = in ~2 days (chapter 11) |
 | **canary** | try something on one small target first (one node, one pod) before everything |
 | **CI** | Continuous Integration: GitHub Actions builds and tests on every push |
+| **circuit breaker** | after a dependency fails, stop trying it for a while (30 s for the read replica) so requests don't each wait for it |
 | **cloudflared / tunnel** | program in the cluster that connects out to Cloudflare, so no router ports are open |
 | **CNPG** | CloudNativePG: the operator that runs Postgres in Kubernetes |
 | **ConfigMap / Secret** | Kubernetes objects holding settings / passwords |
@@ -48,18 +49,23 @@
 | **kubeconform** | checks manifests against Kubernetes schemas (in CI) |
 | **kubectl** | the command-line tool for Kubernetes |
 | **Kustomize / Kustomization** | combines and patches manifests (`kustomization.yaml`) / Flux's object that applies one folder |
+| **linearizable** | behaves like one single copy with the latest value; needed for "is a ticket left?" (Redis gate + primary) |
+| **LSN (log sequence number)** | a position in Postgres' write-ahead log (e.g. `0/3000060`); it only grows. Used as a token: "the replica must have replayed this far" (chapter 15) |
 | **metrics / logs** | numbers measured over time (graphs in Grafana) / text lines a program prints (`kubectl logs`) |
 | **LogsQL** | VictoriaLogs' query language, e.g. `kubernetes.pod_namespace:=apps AND error` |
 | **log level** | how urgent a log line is: ERROR (failed) / WARN (degraded) / INFO (normal) / DEBUG (details); rule in chapter 9 |
 | **manifest** | a YAML file describing Kubernetes objects |
 | **namespace** | a group of related Kubernetes objects (`apps`, `data`, ...) |
 | **node** | one machine in the cluster |
+| **outbox** | write an event into the database in the same transaction as the data, then publish it; no lost events between database and queue (roadmap D3) |
+| **partitioning / sharding** | splitting the data across several leaders to scale writes; not needed here yet (roadmap D4) |
 | **PITR / WAL / base backup** | point-in-time recovery / Postgres' change log / a full copy; together: restore to any moment (chapter 13) |
 | **passphrase** | password that encrypts a private key file |
 | **PodDisruptionBudget (PDB)** | "keep at least N copies running" during voluntary disruptions (drain, upgrade) |
 | **playbook / play / task / module** | Ansible file / a list of tasks for some hosts / one step / the tool doing the step |
 | **postmortem** | written review after an incident: what, why, what changes (no blame) |
 | **pull request (PR)** | a request to merge a branch into `main`; CI runs the checks on it first |
+| **read-your-writes / monotonic reads** | after I write I see it / I never see older data after newer. Both checked with LSN tokens (chapter 15) |
 | **required check** | a CI job that must pass before a PR may be merged |
 | **recording rule** | a query computed regularly and stored as a new metric (`slo:error_ratio:rate1h`), so alerts and dashboards stay cheap |
 | **RPO / RTO** | how much data can be lost / how long until service is back (here: RPO ~5 min with WAL archiving) |
@@ -76,6 +82,7 @@
 | **S.M.A.R.T.** | a disk's own health log (`smartctl`): failing sectors, transfer errors, age |
 | **3-2-1 rule** | 3 copies of data, on 2 kinds of storage, 1 off-site (+1 immutable, 0 restore errors); chapter 13 |
 | **SD swap / static IP** | moving SD cards between Pis / an IP address set on the machine instead of given by the router |
+| **single leader** | one node takes all writes and streams them to followers; avoids write conflicts (Postgres; chapter 15) |
 | **site-settings** | this site's values (domain, registry, ...) in `clusters/homelab/site-settings.yaml` |
 | **SLI / SLO / error budget** | measured share of good requests / its target (99.5 % in 30 days) / what may fail (0.5 %) |
 | **SOPS** | encrypts only the values of YAML files so secrets can live in git; Flux decrypts them with the age key (chapter 12) |

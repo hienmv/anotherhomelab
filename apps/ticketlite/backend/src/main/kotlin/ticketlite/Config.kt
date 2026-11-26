@@ -17,6 +17,10 @@ data class AppConfig(
     val workerDelayMs: Long,
     /** Max wait for a database connection before a request fails with 503 (Hikari connectionTimeout). */
     val dbConnectTimeoutMs: Long = 5_000,
+    /** Replica for reads (CNPG's pg-ro); null = every query on the primary. Same user/password. */
+    val dbRead: DbConfig? = null,
+    /** A replica further behind than this serves no reads. */
+    val dbReadMaxLagSeconds: Double = 10.0,
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(AppConfig::class.java)
@@ -38,6 +42,10 @@ data class AppConfig(
                 cookieSecure = env["COOKIE_SECURE"]?.toBoolean() ?: false,
                 workerDelayMs = env["WORKER_DELAY_MS"]?.toLong() ?: 200,
                 dbConnectTimeoutMs = env["DB_CONNECT_TIMEOUT_MS"]?.toLong() ?: 5_000,
+                dbRead = env["DATABASE_READ_HOST"]?.takeIf { it.isNotBlank() }?.let { host ->
+                    readReplicaConfig(parseDatabaseUrl(env["DATABASE_URL"] ?: "postgresql://app:app@localhost:5432/app"), host)
+                },
+                dbReadMaxLagSeconds = env["DB_READ_MAX_LAG_SECONDS"]?.toDouble() ?: 10.0,
             )
         }
     }
@@ -52,6 +60,13 @@ fun parseDatabaseUrl(url: String): DbConfig {
     val port = if (uri.port == -1) 5432 else uri.port
     val query = uri.rawQuery?.let { "?$it" } ?: ""
     return DbConfig("jdbc:postgresql://${uri.host}:$port${uri.rawPath}$query", user, password)
+}
+
+/** The primary's settings with another host (and port): `pg-ro.data.svc.cluster.local[:5432]`. */
+fun readReplicaConfig(primary: DbConfig, hostPort: String): DbConfig {
+    val rest = primary.jdbcUrl.removePrefix("jdbc:postgresql://").substringAfter("/")
+    val target = if (":" in hostPort) hostPort else "$hostPort:5432"
+    return primary.copy(jdbcUrl = "jdbc:postgresql://$target/$rest")
 }
 
 fun hexToBytes(hex: String): ByteArray {

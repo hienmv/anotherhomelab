@@ -49,3 +49,13 @@ object OrderStatus {
     const val CONFIRMED = "CONFIRMED"
     const val FAILED = "FAILED"
 }
+
+/**
+ * Read-your-writes token (docs/design/2026-11-25-read-routing.md): the newest WAL position (LSN) this
+ * browser has seen. Its OWN cookie (TL_RYW), deliberately not a field of [UserSession]: Ktor's session
+ * decoder rejects unknown keys, so a new field would make pods of the previous version fail to read
+ * the session during a rolling update (the user would look logged out). Pods that don't know TL_RYW
+ * simply ignore it, in both directions.
+ */
+@Serializable
+data class ReadToken(val minLsn: String)

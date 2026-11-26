@@ -25,7 +25,10 @@ private fun start() {
     when (cfg.role) {
         "api" -> {
             db.migrate() // Flyway takes a DB lock, so parallel api replicas are safe
-            val repo = Repo(db)
+            // reads on the replica when correct (docs/design/2026-11-25-read-routing.md); 1 s connect
+            // timeout: a dead replica must not slow reads down (the router then skips it for 30 s)
+            val replica = cfg.dbRead?.let { Db(it, connectTimeoutMs = 1_000, readOnly = true, failFast = false) }
+            val repo = Repo(db, ReadRouter(db, replica, cfg.dbReadMaxLagSeconds))
             repo.seedUsers()
             runApi(cfg, repo, gate)
         }

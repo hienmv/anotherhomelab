@@ -9,34 +9,64 @@ One file per change: `YYYY-MM-DD-<short-name>.md`. Keep it short; a page or two 
 
 ## Template
 
+Since 2026-11-26 the structure follows how design docs are written at Google and similar
+engineering teams. The first full example is [D1 read routing](2026-11-25-read-routing.md). Older
+docs use a shorter form and stay as they are.
+
+Principles:
+- **write it before the code**, and keep it updated while building: findings from tests go into the doc
+- **measurable goals**: each goal names the number or test that proves it
+- **alternatives with a verdict**: a reader must see why the obvious other way was not taken
+- **cross-cutting concerns are not optional**: security, observability, compatibility and rollout are where designs fail in production
+- **no guesses as facts**: an unverified claim is an open question until tested
+
 ```markdown
-# <Title> (roadmap <id>)
+# <Title> (<roadmap id>)
 
-Status: proposed | accepted | built <date> | replaced by <file>
+| | |
+|---|---|
+| **Authors** | … |
+| **Reviewers** | … |
+| **Status** | Draft / In review / Approved / Implemented / Superseded by … |
+| **Created / updated** | YYYY-MM-DD / YYYY-MM-DD |
+| **Roadmap** | id ([roadmap](../roadmap.md)) |
+| **Related** | other design docs, learn chapters, PRs |
 
-## Problem
-What hurts today, with a real example. Who or what is affected.
+## 1. Context and scope
+The situation today, with facts and numbers. What this doc covers and what it does not.
 
-## Goals / non-goals
-What it must do. What it deliberately does not do (scope).
+## 2. Goals and non-goals
+| # | Goal | Measured by |   (each goal testable)
+Non-goals: what it deliberately does not do, and where that is handled instead.
 
-## Options considered
-| Option | For | Against |
+## 3. Overview
+The design in a few sentences and one picture. Someone who only reads this section understands the idea.
 
-## Decision
-The chosen option, and why it wins over the others.
+## 4. Detailed design
+Flows (sequence diagrams), decision rules (tables), interfaces and config, data model changes,
+failure modes (table: situation → behaviour).
 
-## Design
-How it works: a picture, the pieces, where the config lives.
+## 5. Alternatives considered
+| Option | Pros | Cons | Verdict |
 
-## Risks and how they are handled
-What could go wrong (security, failure, cost) and the answer to each.
+## 6. Cross-cutting concerns
+Security, privacy, observability (metrics, alerts, logs), performance and capacity, reliability and
+SLOs, compatibility (mixed versions during a rolling update, rollback direction, old data / cookies).
 
-## Test plan
-How we prove it works: before merging (locally), after deploying (on the real system).
+## 7. Rollout plan
+Order and dependencies, what to watch after deploying (numbers), rollback (steps, and what it costs).
 
-## Rollback
-How to undo it if it goes wrong.
+## 8. Testing
+| Level | What | Result |   (unit, e2e, after deploy; with dates and results once run)
+
+## 9. Open questions
+| # | Question | Owner / when |   (answered ones stay, struck through, with the answer)
+
+## 10. Future work
+Follow-ups with roadmap ids.
+
+## Appendix
+Measurements, bugs found by the tests, glossary links.
 ```
 
 ## Index
@@ -47,6 +77,7 @@ How to undo it if it goes wrong.
 | 2026-11-21 | [Re-spread copies after an outage: the descheduler (O8)](2026-11-21-descheduler.md) | built 2026-11-22 |
 | 2026-11-24 | [Brief outages without errors: 503 + Retry-After, automatic retries (U1)](2026-11-24-graceful-db-outage.md) | built 2026-11-24 |
 | 2026-11-22 | [Postgres replica on node-8gb's SSD (A1)](2026-11-22-postgres-replica.md) | built 2026-11-22 |
+| 2026-11-25 | [Read routing with read-your-writes (D1)](2026-11-25-read-routing.md) (first doc in the full format) | implemented, in review |
 | 2026-11-26 | [node-workstation on Ethernet, commit-confirmed (H2)](2026-11-26-workstation-ethernet.md) | in review |
 
 Earlier stages were decided in the chapters themselves (docs/learn) and in the review
