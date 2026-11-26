@@ -67,6 +67,10 @@ jobs:
       - name: net-static.sh tests (fake NetworkManager)
         run: scripts/test-net-static.sh
 
+      # the health check judges what the host apply APPLIED, never a merge not applied yet
+      - name: homelab-check.sh tests (git repos + fake ansible-playbook)
+        run: scripts/test-host-gitops-check.sh
+
       - name: Kubernetes schemas (kubeconform)
         run: |
           kubeconform -summary -output text \

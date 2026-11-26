@@ -4,7 +4,13 @@
 #   homelab-check.sh          quick: verify.yml without the canary pods   (every 15 min)
 #   homelab-check.sh --full   everything, canary included                 (once a day)
 #
-# First updates the repo it lives in to main (lib-homelab.sh): checks always run main's code.
+# Checks the state the host apply has APPLIED, not the newest main (docs/design/2026-11-26-check-applied-revision.md):
+# only homelab-apply.sh moves the checkout to a new commit. A check right after a merge used to judge
+# the machines against a change not applied yet (2026-11-26: "192.168.40.249 is on 'wlp0s20f3', lan_link
+# is ethernet", 5 min before the apply switched it). Like Kubernetes' observedGeneration / Flux's
+# lastAppliedRevision: health is measured against what was applied.
+# It fetches main only to see what is PENDING: a newer commit is logged, and becomes a problem when it
+# has waited longer than $pending_max (3 apply runs missed: the apply is stuck or failing).
 # - Telegram message only when the state CHANGES (new problems / all good again), plus a reminder
 #   every 6 h while it stays broken.
 # - healthchecks.io: ping on success, /fail on problems. If the pings STOP (homelab, power or
@@ -13,9 +19,10 @@
 #   TELEGRAM_BOT_TOKEN=...  TELEGRAM_CHAT_ID=...  HEALTHCHECK_URL=https://hc-ping.com/<uuid>
 # Missing settings = the check still runs and logs, it just cannot notify.
 set -uo pipefail
-. "$(dirname "$0")/lib-homelab.sh"      # repo, settings, send(), take_lock(), update_repo()
+. "$(dirname "$0")/lib-homelab.sh"      # repo, settings, send(), take_lock(), fetch_main()
 
 state="$state_dir/check.state"          # "<ok|fail> <epoch of last message> <hash of problems>"
+pending_max=${HOMELAB_PENDING_MAX:-2700} # 45 min = 3 apply runs (every 15 min)
 args=(--skip-tags containers); [ "${1:-}" = "--full" ] && args=()
 # Scheduled runs (~100 a day) stay out of ansible/logs/ansible.log, which is for runs by a person.
 # The latest output is kept instead (overwritten each run): ~/.local/state/homelab/last-check.log
@@ -23,8 +30,17 @@ out="$state_dir/last-check.log"
 
 # Never check while the host apply (or the backup) changes machines: wait for it (max 25 min).
 take_lock || { echo "another Ansible job still running after 25 min; skipped"; exit 0; }
-update_repo                             # checks always run main's code
-[ -n "$pull_problem" ] && pull_problem="- $pull_problem (checked with the old code)"
+fetch_main                              # origin/main only; the checkout stays at what the apply applied
+[ -n "$pull_problem" ] && pull_problem="- $pull_problem"
+applied=$(git -C "$repo" rev-parse --short HEAD)
+latest=$(git -C "$repo" rev-parse --short origin/main 2>/dev/null || echo "$applied")
+if [ "$latest" != "$applied" ] && git -C "$repo" merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+  waited=$(( $(date +%s) - $(git -C "$repo" log -1 --format=%ct origin/main) ))
+  echo "checking $applied (applied); pending: $latest, merged $((waited / 60)) min ago"
+  if [ "$waited" -ge "$pending_max" ]; then
+    pull_problem="$(printf '%s\n%s' "$pull_problem" "- host apply has not applied $latest for $((waited / 60)) min (still at $applied; ~/.local/state/homelab/last-apply.log)" | sed '/^$/d')"
+  fi
+fi
 
 cd "$repo_ansible"
 ansible-playbook playbooks/verify.yml "${args[@]}" > "$out" 2>&1
