@@ -81,7 +81,7 @@ Request and data flow. Solid boxes are running; dashed boxes are planned.
 ```text
 ┌─ node-workstation  .249 ────────────────────┐  ┌─ node-8gb  .250 ────────────────────────────┐
 │ CF-SV9, 8 CPU, 16 GB, NVMe SSD              │  │ Pi 4B, 8 GB RAM, SD 64 GB, USB SSD 64 GB    │
-│ Ubuntu 24.04 LTS, Wi-Fi (static IP)         │  │ Debian 13, Ethernet                         │
+│ Ubuntu 24.04 LTS, Ethernet (static IP)      │  │ Debian 13, Ethernet                         │
 │ k3s SERVER (control plane)                  │  │ k3s agent                                   │
 │ labels role=data, homelab/postgres          │  │ labels role=apps, homelab/postgres          │
 │                                             │  │                                             │
@@ -151,7 +151,7 @@ Grafana access and browser troubleshooting: [K3S-GUIDE.md → Observability](K3S
 
 | Node (= hostname = k8s node) | IP (static) | Hardware | OS | Role |
 |---|---|---|---|---|
-| node-workstation | 192.168.40.249 (Wi-Fi) | Panasonic CF-SV9, 8 CPU, 16 GB, NVMe SSD | Ubuntu 24.04 LTS | k3s server, `role=data`, admin workstation |
+| node-workstation | 192.168.40.249 (Ethernet since 2026-11-26; was Wi-Fi) | Panasonic CF-SV9, 8 CPU, 16 GB, NVMe SSD | Ubuntu 24.04 LTS | k3s server, `role=data`, admin workstation |
 | node-8gb | 192.168.40.250 | Pi 4B, 8 GB, SD 64 GB | Debian 13 | k3s agent, `role=apps` |
 | node-4gb | 192.168.40.251 | Pi 4B, 4 GB, SD 32 GB | Debian 13 | k3s agent, `role=apps` |
 | node-1gb | 192.168.40.252 | Pi 3B+, 1 GB, SD 32 GB | Debian 13 | k3s agent, `role=light` (taint); weak PSU |

@@ -330,7 +330,20 @@
         mode: "0644"
       notify: Reload NetworkManager
 
+    # NetworkManager makes a DHCP "Wired connection 1" for any port without a profile; with
+    # lan_link=ethernet that gave the cable a second address (.102, 2026-11-26). Only our profiles.
+    - name: NetworkManager makes no automatic profiles
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/conf.d/homelab-no-auto-default.conf
+        content: |
+          [main]
+          no-auto-default=*
+        mode: "0644"
+      notify: Reload NetworkManager
+
     # lan_link (inventory) picks the link that holds static_ip: wifi or ethernet, never both.
+    # Switching to Ethernet is confirmed (gateway answers) or rolled back by itself:
+    # files/net-static.sh, docs/design/2026-11-26-workstation-ethernet.md
     - name: Static IP on the {{ lan_link }} link
       ansible.builtin.script:
         cmd: >-
@@ -349,6 +362,50 @@
         delay: 8
         timeout: 120
       when: "'RECONNECT' in net.stdout"
+
+    # The switch runs ~3 s after the script and confirms within 20 s (or rolls back).
+    - name: "{{ static_ip }} is on the {{ lan_link }} port (confirmed, not rolled back)"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        dev=$(ip -o -4 addr show | awk -v ip="{{ static_ip }}" '$4 ~ "^"ip"/" {print $2; exit}')
+        echo "$dev"
+        case "{{ lan_link }}:$dev" in ethernet:en*|ethernet:eth*|wifi:wl*) exit 0;; *) exit 1;; esac
+      args: { executable: /bin/bash }
+      register: lan_dev
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: lan_dev.rc == 0
+
+    # Flannel (the pod network) binds to the port that held the node IP when k3s STARTED
+    # (`ip -d link show flannel.1`: "... dev wlp0s20f3"). After the IP moves, pod traffic would keep
+    # using the old port until k3s restarts. Restart only when they differ: ~30 s without the API,
+    # running pods are not touched.
+    - name: Pod network (flannel) on the same port as {{ static_ip }}
+      ansible.builtin.shell: |
+        set -euo pipefail
+        fl=$(ip -d link show flannel.1 2>/dev/null | grep -o ' dev [^ ]*' | awk '{print $2}' | head -1 || true)
+        if [ -z "$fl" ]; then echo "no flannel.1 (k3s not running yet)"
+        elif [ "$fl" = "{{ lan_dev.stdout }}" ]; then echo "flannel on $fl"
+        else echo "MOVE flannel $fl -> {{ lan_dev.stdout }}"; fi
+      args: { executable: /bin/bash }
+      register: flannel_dev
+      changed_when: false
+
+    - name: Restart k3s so flannel follows (only after a link switch)
+      ansible.builtin.systemd_service:
+        name: k3s
+        state: restarted
+      when: "'MOVE' in flannel_dev.stdout"
+
+    - name: Kubernetes API back after the restart
+      ansible.builtin.command: kubectl --kubeconfig {{ kubeconfig }} get --raw /readyz
+      register: readyz
+      changed_when: false
+      retries: 24
+      delay: 5
+      until: readyz.rc == 0
+      when: "'MOVE' in flannel_dev.stdout"
 
     - name: kubectl {{ kubectl_version }}
       ansible.builtin.get_url:

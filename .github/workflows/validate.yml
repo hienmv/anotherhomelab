@@ -63,6 +63,10 @@ jobs:
       - name: SLO alert rules unit tests (vmalert-tool)
         run: scripts/test-slo-rules.sh
 
+      # node-workstation's link switch (Wi-Fi <-> Ethernet, confirm or roll back) against a fake nmcli
+      - name: net-static.sh tests (fake NetworkManager)
+        run: scripts/test-net-static.sh
+
       - name: Kubernetes schemas (kubeconform)
         run: |
           kubeconform -summary -output text \
