@@ -24,12 +24,103 @@ Public URL: **`https://ticketlite.<domain>`** (only this host; the apex is the s
  Browser polls GET /api/orders/{id} until CONFIRMED / FAILED
 ```
 
+### In the cluster: pods, nodes and data paths
+
+The diagram above is logical. This one shows where the pods run and which way the data flows (since
+A1 + D1; [replica design](../../docs/design/2026-11-22-postgres-replica.md),
+[read routing](../../docs/design/2026-11-25-read-routing.md),
+[sync flows](../../docs/learn/15-data-intensive.md#how-pg-1-and-pg-2-stay-in-sync-the-flows)):
+
+```text
+ Browser ─HTTPS─► Cloudflare ─tunnel─► cloudflared x2 ─► Traefik x2 ─┬─ /    ─► web x2 (nginx, static)
+                                                                      └─ /api ─► api x2
+ app pods (web, api, worker: 2 copies each) are spread over node-workstation / node-8gb / node-4gb
+
+ ┌─ node-workstation (NVMe) ─────────────────────┐        ┌─ node-8gb (USB SSD /mnt/ssd) ──────────────────┐
+ │                                               │        │                                                │
+ │  pod pg-1  PRIMARY ◄─────────── pg-rw ◄───────┼── W ───┤  api: writes, sale checks (stock, limits)      │
+ │   │ WAL                                       │        │  worker: confirm orders                        │
+ │   ├─ walsender ════ streaming replication ════╪═══════►│  pod pg-2  REPLICA (hot standby)               │
+ │   │   (async, usually < 1 s; slot _cnpg_pg_2, │        │   walreceiver → replay → readable              │
+ │   │    keeps ≤ 3 GB WAL for pg-2)             │        │      ▲                                         │
+ │   │                                           │        │  pg-ro ◄──── R ── api: reads (concert list,    │
+ │   └─ WAL + base backups ──────────────────────┼───────►│      login, my orders: if caught up with the   │
+ │                                               │        │      user's LSN token, else via pg-rw)         │
+ │  pod redis-0 (gate + orders stream)           │        │  Garage (backup store, host service)           │
+ │  CNPG operator (1 of 2, leader election)      │        │      └── encrypted copy nightly → R2           │
+ │                                               │        │  CNPG operator (other copy)                    │
+ └───────────────────────────────────────────────┘        └────────────────────────────────────────────────┘
+ W = write path (pg-rw, always the primary)   R = read path (pg-ro, the replica when correct)
+ After a failover the roles swap: pg-2 is the primary, pg-rw follows; pg-1 rejoins as the replica.
+```
+
+The same, as a flow (GitHub draws it):
+
+```mermaid
+flowchart LR
+    B[Browser] --> CF[Cloudflare tunnel] --> T[Traefik x2]
+    T -->|/| WEB[web x2]
+    T -->|/api| API[api x2]
+    API -->|1 reserve: Lua gate| R[(redis-0)]
+    API -->|2 insert PENDING<br/>sale checks| RW{{pg-rw}}
+    API -->|3 XADD orders| R
+    R -->|consume| WK[worker x2]
+    WK -->|4 confirm in tx<br/>FOR UPDATE| RW
+    API -.->|reads: list, login,<br/>my orders| RO{{pg-ro}}
+    API -.->|"read not caught up / lag > 10 s / replica down"| RW
+    RW --> P[(pg-1 PRIMARY<br/>node-workstation)]
+    RO --> S[(pg-2 REPLICA<br/>node-8gb SSD)]
+    P ==>|WAL streaming, async| S
+    P -->|WAL archive + base backups| G[(Garage on node-8gb)]
+    G -->|nightly, encrypted| R2[(Cloudflare R2)]
+    OP[CNPG operator x2] -.->|health, failover,<br/>points pg-rw / pg-ro| P
+    OP -.-> S
+```
+
+### One purchase, end to end (which database each step uses)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Browser
+    participant A as api
+    participant RD as redis-0
+    participant P as pg-1 (pg-rw)
+    participant W as worker
+    participant S as pg-2 (pg-ro)
+    U->>A: POST /api/orders {concert, qty}
+    A->>P: concert, stock, user's holds (linearizable: primary)
+    A->>RD: Lua gate: reserve stock + per-person limit (atomic)
+    A->>P: INSERT order PENDING, COMMIT
+    A->>P: pg_current_wal_lsn() → token in the session cookie
+    A->>RD: XADD orders
+    A-->>U: 202 PENDING (+ cookie with the token)
+    P-)S: WAL streamed + replayed (async, usually < 1 s)
+    RD->>W: next message (consumer group)
+    W->>P: lock order + concert, re-check, CONFIRMED, COMMIT
+    P-)S: WAL streamed + replayed
+    loop poll every 0.5 s
+        U->>A: GET /api/orders/{id} (cookie with token)
+        A->>S: replayed past the token? (pg_last_wal_replay_lsn)
+        alt yes
+            S-->>A: the order (PENDING, later CONFIRMED)
+        else no (just written, or replica lagging/down)
+            A->>P: read from the primary instead
+        end
+        A-->>U: status
+    end
+```
+
+During a failover:
+- step 1 (`POST`) answers 503 "not placed" ([U1](../../docs/design/2026-11-24-graceful-db-outage.md))
+- the poll keeps working from pg-2 until it is promoted, then from the new primary
+
 | Component | Tech | Role |
 |---|---|---|
 | `web` | React 18 + Vite + TypeScript, nginx | UI, Atomic Design |
 | `api` | Kotlin, Ktor 3 (CIO), JDBC + HikariCP, Flyway | auth, concerts, accept orders (202) |
 | `worker` | same image, `ROLE=worker` | consume Redis stream, confirm orders in Postgres |
-| Postgres | CloudNativePG cluster `pg` (existing) | users, concerts, orders: source of truth |
+| Postgres | CloudNativePG cluster `pg`: pg-1 primary + pg-2 streaming replica | users, concerts, orders: source of truth (writes `pg-rw`, reads `pg-ro` when correct) |
 | Redis | existing `redis` | inventory gate (`inventory:<id>`) + stream `orders` |
 
 ### How hot-ticket rushes are handled

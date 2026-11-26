@@ -32,6 +32,8 @@ This is admission control plus a queue: the leader sees a calm stream, not the s
 
 ## How pg-1 and pg-2 stay in sync: the flows
 
+Where the pods run and the read/write paths of one purchase: [TicketLite in the cluster](../../apps/ticketlite/README.md#in-the-cluster-pods-nodes-and-data-paths).
+
 The pieces, all managed by CloudNativePG (CNPG, the operator):
 
 | Piece | Where | Job |
